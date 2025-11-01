@@ -1,0 +1,19 @@
+# Requirements for PDF export functionality
+# Install with: pip install -r requirements_pdf.txt
+
+# Core dependencies (likely already installed)
+matplotlib
+numpy
+
+# PDF export options (install at least one)
+# Option 1: weasyprint (recommended - pure Python, no external dependencies)
+weasyprint
+
+# Option 2: pdfkit (requires wkhtmltopdf system package)
+# pdfkit
+
+# For system installation of wkhtmltopdf (if using pdfkit):
+# Ubuntu/Debian: sudo apt-get install wkhtmltopdf
+# RHEL/CentOS/Fedora: sudo yum install wkhtmltopdf  # or dnf
+# macOS: brew install wkhtmltopdf
+# Windows: Download from https://wkhtmltopdf.org/downloads.html

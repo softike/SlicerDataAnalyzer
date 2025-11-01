@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <s3Shape name="S3FemoralSphere_R">
+    <matrix4 name="mat" value="1.0 0.0 0.1 0.0 0.0 1.0 0.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 0.0 1.0"/>
+    <scalar name="diameter" value="28.3"/>
+  </s3Shape>
+  <s3Shape name="S3BCP_R">
+    <matrix4 name="mat" value="1.0 0.0 0.0 0.0 0.0 1.0 0.1 0.0 0.0 0.0 1.0 0.0 0.0 0.0 0.0 1.0"/>
+    <vector3 name="p0" value="10.3 20.1 29.9"/>
+    <vector3 name="p1" value="15.0 25.6 35.4"/>
+  </s3Shape>
+</root>
