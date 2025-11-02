@@ -4,6 +4,9 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import argparse
 
+# Import centralized tag definitions
+from compareResults_3Studies import TAGS_XPATHS
+
 dcm_path = r"C:\\Users\\Coder\\Desktop\\001-M-30\\001-M-30\\Dataset"
 
 ##
@@ -46,30 +49,8 @@ def extractPlanningData(xml_path):
             return elem.attrib['value']
         return None
 
-    # List of (tag, xpath) pairs to extract
-    tags_xpaths = [
-        ("S3FemoralSphere_R_matrix", ".//s3Shape[@name='S3FemoralSphere_R']/matrix4[@name='mat']"),
-        ("S3FemoralSphere_R_diameter", ".//s3Shape[@name='S3FemoralSphere_R']/scalar[@name='diameter']"),
-        ("S3AcetabularHSphere_R_matrix", ".//s3Shape[@name='S3AcetabularHSphere_R']/matrix4[@name='mat']"),
-        ("S3AcetabularHSphere_R_diameter", ".//s3Shape[@name='S3AcetabularHSphere_R']/scalar[@name='diameter']"),
-        ("S3FemoralSphere_L_matrix", ".//s3Shape[@name='S3FemoralSphere_L']/matrix4[@name='mat']"),
-        ("S3FemoralSphere_L_diameter", ".//s3Shape[@name='S3FemoralSphere_L']/scalar[@name='diameter']"),
-        ("S3AcetabularHSphere_L_matrix", ".//s3Shape[@name='S3AcetabularHSphere_L']/matrix4[@name='mat']"),
-        ("S3AcetabularHSphere_L_diameter", ".//s3Shape[@name='S3AcetabularHSphere_L']/scalar[@name='diameter']"),
-        ("S3GreaterTroch_R_matrix", ".//s3Shape[@name='S3GreaterTroch_R']/matrix4[@name='mat']"),
-        ("S3GreaterTroch_L_matrix", ".//s3Shape[@name='S3GreaterTroch_L']/matrix4[@name='mat']"),
-        ("S3TopLesserTroch_R_matrix", ".//s3Shape[@name='S3TopLesserTroch_R']/matrix4[@name='mat']"),
-        ("S3TopLesserTroch_L_matrix", ".//s3Shape[@name='S3TopLesserTroch_L']/matrix4[@name='mat']"),
-        ("S3BCP_R_matrix", ".//s3Shape[@name='S3BCP_R']/matrix4[@name='mat']"),
-        ("S3BCP_R_p0", ".//s3Shape[@name='S3BCP_R']/vector3[@name='p0']"),
-        ("S3BCP_R_p1", ".//s3Shape[@name='S3BCP_R']/vector3[@name='p1']"),
-        ("S3BCP_L_matrix", ".//s3Shape[@name='S3BCP_L']/matrix4[@name='mat']"),
-        ("S3BCP_L_p0", ".//s3Shape[@name='S3BCP_L']/vector3[@name='p0']"),
-        ("S3BCP_L_p1", ".//s3Shape[@name='S3BCP_L']/vector3[@name='p1']"),
-        ("S3AppFrame_matrix", ".//s3Shape[@name='S3AppFrame']/matrix4[@name='mat']"),
-        ("S3FemurFrame_R_matrix", ".//s3Shape[@name='S3FemurFrame_R']/matrix4[@name='mat']"),
-        ("S3FemurFrame_L_matrix", ".//s3Shape[@name='S3FemurFrame_L']/matrix4[@name='mat']"),
-    ]
+    # Use centralized definition of tags and XPaths
+    tags_xpaths = TAGS_XPATHS
 
     # Populate the dictionary
     for tag, xpath in tags_xpaths:

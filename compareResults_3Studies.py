@@ -7,6 +7,49 @@ from pathlib import Path
 
 dcm_path = r"C:\\Users\\Coder\\Desktop\\001-M-30\\001-M-30\\Dataset"
 
+# Centralized definition of XML tags and XPath expressions to extract
+TAGS_XPATHS = [
+    ("S3FemoralSphere_R_matrix", ".//s3Shape[@name='S3FemoralSphere_R']/matrix4[@name='mat']"),
+    ("S3FemoralSphere_R_diameter", ".//s3Shape[@name='S3FemoralSphere_R']/scalar[@name='diameter']"),
+    ("S3AcetabularHSphere_R_matrix", ".//s3Shape[@name='S3AcetabularHSphere_R']/matrix4[@name='mat']"),
+    ("S3AcetabularHSphere_R_diameter", ".//s3Shape[@name='S3AcetabularHSphere_R']/scalar[@name='diameter']"),
+    ("S3FemoralSphere_L_matrix", ".//s3Shape[@name='S3FemoralSphere_L']/matrix4[@name='mat']"),
+    ("S3FemoralSphere_L_diameter", ".//s3Shape[@name='S3FemoralSphere_L']/scalar[@name='diameter']"),
+    ("S3AcetabularHSphere_L_matrix", ".//s3Shape[@name='S3AcetabularHSphere_L']/matrix4[@name='mat']"),
+    ("S3AcetabularHSphere_L_diameter", ".//s3Shape[@name='S3AcetabularHSphere_L']/scalar[@name='diameter']"),
+    ("S3GreaterTroch_R_matrix", ".//s3Shape[@name='S3GreaterTroch_R']/matrix4[@name='mat']"),
+    ("S3GreaterTroch_L_matrix", ".//s3Shape[@name='S3GreaterTroch_L']/matrix4[@name='mat']"),
+    ("S3TopLesserTroch_R_matrix", ".//s3Shape[@name='S3TopLesserTroch_R']/matrix4[@name='mat']"),
+    ("S3TopLesserTroch_L_matrix", ".//s3Shape[@name='S3TopLesserTroch_L']/matrix4[@name='mat']"),
+    ("S3BCP_R_matrix", ".//s3Shape[@name='S3BCP_R']/matrix4[@name='mat']"),
+    ("S3BCP_R_p0", ".//s3Shape[@name='S3BCP_R']/vector3[@name='p0']"),
+    ("S3BCP_R_p1", ".//s3Shape[@name='S3BCP_R']/vector3[@name='p1']"),
+    ("S3BCP_L_matrix", ".//s3Shape[@name='S3BCP_L']/matrix4[@name='mat']"),
+    ("S3BCP_L_p0", ".//s3Shape[@name='S3BCP_L']/vector3[@name='p0']"),
+    ("S3BCP_L_p1", ".//s3Shape[@name='S3BCP_L']/vector3[@name='p1']"),
+    #("S3AppFrame_matrix", ".//s3Shape[@name='S3AppFrame']/matrix4[@name='mat']"),
+    ("S3FemurFrame_R_matrix", ".//s3Shape[@name='S3FemurFrame_R']/matrix4[@name='mat']"),
+    ("S3FemurFrame_L_matrix", ".//s3Shape[@name='S3FemurFrame_L']/matrix4[@name='mat']"),
+]
+
+# Filtered version for extractPlanningData function (only enabled elements)
+TAGS_XPATHS_EXTRACT_ONLY = [
+    ("S3FemoralSphere_R_diameter", ".//s3Shape[@name='S3FemoralSphere_R']/scalar[@name='diameter']"),
+    ("S3FemoralSphere_L_diameter", ".//s3Shape[@name='S3FemoralSphere_L']/scalar[@name='diameter']"),
+    ("S3GreaterTroch_R_matrix", ".//s3Shape[@name='S3GreaterTroch_R']/matrix4[@name='mat']"),
+    ("S3GreaterTroch_L_matrix", ".//s3Shape[@name='S3GreaterTroch_L']/matrix4[@name='mat']"),
+    ("S3TopLesserTroch_R_matrix", ".//s3Shape[@name='S3TopLesserTroch_R']/matrix4[@name='mat']"),
+    ("S3TopLesserTroch_L_matrix", ".//s3Shape[@name='S3TopLesserTroch_L']/matrix4[@name='mat']"),
+    ("S3BCP_R_matrix", ".//s3Shape[@name='S3BCP_R']/matrix4[@name='mat']"),
+    ("S3BCP_R_p0", ".//s3Shape[@name='S3BCP_R']/vector3[@name='p0']"),
+    ("S3BCP_R_p1", ".//s3Shape[@name='S3BCP_R']/vector3[@name='p1']"),
+    ("S3BCP_L_matrix", ".//s3Shape[@name='S3BCP_L']/matrix4[@name='mat']"),
+    ("S3BCP_L_p0", ".//s3Shape[@name='S3BCP_L']/vector3[@name='p0']"),
+    ("S3BCP_L_p1", ".//s3Shape[@name='S3BCP_L']/vector3[@name='p1']"),
+    ("S3FemurFrame_R_matrix", ".//s3Shape[@name='S3FemurFrame_R']/matrix4[@name='mat']"),
+    ("S3FemurFrame_L_matrix", ".//s3Shape[@name='S3FemurFrame_L']/matrix4[@name='mat']"),
+]
+
 ##
 def calculate_frontal_plane_angle(matrix1_str, matrix2_str):
     """
@@ -43,6 +86,103 @@ def calculate_frontal_plane_angle(matrix1_str, matrix2_str):
     angle_degrees = np.degrees(angle_radians)
     
     return angle_degrees
+
+##
+def extract_patient_side(xml_path):
+    """
+    Extract PatientSide information from XML file.
+    
+    Args:
+        xml_path: Path to the XML file
+        
+    Returns:
+        String: 'Left', 'Right', or None if not found
+    """
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        
+        # Look for PatientSide tag - it might be in different locations
+        side_elem = root.find(".//PatientSide")
+        if side_elem is not None and side_elem.text:
+            side = side_elem.text.strip()
+            # Normalize the side value
+            if side.lower() in ['left', 'l']:
+                return 'Left'
+            elif side.lower() in ['right', 'r']:
+                return 'Right'
+        
+        # Alternative search patterns if the first doesn't work
+        for elem in root.iter():
+            if 'patientside' in elem.tag.lower() and elem.text:
+                side = elem.text.strip()
+                if side.lower() in ['left', 'l']:
+                    return 'Left'
+                elif side.lower() in ['right', 'r']:
+                    return 'Right'
+                    
+        return None
+    except Exception as e:
+        print(f"Warning: Could not extract PatientSide from {xml_path}: {e}")
+        return None
+
+##
+def validate_patient_sides(xml_paths, case_name=None):
+    """
+    Validate that all XML files have the same PatientSide.
+    
+    Args:
+        xml_paths: List of XML file paths
+        case_name: Optional case name for error reporting
+        
+    Returns:
+        Tuple: (is_consistent, patient_side, sides_list)
+    """
+    sides = []
+    for xml_path in xml_paths:
+        side = extract_patient_side(xml_path)
+        sides.append(side)
+    
+    # Check consistency
+    non_none_sides = [s for s in sides if s is not None]
+    if not non_none_sides:
+        return False, None, sides
+    
+    first_side = non_none_sides[0]
+    is_consistent = all(s == first_side for s in non_none_sides)
+    
+    if not is_consistent and case_name:
+        print(f"Warning: Inconsistent PatientSide values for case {case_name}: {sides}")
+    
+    return is_consistent, first_side if is_consistent else None, sides
+
+##
+def filter_tags_by_side(tags, target_side):
+    """
+    Filter a list of tags based on the target side (Left/Right).
+    Tags ending with '_L' are Left side, tags ending with '_R' are Right side.
+    
+    Args:
+        tags: List of tag names
+        target_side: 'Left', 'Right', or 'Both'
+        
+    Returns:
+        List of filtered tags
+    """
+    if target_side == 'Both' or target_side is None:
+        return tags
+    
+    filtered_tags = []
+    for tag in tags:
+        if target_side == 'Left' and (tag.endswith('_L') or '_L_' in tag):
+            filtered_tags.append(tag)
+        elif target_side == 'Right' and (tag.endswith('_R') or '_R_' in tag):
+            filtered_tags.append(tag)
+        elif not (tag.endswith('_L') or tag.endswith('_R') or '_L_' in tag or '_R_' in tag):
+            # Include tags that don't have side indicators (like diameter measurements without L/R)
+            filtered_tags.append(tag)
+    
+    return filtered_tags
 
 ##
 def export_to_pdf(html_content, plot_files, output_prefix, title="Planning Data Report"):
@@ -305,17 +445,32 @@ def export_to_pdf(html_content, plot_files, output_prefix, title="Planning Data 
     return success, pdf_filename if success else None
 
 ##
-def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix, translation_only=False):
+def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix, translation_only=False, side_filter='Both'):
     """
     Create individual plots for each measure and save them as separate image files.
     Returns a list of dictionaries containing plot information.
     
     Args:
         translation_only: If True, only create translation plots from matrices (skip rotation, vectors, scalars)
+        side_filter: 'Left', 'Right', or 'Both' - filter data by patient side
     """
     import matplotlib.pyplot as plt
     import matplotlib
     matplotlib.use('Agg')  # Use non-interactive backend for HTML generation
+    
+    # Apply side filtering to the data
+    if side_filter != 'Both':
+        matrix_tags = [tag for tag, _ in matrix_data]
+        vector_tags = [tag for tag, _ in vector_data]
+        scalar_tags = [tag for tag, _ in scalar_data]
+        
+        matrix_tags_filtered = filter_tags_by_side(matrix_tags, side_filter)
+        vector_tags_filtered = filter_tags_by_side(vector_tags, side_filter)
+        scalar_tags_filtered = filter_tags_by_side(scalar_tags, side_filter)
+        
+        matrix_data = [(tag, value) for tag, value in matrix_data if tag in matrix_tags_filtered]
+        vector_data = [(tag, value) for tag, value in vector_data if tag in vector_tags_filtered]
+        scalar_data = [(tag, value) for tag, value in scalar_data if tag in scalar_tags_filtered]
     
     plot_files = []
     
@@ -440,8 +595,8 @@ def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix
     
     # Define the pairs to compare
     angle_pairs = [
-        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Side Frontal Plane Angle'),
-        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Side Frontal Plane Angle')
+        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Femoral Anteversion Angle'),
+        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Femoral Anteversion Angle')
     ]
     
     for matrix1_tag, matrix2_tag, title in angle_pairs:
@@ -499,17 +654,22 @@ def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix
     return plot_files
 
 ##
-def create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix, translation_only=False):
+def create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix, translation_only=False, side_filter='Both'):
     """
     Create individual comparison plots for each measure from three datasets.
     Returns a list of dictionaries containing plot information.
     
     Args:
         translation_only: If True, only create translation comparison plots from matrices
+        side_filter: 'Left', 'Right', or 'Both' - filter data by patient side
     """
     import matplotlib.pyplot as plt
     import matplotlib
     matplotlib.use('Agg')  # Use non-interactive backend for HTML generation
+    
+    # Apply side filtering to common_tags
+    if side_filter != 'Both':
+        common_tags = filter_tags_by_side(common_tags, side_filter)
     
     plot_files = []
     
@@ -680,8 +840,8 @@ def create_individual_comparison_plots(data1, data2, data3, common_tags, output_
     # Calculate and compare frontal plane angles between specific matrix pairs
     # Define the pairs to compare
     angle_pairs = [
-        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Side Frontal Plane Angle'),
-        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Side Frontal Plane Angle')
+        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Femoral Anteversion Angle'),
+        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Femoral Anteversion Angle')
     ]
     
     for matrix1_tag, matrix2_tag, title in angle_pairs:
@@ -758,12 +918,29 @@ def loadDICOMToDatabase(dcm_path):
                 print("Found series:", seriesUID)
 
 ##
-def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=False, translation_only=False):
+def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=False, translation_only=False, side_filter='Both'):
     """
     Read the planning configuration from a file.
     """
     tree = ET.parse(xml_path)
     root = tree.getroot()
+
+    # Extract and validate patient side if filtering is requested
+    actual_side_filter = side_filter
+    if side_filter == 'Auto':
+        patient_side = extract_patient_side(xml_path)
+        if patient_side is None:
+            print(f"Warning: Could not determine PatientSide from {xml_path}. Using 'Both' mode.")
+            actual_side_filter = 'Both'
+        else:
+            actual_side_filter = patient_side
+            print(f"Info: Auto-detected PatientSide '{patient_side}' from {xml_path}. Filtering data accordingly.")
+    elif side_filter != 'Both':
+        patient_side = extract_patient_side(xml_path)
+        if patient_side is None:
+            print(f"Warning: Could not determine PatientSide from {xml_path}. Proceeding with all data.")
+        elif patient_side != side_filter:
+            print(f"Info: File {xml_path} has PatientSide '{patient_side}', but filtering for '{side_filter}'. Data will be filtered accordingly.")
 
     # Create a dictionary to store tag-value pairs
     planning_data = {}
@@ -774,30 +951,8 @@ def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=Fals
             return elem.attrib['value']
         return None
 
-    # List of (tag, xpath) pairs to extract
-    tags_xpaths = [
-        #("S3FemoralSphere_R_matrix", ".//s3Shape[@name='S3FemoralSphere_R']/matrix4[@name='mat']"),
-        ("S3FemoralSphere_R_diameter", ".//s3Shape[@name='S3FemoralSphere_R']/scalar[@name='diameter']"),
-        #("S3AcetabularHSphere_R_matrix", ".//s3Shape[@name='S3AcetabularHSphere_R']/matrix4[@name='mat']"),
-        #("S3AcetabularHSphere_R_diameter", ".//s3Shape[@name='S3AcetabularHSphere_R']/scalar[@name='diameter']"),
-        #("S3FemoralSphere_L_matrix", ".//s3Shape[@name='S3FemoralSphere_L']/matrix4[@name='mat']"),
-        ("S3FemoralSphere_L_diameter", ".//s3Shape[@name='S3FemoralSphere_L']/scalar[@name='diameter']"),
-        #("S3AcetabularHSphere_L_matrix", ".//s3Shape[@name='S3AcetabularHSphere_L']/matrix4[@name='mat']"),
-        #("S3AcetabularHSphere_L_diameter", ".//s3Shape[@name='S3AcetabularHSphere_L']/scalar[@name='diameter']"),
-        ("S3GreaterTroch_R_matrix", ".//s3Shape[@name='S3GreaterTroch_R']/matrix4[@name='mat']"),
-        ("S3GreaterTroch_L_matrix", ".//s3Shape[@name='S3GreaterTroch_L']/matrix4[@name='mat']"),
-        ("S3TopLesserTroch_R_matrix", ".//s3Shape[@name='S3TopLesserTroch_R']/matrix4[@name='mat']"),
-        ("S3TopLesserTroch_L_matrix", ".//s3Shape[@name='S3TopLesserTroch_L']/matrix4[@name='mat']"),
-        ("S3BCP_R_matrix", ".//s3Shape[@name='S3BCP_R']/matrix4[@name='mat']"),
-        ("S3BCP_R_p0", ".//s3Shape[@name='S3BCP_R']/vector3[@name='p0']"),
-        ("S3BCP_R_p1", ".//s3Shape[@name='S3BCP_R']/vector3[@name='p1']"),
-        ("S3BCP_L_matrix", ".//s3Shape[@name='S3BCP_L']/matrix4[@name='mat']"),
-        ("S3BCP_L_p0", ".//s3Shape[@name='S3BCP_L']/vector3[@name='p0']"),
-        ("S3BCP_L_p1", ".//s3Shape[@name='S3BCP_L']/vector3[@name='p1']"),
-        #("S3AppFrame_matrix", ".//s3Shape[@name='S3AppFrame']/matrix4[@name='mat']"),
-        ("S3FemurFrame_R_matrix", ".//s3Shape[@name='S3FemurFrame_R']/matrix4[@name='mat']"),
-        ("S3FemurFrame_L_matrix", ".//s3Shape[@name='S3FemurFrame_L']/matrix4[@name='mat']"),
-    ]
+    # Use centralized definition of tags and XPaths (filtered for extract function)
+    tags_xpaths = TAGS_XPATHS_EXTRACT_ONLY
 
     # Populate the dictionary
     for tag, xpath in tags_xpaths:
@@ -825,7 +980,7 @@ def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=Fals
         return
     
     # Create individual plots for each measure
-    plot_files = create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix, translation_only)
+    plot_files = create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix, translation_only, actual_side_filter)
     
     # Generate HTML content with individual plots
     plots_html = ""
@@ -962,7 +1117,7 @@ def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=Fals
     #plt.show()
 
 
-def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning_data_comparison", export_pdf=False, translation_only=False):
+def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning_data_comparison", export_pdf=False, translation_only=False, side_filter='Both'):
     """
     Read and compare planning configuration from three XML files.
     Shows deviations between the three datasets.
@@ -970,6 +1125,39 @@ def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning
     import matplotlib.pyplot as plt
     import matplotlib
     matplotlib.use('Agg')  # Use non-interactive backend for HTML generation
+    
+    # Determine actual side filter based on mode
+    actual_side_filter = side_filter
+    if side_filter == 'Auto':
+        xml_paths = [xml_path1, xml_path2, xml_path3]
+        is_consistent, detected_side, sides_list = validate_patient_sides(xml_paths, output_prefix)
+        
+        if not is_consistent:
+            print(f"Error: Auto mode requires consistent PatientSide across all files.")
+            print(f"Found inconsistent sides: {sides_list}")
+            print(f"Files: {xml_paths}")
+            print(f"Falling back to 'Both' mode.")
+            actual_side_filter = 'Both'
+        elif detected_side is None:
+            print(f"Warning: Could not determine PatientSide from any file. Using 'Both' mode.")
+            actual_side_filter = 'Both'
+        else:
+            actual_side_filter = detected_side
+            print(f"Info: Auto-detected consistent PatientSide '{detected_side}' across all files. Filtering data accordingly.")
+    
+    # Validate patient sides consistency across files
+    elif side_filter != 'Both':
+        xml_paths = [xml_path1, xml_path2, xml_path3]
+        is_consistent, detected_side, sides_list = validate_patient_sides(xml_paths, output_prefix)
+        
+        if not is_consistent:
+            print(f"Warning: Inconsistent PatientSide values across files: {sides_list}")
+            print(f"Files: {xml_paths}")
+        else:
+            if detected_side and detected_side != side_filter:
+                print(f"Info: Detected PatientSide '{detected_side}' in files, but filtering for '{side_filter}'. Data will be filtered accordingly.")
+            elif detected_side:
+                print(f"Info: Confirmed PatientSide '{detected_side}' across all files matches filter '{side_filter}'.")
     
     # Helper function to extract data from a single XML file
     def extract_data_from_xml(xml_path):
@@ -983,29 +1171,8 @@ def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning
                 return elem.attrib['value']
             return None
         
-        tags_xpaths = [
-            ("S3FemoralSphere_R_matrix", ".//s3Shape[@name='S3FemoralSphere_R']/matrix4[@name='mat']"),
-            ("S3FemoralSphere_R_diameter", ".//s3Shape[@name='S3FemoralSphere_R']/scalar[@name='diameter']"),
-            ("S3AcetabularHSphere_R_matrix", ".//s3Shape[@name='S3AcetabularHSphere_R']/matrix4[@name='mat']"),
-            ("S3AcetabularHSphere_R_diameter", ".//s3Shape[@name='S3AcetabularHSphere_R']/scalar[@name='diameter']"),
-            ("S3FemoralSphere_L_matrix", ".//s3Shape[@name='S3FemoralSphere_L']/matrix4[@name='mat']"),
-            ("S3FemoralSphere_L_diameter", ".//s3Shape[@name='S3FemoralSphere_L']/scalar[@name='diameter']"),
-            ("S3AcetabularHSphere_L_matrix", ".//s3Shape[@name='S3AcetabularHSphere_L']/matrix4[@name='mat']"),
-            ("S3AcetabularHSphere_L_diameter", ".//s3Shape[@name='S3AcetabularHSphere_L']/scalar[@name='diameter']"),
-            ("S3GreaterTroch_R_matrix", ".//s3Shape[@name='S3GreaterTroch_R']/matrix4[@name='mat']"),
-            ("S3GreaterTroch_L_matrix", ".//s3Shape[@name='S3GreaterTroch_L']/matrix4[@name='mat']"),
-            ("S3TopLesserTroch_R_matrix", ".//s3Shape[@name='S3TopLesserTroch_R']/matrix4[@name='mat']"),
-            ("S3TopLesserTroch_L_matrix", ".//s3Shape[@name='S3TopLesserTroch_L']/matrix4[@name='mat']"),
-            ("S3BCP_R_matrix", ".//s3Shape[@name='S3BCP_R']/matrix4[@name='mat']"),
-            ("S3BCP_R_p0", ".//s3Shape[@name='S3BCP_R']/vector3[@name='p0']"),
-            ("S3BCP_R_p1", ".//s3Shape[@name='S3BCP_R']/vector3[@name='p1']"),
-            ("S3BCP_L_matrix", ".//s3Shape[@name='S3BCP_L']/matrix4[@name='mat']"),
-            ("S3BCP_L_p0", ".//s3Shape[@name='S3BCP_L']/vector3[@name='p0']"),
-            ("S3BCP_L_p1", ".//s3Shape[@name='S3BCP_L']/vector3[@name='p1']"),
-            ("S3AppFrame_matrix", ".//s3Shape[@name='S3AppFrame']/matrix4[@name='mat']"),
-            ("S3FemurFrame_R_matrix", ".//s3Shape[@name='S3FemurFrame_R']/matrix4[@name='mat']"),
-            ("S3FemurFrame_L_matrix", ".//s3Shape[@name='S3FemurFrame_L']/matrix4[@name='mat']"),
-        ]
+        # Use centralized definition of tags and XPaths (full list for comparison)
+        tags_xpaths = TAGS_XPATHS
         
         for tag, xpath in tags_xpaths:
             elem = root.find(xpath)
@@ -1039,7 +1206,7 @@ def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning
         return
     
     # Create individual comparison plots for each measure
-    plot_files = create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix, translation_only)
+    plot_files = create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix, translation_only, actual_side_filter)
     
     # Generate HTML content with individual plots
     plots_html = ""
@@ -1212,8 +1379,8 @@ def generate_comparison_stats(data1, data2, data3, common_tags):
     
     # Add frontal plane angle comparisons
     angle_pairs = [
-        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Side Frontal Plane Angle'),
-        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Side Frontal Plane Angle')
+        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Femoral Anteversion Angle'),
+        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Femoral Anteversion Angle')
     ]
     
     for matrix1_tag, matrix2_tag, title in angle_pairs:
@@ -1443,17 +1610,20 @@ if __name__ == "__main__":
     parser.add_argument("--pdf", action="store_true", help="Also export results to PDF format")
     parser.add_argument("--translation-only", action="store_true", 
                        help="Only display translation (positional) data from matrices, skip rotation and other measurements")
+    parser.add_argument("--side", choices=['Left', 'Right', 'Both', 'Auto'], default='Both',
+                       help="Filter data by patient side: Left, Right, Both, or Auto (detect from XML) - default: Both")
     args = parser.parse_args()
 
     if args.compare:
         # Compare three XML files
         output_prefix = args.output if args.output else "planning_data_comparison"
         comparePlanningData(args.compare[0], args.compare[1], args.compare[2], output_prefix, 
-                          export_pdf=args.pdf, translation_only=args.translation_only)
+                          export_pdf=args.pdf, translation_only=args.translation_only, side_filter=args.side)
     elif args.xml_path:
         # Single file analysis
         output_prefix = args.output if args.output else "planning_data"
-        extractPlanningData(args.xml_path, output_prefix, export_pdf=args.pdf, translation_only=args.translation_only)
+        extractPlanningData(args.xml_path, output_prefix, export_pdf=args.pdf, 
+                          translation_only=args.translation_only, side_filter=args.side)
     else:
         print("Please provide either --xml_path for single file analysis or --compare with three XML file paths")
         print("Examples:")
@@ -1461,6 +1631,8 @@ if __name__ == "__main__":
         print("  python excerpts.py --xml_path planning.xml --output my_analysis")
         print("  python excerpts.py --xml_path planning.xml --pdf")
         print("  python excerpts.py --xml_path planning.xml --translation-only")
+        print("  python excerpts.py --xml_path planning.xml --side Left")
         print("  python excerpts.py --compare plan1.xml plan2.xml plan3.xml")
         print("  python excerpts.py --compare plan1.xml plan2.xml plan3.xml --output comparison_study --pdf")
         print("  python excerpts.py --compare plan1.xml plan2.xml plan3.xml --translation-only")
+        print("  python excerpts.py --compare plan1.xml plan2.xml plan3.xml --side Right")

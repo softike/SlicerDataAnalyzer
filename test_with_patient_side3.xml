@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <PatientSide>Right</PatientSide>
+  <s3Shape name="S3FemoralSphere_R">
+    <matrix4 name="mat" value="0.95 0.1 0.0 0.0 0.0 0.95 0.1 0.0 0.0 0.0 0.95 0.0 0.0 0.0 0.0 1.0"/>
+    <scalar name="diameter" value="27.5"/>
+  </s3Shape>
+  <s3Shape name="S3FemoralSphere_L">
+    <matrix4 name="mat" value="1.1 0.05 0.0 0.0 0.0 1.1 0.05 0.0 0.0 0.0 1.1 0.0 0.0 0.0 0.0 1.0"/>
+    <scalar name="diameter" value="26.5"/>
+  </s3Shape>
+  <s3Shape name="S3BCP_R">
+    <matrix4 name="mat" value="0.9 0.1 0.0 0.0 0.0 0.9 0.1 0.0 0.0 0.0 0.9 0.0 0.0 0.0 0.0 1.0"/>
+    <vector3 name="p0" value="9.5 19.5 29.5"/>
+  </s3Shape>
+  <s3Shape name="S3BCP_L">
+    <matrix4 name="mat" value="1.05 0.1 0.0 0.0 0.0 1.05 0.1 0.0 0.0 0.0 1.05 0.0 0.0 0.0 0.0 1.0"/>
+    <vector3 name="p0" value="14.5 24.5 34.5"/>
+  </s3Shape>
+</root>
