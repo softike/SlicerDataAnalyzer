@@ -7,6 +7,5 @@
   <s3Shape name="S3BCP_R">
     <matrix4 name="mat" value="1.0 0.0 0.0 0.0 0.0 1.1 0.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 0.0 1.0"/>
     <vector3 name="p0" value="10.7 20.5 30.3"/>
-    <vector3 name="p1" value="15.4 26.0 35.8"/>
   </s3Shape>
 </root>

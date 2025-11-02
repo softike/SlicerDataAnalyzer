@@ -8,9 +8,47 @@ from pathlib import Path
 dcm_path = r"C:\\Users\\Coder\\Desktop\\001-M-30\\001-M-30\\Dataset"
 
 ##
-def export_to_pdf(html_content, plot_filename, output_prefix, title="Planning Data Report"):
+def calculate_frontal_plane_angle(matrix1_str, matrix2_str):
+    """
+    Calculate the angle between the frontal planes (AP planes) of two 4x4 transformation matrices.
+    The frontal plane is defined by the Y-Z plane (normal vector along X-axis).
+    
+    Args:
+        matrix1_str: String representation of first 4x4 matrix
+        matrix2_str: String representation of second 4x4 matrix
+    
+    Returns:
+        angle_degrees: Angle between the frontal planes in degrees
+    """
+    # Parse matrices
+    mat1 = np.array([float(x) for x in matrix1_str.split()]).reshape((4, 4))
+    mat2 = np.array([float(x) for x in matrix2_str.split()]).reshape((4, 4))
+    
+    # Extract rotation parts (3x3)
+    rot1 = mat1[:3, :3]
+    rot2 = mat2[:3, :3]
+    
+    # Get the X-axis vectors (first columns) which are normal to the frontal plane
+    # In a transformation matrix, the first column represents the transformed X-axis
+    normal1 = rot1[:, 0]  # X-axis of first coordinate system
+    normal2 = rot2[:, 0]  # X-axis of second coordinate system
+    
+    # Normalize the vectors
+    normal1 = normal1 / np.linalg.norm(normal1)
+    normal2 = normal2 / np.linalg.norm(normal2)
+    
+    # Calculate angle between normal vectors using dot product
+    dot_product = np.clip(np.dot(normal1, normal2), -1.0, 1.0)
+    angle_radians = np.arccos(abs(dot_product))  # Use abs to get acute angle
+    angle_degrees = np.degrees(angle_radians)
+    
+    return angle_degrees
+
+##
+def export_to_pdf(html_content, plot_files, output_prefix, title="Planning Data Report"):
     """
     Export HTML content and plots to PDF using weasyprint or pdfkit.
+    plot_files can be a single filename string or a list of plot info dictionaries.
     Falls back to matplotlib PDF if web-based libraries are not available.
     """
     pdf_filename = f"{output_prefix}.pdf"
@@ -21,24 +59,65 @@ def export_to_pdf(html_content, plot_filename, output_prefix, title="Planning Da
     # Method 1: Try weasyprint (recommended for HTML to PDF)
     try:
         from weasyprint import HTML, CSS
-        from weasyprint.css import get_all_computed_styles
-        
-        # Create a complete HTML document with embedded plot
-        if os.path.exists(plot_filename):
-            import base64
-            with open(plot_filename, 'rb') as img_file:
-                img_data = base64.b64encode(img_file.read()).decode()
-                img_tag = f'<img src="data:image/png;base64,{img_data}" style="max-width: 100%; height: auto;">'
+        import base64
+        import re
+
+        # Build a PDF-specific HTML that places 2 plots per page and summary on separate page
+        pdf_css = """
+        @page { size: A4; margin: 0.75in; }
+        body { font-family: Arial, sans-serif; color: #333; }
+        .pdf-page { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 0.5in; page-break-after: always; }
+        .pdf-plot { width: 49%; }
+        .pdf-plot img { width: 100%; height: auto; display: block; }
+        .summary-page { page-break-before: always; }
+        .summary-card { background: #f8f9fa; padding: 12px; border-radius: 6px; border:1px solid #ddd; }
+        """
+
+        # Try extracting any existing stats/summary section from html_content
+        summary_html = None
+        m = re.search(r'<div class="stats-section">(.*?)</div>', html_content, re.S)
+        if not m:
+            m = re.search(r'<div class="data-summary">(.*?)</div>', html_content, re.S)
+        if m:
+            summary_html = m.group(1)
+
+        # Construct body with 2 plots per page
+        body_parts = []
+        if isinstance(plot_files, str):
+            plot_list = [{'filename': plot_files, 'title': ''}]
         else:
-            img_tag = f'<p>Plot file not found: {plot_filename}</p>'
-        
-        # Replace the image src in HTML with base64 data
-        html_for_pdf = html_content.replace(f'src="{plot_filename}"', f'src="data:image/png;base64,{img_data}"')
-        
+            plot_list = plot_files
+
+        # embed images as base64
+        def img_tag_from_file(path, alt="plot"):
+            if not os.path.exists(path):
+                return f'<div class="pdf-plot"><p>Missing file: {path}</p></div>'
+            with open(path, 'rb') as f:
+                data = base64.b64encode(f.read()).decode()
+            return f'<div class="pdf-plot"><img src="data:image/png;base64,{data}" alt="{alt}"></div>'
+
+        for i in range(0, len(plot_list), 2):
+            left = plot_list[i]
+            right = plot_list[i+1] if i+1 < len(plot_list) else None
+            left_tag = img_tag_from_file(left['filename'], left.get('title',''))
+            right_tag = img_tag_from_file(right['filename'], right.get('title','')) if right else ''
+            page_html = f'<div class="pdf-page">{left_tag}{right_tag}</div>'
+            body_parts.append(page_html)
+
+        # summary page
+        if summary_html:
+            summary_block = f'<div class="summary-page"><div class="summary-card">{summary_html}</div></div>'
+        else:
+            # fallback: simple filenames list
+            items = ''.join([f'<li>{p["filename"]}</li>' for p in plot_list])
+            summary_block = f'<div class="summary-page"><div class="summary-card"><h2>Generated Plots</h2><ul>{items}</ul></div></div>'
+
+        html_for_pdf = f'<!doctype html><html><head><meta charset="utf-8"><style>{pdf_css}</style></head><body>' + '\n'.join(body_parts) + summary_block + '</body></html>'
+
         HTML(string=html_for_pdf).write_pdf(pdf_filename)
         print(f"PDF exported using weasyprint: {pdf_filename}")
         success = True
-        
+
     except ImportError:
         print("weasyprint not available, trying pdfkit...")
     except Exception as e:
@@ -48,17 +127,57 @@ def export_to_pdf(html_content, plot_filename, output_prefix, title="Planning Da
     if not success:
         try:
             import pdfkit
-            
-            # Create temporary HTML file with absolute paths
+
+            # Build similar PDF-specific HTML as for weasyprint but using file:// paths
+            pdf_css = """
+            @page { size: A4; margin: 0.75in; }
+            body { font-family: Arial, sans-serif; color: #333; }
+            .pdf-page { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 0.5in; page-break-after: always; }
+            .pdf-plot { width: 49%; }
+            .pdf-plot img { width: 100%; height: auto; display: block; }
+            .summary-page { page-break-before: always; }
+            .summary-card { background: #f8f9fa; padding: 12px; border-radius: 6px; border:1px solid #ddd; }
+            """
+
+            if isinstance(plot_files, str):
+                plot_list = [{'filename': plot_files, 'title': ''}]
+            else:
+                plot_list = plot_files
+
+            body_parts = []
+            for i in range(0, len(plot_list), 2):
+                left = plot_list[i]
+                right = plot_list[i+1] if i+1 < len(plot_list) else None
+                left_path = os.path.abspath(left['filename'])
+                left_tag = f'<div class="pdf-plot"><img src="file://{left_path}" alt="{left.get("title","")}"></div>'
+                right_tag = ''
+                if right:
+                    right_path = os.path.abspath(right['filename'])
+                    right_tag = f'<div class="pdf-plot"><img src="file://{right_path}" alt="{right.get("title","")}"></div>'
+                page_html = f'<div class="pdf-page">{left_tag}{right_tag}</div>'
+                body_parts.append(page_html)
+
+            # try extracting summary from html_content
+            import re
+            summary_html = None
+            m = re.search(r'<div class="stats-section">(.*?)</div>', html_content, re.S)
+            if not m:
+                m = re.search(r'<div class="data-summary">(.*?)</div>', html_content, re.S)
+            if m:
+                summary_html = m.group(1)
+
+            if summary_html:
+                summary_block = f'<div class="summary-page"><div class="summary-card">{summary_html}</div></div>'
+            else:
+                items = ''.join([f'<li>{p["filename"]}</li>' for p in plot_list])
+                summary_block = f'<div class="summary-page"><div class="summary-card"><h2>Generated Plots</h2><ul>{items}</ul></div></div>'
+
+            html_for_pdf = f'<!doctype html><html><head><meta charset="utf-8"><style>{pdf_css}</style></head><body>' + '\n'.join(body_parts) + summary_block + '</body></html>'
+
             temp_html = f"{output_prefix}_temp.html"
-            
-            # Convert relative image path to absolute
-            abs_plot_path = os.path.abspath(plot_filename)
-            html_for_pdf = html_content.replace(f'src="{plot_filename}"', f'src="file://{abs_plot_path}"')
-            
             with open(temp_html, 'w') as f:
                 f.write(html_for_pdf)
-            
+
             options = {
                 'page-size': 'A4',
                 'margin-top': '0.75in',
@@ -69,15 +188,15 @@ def export_to_pdf(html_content, plot_filename, output_prefix, title="Planning Da
                 'no-outline': None,
                 'enable-local-file-access': None
             }
-            
+
             pdfkit.from_file(temp_html, pdf_filename, options=options)
-            
+
             # Clean up temporary file
             os.remove(temp_html)
-            
+
             print(f"PDF exported using pdfkit: {pdf_filename}")
             success = True
-            
+
         except ImportError:
             print("pdfkit not available, trying matplotlib PDF...")
         except Exception as e:
@@ -104,13 +223,68 @@ def export_to_pdf(html_content, plot_filename, output_prefix, title="Planning Da
                 pdf.savefig(fig, bbox_inches='tight')
                 plt.close(fig)
                 
-                # Add the main plot if it exists
-                if os.path.exists(plot_filename):
-                    fig = plt.figure(figsize=(11, 8.5))
-                    img = plt.imread(plot_filename)
-                    plt.imshow(img)
-                    plt.axis('off')
-                    plt.title(title, fontsize=16, pad=20)
+                # Add individual plots two per page
+                if isinstance(plot_files, str):
+                    plot_list = [{'filename': plot_files, 'title': ''}]
+                else:
+                    plot_list = plot_files
+
+                # pages with 2 plots each
+                for i in range(0, len(plot_list), 2):
+                    left = plot_list[i]
+                    right = plot_list[i+1] if i+1 < len(plot_list) else None
+                    fig, axes = plt.subplots(1, 2, figsize=(11, 8.5))
+                    # left
+                    left_ax = axes[0]
+                    if os.path.exists(left['filename']):
+                        img = plt.imread(left['filename'])
+                        left_ax.imshow(img)
+                        left_ax.set_title(left.get('title',''))
+                    else:
+                        left_ax.text(0.5, 0.5, f"Missing: {left['filename']}", ha='center')
+                    left_ax.axis('off')
+
+                    # right
+                    if right:
+                        right_ax = axes[1]
+                        if os.path.exists(right['filename']):
+                            img = plt.imread(right['filename'])
+                            right_ax.imshow(img)
+                            right_ax.set_title(right.get('title',''))
+                        else:
+                            right_ax.text(0.5, 0.5, f"Missing: {right['filename']}", ha='center')
+                        right_ax.axis('off')
+                    else:
+                        # hide second axis
+                        axes[1].axis('off')
+
+                    pdf.savefig(fig, bbox_inches='tight')
+                    plt.close(fig)
+
+                # Add a summary page (text extracted from HTML if possible)
+                import re
+                summary_html = None
+                m = re.search(r'<div class="stats-section">(.*?)</div>', html_content, re.S)
+                if not m:
+                    m = re.search(r'<div class="data-summary">(.*?)</div>', html_content, re.S)
+                if m:
+                    summary_html = m.group(1)
+
+                # convert HTML to plain text for matplotlib rendering
+                def html_to_text(h):
+                    # naive tag stripper
+                    import re
+                    text = re.sub(r'<script.*?>.*?</script>', '', h, flags=re.S)
+                    text = re.sub(r'<[^>]+>', '', text)
+                    # normalize whitespace
+                    text = re.sub(r'\s+', ' ', text).strip()
+                    return text
+
+                if summary_html:
+                    text = html_to_text(summary_html)
+                    fig, ax = plt.subplots(figsize=(8.5, 11))
+                    ax.text(0.01, 0.99, text, va='top', ha='left', wrap=True, fontsize=9)
+                    ax.axis('off')
                     pdf.savefig(fig, bbox_inches='tight')
                     plt.close(fig)
             
@@ -131,10 +305,13 @@ def export_to_pdf(html_content, plot_filename, output_prefix, title="Planning Da
     return success, pdf_filename if success else None
 
 ##
-def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix):
+def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix, translation_only=False):
     """
     Create individual plots for each measure and save them as separate image files.
     Returns a list of dictionaries containing plot information.
+    
+    Args:
+        translation_only: If True, only create translation plots from matrices (skip rotation, vectors, scalars)
     """
     import matplotlib.pyplot as plt
     import matplotlib
@@ -151,32 +328,34 @@ def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix
         rotation_part = mat[:3, :3]
         translation_part = mat[3, :3]
         
-        # Plot rotation part as heatmap
-        fig, ax = plt.subplots(figsize=(8, 6))
-        im = ax.imshow(rotation_part, cmap='viridis', interpolation='nearest')
-        ax.set_title(f"{tag} (Rotation 3x3)", fontsize=14, pad=20)
-        ax.set_xlabel("Column")
-        ax.set_ylabel("Row")
-        plt.colorbar(im, ax=ax)
+        # Only create rotation plots if not translation_only mode
+        if not translation_only:
+            # Plot rotation part as heatmap
+            fig, ax = plt.subplots(figsize=(8, 6))
+            im = ax.imshow(rotation_part, cmap='viridis', interpolation='nearest')
+            ax.set_title(f"{tag} (Rotation 3x3)", fontsize=14, pad=20)
+            ax.set_xlabel("Column")
+            ax.set_ylabel("Row")
+            plt.colorbar(im, ax=ax)
+            
+            # Add value annotations
+            for i in range(3):
+                for j in range(3):
+                    ax.text(j, i, f'{rotation_part[i, j]:.3f}', 
+                           ha='center', va='center', color='white' if rotation_part[i, j] < rotation_part.mean() else 'black')
+            
+            rotation_filename = f"{output_prefix}_{tag}_rotation.png"
+            plt.savefig(rotation_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            plot_files.append({
+                'filename': rotation_filename,
+                'title': f"{tag} (Rotation)",
+                'type': 'matrix_rotation',
+                'tag': tag
+            })
         
-        # Add value annotations
-        for i in range(3):
-            for j in range(3):
-                ax.text(j, i, f'{rotation_part[i, j]:.3f}', 
-                       ha='center', va='center', color='white' if rotation_part[i, j] < rotation_part.mean() else 'black')
-        
-        rotation_filename = f"{output_prefix}_{tag}_rotation.png"
-        plt.savefig(rotation_filename, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        plot_files.append({
-            'filename': rotation_filename,
-            'title': f"{tag} (Rotation)",
-            'type': 'matrix_rotation',
-            'tag': tag
-        })
-        
-        # Plot translation part as bar chart
+        # Plot translation part as bar chart (always included, this is the positional data)
         fig, ax = plt.subplots(figsize=(8, 6))
         bars = ax.bar(['X', 'Y', 'Z'], translation_part, color=['#ff7f7f', '#7fff7f', '#7f7fff'], alpha=0.8)
         ax.set_title(f"{tag} (Translation)", fontsize=14, pad=20)
@@ -199,42 +378,44 @@ def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix
             'tag': tag
         })
 
-    # Create plots for vectors
-    for tag, value in vector_data:
-        vec = np.array([float(x) for x in value.split()])
-        
-        fig, ax = plt.subplots(figsize=(8, 6))
-        bars = ax.bar(range(len(vec)), vec, color='skyblue', alpha=0.8)
-        ax.set_title(f"{tag} (Vector)", fontsize=14, pad=20)
-        ax.set_xlabel("Component Index")
-        ax.set_ylabel("Value")
-        ax.grid(True, alpha=0.3)
-        
-        # Add value labels on bars
-        for i, (bar, val) in enumerate(zip(bars, vec)):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + abs(max(vec))*0.01,
-                   f'{val:.3f}', ha='center', va='bottom', fontsize=10)
-        
-        vector_filename = f"{output_prefix}_{tag}_vector.png"
-        plt.savefig(vector_filename, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        plot_files.append({
-            'filename': vector_filename,
-            'title': f"{tag} (Vector)",
-            'type': 'vector',
-            'tag': tag
-        })
+    # Skip vectors and scalars in translation_only mode (only matrix translations are positional)
+    if not translation_only:
+        # Create plots for vectors
+        for tag, value in vector_data:
+            vec = np.array([float(x) for x in value.split()])
+            
+            fig, ax = plt.subplots(figsize=(8, 6))
+            bars = ax.bar(range(len(vec)), vec, color='skyblue', alpha=0.8)
+            ax.set_title(f"{tag} (Vector)", fontsize=14, pad=20)
+            ax.set_xlabel("Component Index")
+            ax.set_ylabel("Value")
+            ax.grid(True, alpha=0.3)
+            
+            # Add value labels on bars
+            for i, (bar, val) in enumerate(zip(bars, vec)):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + abs(max(vec))*0.01,
+                       f'{val:.3f}', ha='center', va='bottom', fontsize=10)
+            
+            vector_filename = f"{output_prefix}_{tag}_vector.png"
+            plt.savefig(vector_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            plot_files.append({
+                'filename': vector_filename,
+                'title': f"{tag} (Vector)",
+                'type': 'vector',
+                'tag': tag
+            })
 
-    # Create plots for scalars
-    for tag, value in scalar_data:
-        val = float(value)
-        
-        fig, ax = plt.subplots(figsize=(6, 6))
-        bar = ax.bar([tag.split('_')[-2]], [val], color='lightcoral', alpha=0.8, width=0.5)
-        ax.set_title(f"{tag} (Scalar)", fontsize=14, pad=20)
-        ax.set_ylabel("Value")
-        ax.grid(True, alpha=0.3)
+        # Create plots for scalars
+        for tag, value in scalar_data:
+            val = float(value)
+            
+            fig, ax = plt.subplots(figsize=(6, 6))
+            bar = ax.bar([tag.split('_')[-2]], [val], color='lightcoral', alpha=0.8, width=0.5)
+            ax.set_title(f"{tag} (Scalar)", fontsize=14, pad=20)
+            ax.set_ylabel("Value")
+            ax.grid(True, alpha=0.3)
         
         # Add value label on bar
         ax.text(bar[0].get_x() + bar[0].get_width()/2, bar[0].get_height() + abs(val)*0.01,
@@ -254,13 +435,77 @@ def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix
             'tag': tag
         })
     
+    # Calculate and plot frontal plane angles between specific matrix pairs
+    matrix_dict = {tag: value for tag, value in matrix_data}
+    
+    # Define the pairs to compare
+    angle_pairs = [
+        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Side Frontal Plane Angle'),
+        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Side Frontal Plane Angle')
+    ]
+    
+    for matrix1_tag, matrix2_tag, title in angle_pairs:
+        if matrix1_tag in matrix_dict and matrix2_tag in matrix_dict:
+            angle = calculate_frontal_plane_angle(matrix_dict[matrix1_tag], matrix_dict[matrix2_tag])
+            
+            # Create angle visualization plot
+            fig, ax = plt.subplots(figsize=(8, 6))
+            
+            # Create a simple bar chart showing the angle
+            bar = ax.bar([f'{matrix1_tag}\nvs\n{matrix2_tag}'], [angle], 
+                        color='orange', alpha=0.8, width=0.6)
+            ax.set_title(f"{title}", fontsize=14, pad=20)
+            ax.set_ylabel("Angle (degrees)")
+            ax.grid(True, alpha=0.3)
+            ax.set_ylim(0, max(90, angle * 1.2))
+            
+            # Add value label on bar
+            ax.text(bar[0].get_x() + bar[0].get_width()/2, bar[0].get_height() + angle*0.02,
+                   f'{angle:.2f}°', ha='center', va='bottom', fontsize=14, weight='bold')
+            
+            # Add interpretation text
+            if angle < 10:
+                interpretation = "Very Small Angle"
+                color = 'green'
+            elif angle < 30:
+                interpretation = "Small Angle"
+                color = 'yellow'
+            elif angle < 60:
+                interpretation = "Moderate Angle"
+                color = 'orange'
+            else:
+                interpretation = "Large Angle"
+                color = 'red'
+                
+            ax.text(0.02, 0.98, f'Interpretation: {interpretation}', 
+                   transform=ax.transAxes, va='top', ha='left',
+                   bbox=dict(boxstyle='round', facecolor=color, alpha=0.7))
+            
+            # Remove x-tick labels for cleaner look
+            ax.set_xticklabels([])
+            
+            angle_filename = f"{output_prefix}_{matrix1_tag}_{matrix2_tag}_angle.png"
+            plt.savefig(angle_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            plot_files.append({
+                'filename': angle_filename,
+                'title': f"{title}",
+                'type': 'frontal_plane_angle',
+                'tag': f"{matrix1_tag}_{matrix2_tag}",
+                'angle': angle
+            })
+    
     return plot_files
 
 ##
-def create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix):
+def create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix, translation_only=False):
     """
     Create individual comparison plots for each measure from three datasets.
     Returns a list of dictionaries containing plot information.
+    
+    Args:
+        translation_only: If True, only create translation comparison plots from matrices
     """
     import matplotlib.pyplot as plt
     import matplotlib
@@ -280,41 +525,43 @@ def create_individual_comparison_plots(data1, data2, data3, common_tags, output_
         mat2 = np.array([float(x) for x in data2[tag].split()]).reshape((4, 4))
         mat3 = np.array([float(x) for x in data3[tag].split()]).reshape((4, 4))
         
-        # Extract rotation parts (3x3)
-        rot1, rot2, rot3 = mat1[:3, :3], mat2[:3, :3], mat3[:3, :3]
+        # Only create rotation plots if not translation_only mode
+        if not translation_only:
+            # Extract rotation parts (3x3)
+            rot1, rot2, rot3 = mat1[:3, :3], mat2[:3, :3], mat3[:3, :3]
+            
+            # Calculate rotation deviations
+            rot_dev12 = np.abs(rot1 - rot2)
+            rot_dev13 = np.abs(rot1 - rot3)
+            rot_dev23 = np.abs(rot2 - rot3)
+            max_rot_dev = np.maximum(np.maximum(rot_dev12, rot_dev13), rot_dev23)
+            
+            # Plot rotation deviation heatmap
+            fig, ax = plt.subplots(figsize=(8, 6))
+            im = ax.imshow(max_rot_dev, cmap='Reds', interpolation='nearest')
+            ax.set_title(f"{tag} (Rotation Deviation)", fontsize=14, pad=20)
+            ax.set_xlabel("Column")
+            ax.set_ylabel("Row")
+            plt.colorbar(im, ax=ax, label='Max Deviation')
+            
+            # Add value annotations
+            for i in range(3):
+                for j in range(3):
+                    ax.text(j, i, f'{max_rot_dev[i, j]:.4f}', 
+                           ha='center', va='center', color='white' if max_rot_dev[i, j] > max_rot_dev.mean() else 'black')
+            
+            rotation_dev_filename = f"{output_prefix}_{tag}_rotation_deviation.png"
+            plt.savefig(rotation_dev_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            plot_files.append({
+                'filename': rotation_dev_filename,
+                'title': f"{tag} (Rotation Deviation)",
+                'type': 'matrix_rotation_comparison',
+                'tag': tag
+            })
         
-        # Calculate rotation deviations
-        rot_dev12 = np.abs(rot1 - rot2)
-        rot_dev13 = np.abs(rot1 - rot3)
-        rot_dev23 = np.abs(rot2 - rot3)
-        max_rot_dev = np.maximum(np.maximum(rot_dev12, rot_dev13), rot_dev23)
-        
-        # Plot rotation deviation heatmap
-        fig, ax = plt.subplots(figsize=(8, 6))
-        im = ax.imshow(max_rot_dev, cmap='Reds', interpolation='nearest')
-        ax.set_title(f"{tag} (Rotation Deviation)", fontsize=14, pad=20)
-        ax.set_xlabel("Column")
-        ax.set_ylabel("Row")
-        plt.colorbar(im, ax=ax, label='Max Deviation')
-        
-        # Add value annotations
-        for i in range(3):
-            for j in range(3):
-                ax.text(j, i, f'{max_rot_dev[i, j]:.4f}', 
-                       ha='center', va='center', color='white' if max_rot_dev[i, j] > max_rot_dev.mean() else 'black')
-        
-        rotation_dev_filename = f"{output_prefix}_{tag}_rotation_deviation.png"
-        plt.savefig(rotation_dev_filename, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        plot_files.append({
-            'filename': rotation_dev_filename,
-            'title': f"{tag} (Rotation Deviation)",
-            'type': 'matrix_rotation_comparison',
-            'tag': tag
-        })
-        
-        # Extract translation parts
+        # Extract translation parts (always included in comparison)
         trans1, trans2, trans3 = mat1[3, :3], mat2[3, :3], mat3[3, :3]
         
         # Plot translation comparison
@@ -351,82 +598,139 @@ def create_individual_comparison_plots(data1, data2, data3, common_tags, output_
             'tag': tag
         })
     
-    # Compare vectors
-    for tag in vector_tags:
-        vec1 = np.array([float(x) for x in data1[tag].split()])
-        vec2 = np.array([float(x) for x in data2[tag].split()])
-        vec3 = np.array([float(x) for x in data3[tag].split()])
+    # Skip vectors and scalars in translation_only mode (only matrix translations are positional)
+    if not translation_only:
+        # Compare vectors
+        for tag in vector_tags:
+            vec1 = np.array([float(x) for x in data1[tag].split()])
+            vec2 = np.array([float(x) for x in data2[tag].split()])
+            vec3 = np.array([float(x) for x in data3[tag].split()])
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            x_pos = np.arange(len(vec1))
+            width = 0.25
+            
+            bars1 = ax.bar(x_pos - width, vec1, width, label='File 1', alpha=0.8, color='#ff9999')
+            bars2 = ax.bar(x_pos, vec2, width, label='File 2', alpha=0.8, color='#99ff99')
+            bars3 = ax.bar(x_pos + width, vec3, width, label='File 3', alpha=0.8, color='#9999ff')
+            
+            ax.set_title(f"{tag} (Vector Comparison)", fontsize=14, pad=20)
+            ax.set_xlabel("Component")
+            ax.set_ylabel("Value")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            
+            # Add value labels
+            for bars, values in zip([bars1, bars2, bars3], [vec1, vec2, vec3]):
+                for bar, val in zip(bars, values):
+                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + abs(max(vec1.max(), vec2.max(), vec3.max()))*0.01,
+                           f'{val:.3f}', ha='center', va='bottom', fontsize=8)
+            
+            vector_comp_filename = f"{output_prefix}_{tag}_vector_comparison.png"
+            plt.savefig(vector_comp_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            plot_files.append({
+                'filename': vector_comp_filename,
+                'title': f"{tag} (Vector Comparison)",
+                'type': 'vector_comparison',
+                'tag': tag
+            })
         
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        x_pos = np.arange(len(vec1))
-        width = 0.25
-        
-        bars1 = ax.bar(x_pos - width, vec1, width, label='File 1', alpha=0.8, color='#ff9999')
-        bars2 = ax.bar(x_pos, vec2, width, label='File 2', alpha=0.8, color='#99ff99')
-        bars3 = ax.bar(x_pos + width, vec3, width, label='File 3', alpha=0.8, color='#9999ff')
-        
-        ax.set_title(f"{tag} (Vector Comparison)", fontsize=14, pad=20)
-        ax.set_xlabel("Component")
-        ax.set_ylabel("Value")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        # Add value labels
-        for bars, values in zip([bars1, bars2, bars3], [vec1, vec2, vec3]):
+        # Compare scalars
+        for tag in scalar_tags:
+            val1 = float(data1[tag])
+            val2 = float(data2[tag])
+            val3 = float(data3[tag])
+            
+            fig, ax = plt.subplots(figsize=(8, 6))
+            
+            values = [val1, val2, val3]
+            labels = ['File 1', 'File 2', 'File 3']
+            colors = ['#ffcccc', '#ccffcc', '#ccccff']
+            
+            bars = ax.bar(labels, values, color=colors, alpha=0.8)
+            ax.set_title(f"{tag} (Scalar Comparison)", fontsize=14, pad=20)
+            ax.set_ylabel("Value")
+            ax.grid(True, alpha=0.3)
+            
+            # Add value labels on bars
             for bar, val in zip(bars, values):
-                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + abs(max(vec1.max(), vec2.max(), vec3.max()))*0.01,
-                       f'{val:.3f}', ha='center', va='bottom', fontsize=8)
-        
-        vector_comp_filename = f"{output_prefix}_{tag}_vector_comparison.png"
-        plt.savefig(vector_comp_filename, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        plot_files.append({
-            'filename': vector_comp_filename,
-            'title': f"{tag} (Vector Comparison)",
-            'type': 'vector_comparison',
-            'tag': tag
-        })
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(values)*0.01,
+                       f'{val:.4f}', ha='center', va='bottom', fontsize=10, weight='bold')
+            
+            # Add deviation information
+            max_dev = max(abs(val1-val2), abs(val1-val3), abs(val2-val3))
+            ax.text(0.02, 0.98, f'Max Deviation: {max_dev:.4f}', 
+                   transform=ax.transAxes, va='top', ha='left',
+                   bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
+            
+            scalar_comp_filename = f"{output_prefix}_{tag}_scalar_comparison.png"
+            plt.savefig(scalar_comp_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            plot_files.append({
+                'filename': scalar_comp_filename,
+                'title': f"{tag} (Scalar Comparison)",
+                'type': 'scalar_comparison',
+                'tag': tag
+            })
     
-    # Compare scalars
-    for tag in scalar_tags:
-        val1 = float(data1[tag])
-        val2 = float(data2[tag])
-        val3 = float(data3[tag])
-        
-        fig, ax = plt.subplots(figsize=(8, 6))
-        
-        values = [val1, val2, val3]
-        labels = ['File 1', 'File 2', 'File 3']
-        colors = ['#ffcccc', '#ccffcc', '#ccccff']
-        
-        bars = ax.bar(labels, values, color=colors, alpha=0.8)
-        ax.set_title(f"{tag} (Scalar Comparison)", fontsize=14, pad=20)
-        ax.set_ylabel("Value")
-        ax.grid(True, alpha=0.3)
-        
-        # Add value labels on bars
-        for bar, val in zip(bars, values):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(values)*0.01,
-                   f'{val:.4f}', ha='center', va='bottom', fontsize=10, weight='bold')
-        
-        # Add deviation information
-        max_dev = max(abs(val1-val2), abs(val1-val3), abs(val2-val3))
-        ax.text(0.02, 0.98, f'Max Deviation: {max_dev:.4f}', 
-               transform=ax.transAxes, va='top', ha='left',
-               bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
-        
-        scalar_comp_filename = f"{output_prefix}_{tag}_scalar_comparison.png"
-        plt.savefig(scalar_comp_filename, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        plot_files.append({
-            'filename': scalar_comp_filename,
-            'title': f"{tag} (Scalar Comparison)",
-            'type': 'scalar_comparison',
-            'tag': tag
-        })
+    # Calculate and compare frontal plane angles between specific matrix pairs
+    # Define the pairs to compare
+    angle_pairs = [
+        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Side Frontal Plane Angle'),
+        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Side Frontal Plane Angle')
+    ]
+    
+    for matrix1_tag, matrix2_tag, title in angle_pairs:
+        if (matrix1_tag in common_tags and matrix2_tag in common_tags and 
+            data1[matrix1_tag] and data1[matrix2_tag] and 
+            data2[matrix1_tag] and data2[matrix2_tag] and 
+            data3[matrix1_tag] and data3[matrix2_tag]):
+            
+            # Calculate angles for all three files
+            angle1 = calculate_frontal_plane_angle(data1[matrix1_tag], data1[matrix2_tag])
+            angle2 = calculate_frontal_plane_angle(data2[matrix1_tag], data2[matrix2_tag])
+            angle3 = calculate_frontal_plane_angle(data3[matrix1_tag], data3[matrix2_tag])
+            
+            # Create comparison plot
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            angles = [angle1, angle2, angle3]
+            labels = ['File 1', 'File 2', 'File 3']
+            colors = ['#ffcccc', '#ccffcc', '#ccccff']
+            
+            bars = ax.bar(labels, angles, color=colors, alpha=0.8)
+            ax.set_title(f"{title} Comparison", fontsize=14, pad=20)
+            ax.set_ylabel("Angle (degrees)")
+            ax.grid(True, alpha=0.3)
+            
+            # Add value labels on bars
+            for bar, angle in zip(bars, angles):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(angles)*0.01,
+                       f'{angle:.2f}°', ha='center', va='bottom', fontsize=10, weight='bold')
+            
+            # Add deviation information
+            max_dev = max(abs(angle1-angle2), abs(angle1-angle3), abs(angle2-angle3))
+            mean_angle = np.mean(angles)
+            ax.text(0.02, 0.98, f'Max Deviation: {max_dev:.2f}°\nMean Angle: {mean_angle:.2f}°', 
+                   transform=ax.transAxes, va='top', ha='left',
+                   bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
+            
+            angle_comp_filename = f"{output_prefix}_{matrix1_tag}_{matrix2_tag}_angle_comparison.png"
+            plt.savefig(angle_comp_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            plot_files.append({
+                'filename': angle_comp_filename,
+                'title': f"{title} Comparison",
+                'type': 'frontal_plane_angle_comparison',
+                'tag': f"{matrix1_tag}_{matrix2_tag}",
+                'angles': angles,
+                'deviation': max_dev
+            })
     
     return plot_files
 
@@ -454,7 +758,7 @@ def loadDICOMToDatabase(dcm_path):
                 print("Found series:", seriesUID)
 
 ##
-def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=False):
+def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=False, translation_only=False):
     """
     Read the planning configuration from a file.
     """
@@ -521,7 +825,7 @@ def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=Fals
         return
     
     # Create individual plots for each measure
-    plot_files = create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix)
+    plot_files = create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix, translation_only)
     
     # Generate HTML content with individual plots
     plots_html = ""
@@ -648,9 +952,8 @@ def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=Fals
     
     # Export to PDF if requested
     if export_pdf:
-        # For PDF export, we'll use the first plot as the main image, or create a summary plot
-        main_plot_filename = plot_files[0]['filename'] if plot_files else None
-        success, pdf_filename = export_to_pdf(html_content, main_plot_filename, f"{output_prefix}_report", 
+        # Pass all plot files to PDF export
+        success, pdf_filename = export_to_pdf(html_content, plot_files, f"{output_prefix}_report", 
                                             title="Planning Data Visualization")
         if success:
             print(f"PDF report generated: {pdf_filename}")
@@ -659,7 +962,7 @@ def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=Fals
     #plt.show()
 
 
-def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning_data_comparison", export_pdf=False):
+def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning_data_comparison", export_pdf=False, translation_only=False):
     """
     Read and compare planning configuration from three XML files.
     Shows deviations between the three datasets.
@@ -736,7 +1039,7 @@ def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning
         return
     
     # Create individual comparison plots for each measure
-    plot_files = create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix)
+    plot_files = create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix, translation_only)
     
     # Generate HTML content with individual plots
     plots_html = ""
@@ -856,9 +1159,8 @@ def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning
     
     # Export to PDF if requested
     if export_pdf:
-        # For PDF export, we'll use the first plot as the main image, or create a summary plot
-        main_plot_filename = plot_files[0]['filename'] if plot_files else None
-        success, pdf_filename = export_to_pdf(html_content, main_plot_filename, f"{output_prefix}_report", 
+        # Pass all plot files to PDF export
+        success, pdf_filename = export_to_pdf(html_content, plot_files, f"{output_prefix}_report", 
                                             title="Planning Data Comparison Report")
         if success:
             print(f"PDF report generated: {pdf_filename}")
@@ -907,6 +1209,27 @@ def generate_comparison_stats(data1, data2, data3, common_tags):
             max_dev = max(dev12, dev13, dev23)
             
             stats_html += f"<tr><td>{tag}</td><td>4x4 Matrix</td><td>4x4 Matrix</td><td>4x4 Matrix</td><td>{max_dev:.4f}</td></tr>"
+    
+    # Add frontal plane angle comparisons
+    angle_pairs = [
+        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Side Frontal Plane Angle'),
+        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Side Frontal Plane Angle')
+    ]
+    
+    for matrix1_tag, matrix2_tag, title in angle_pairs:
+        if (matrix1_tag in common_tags and matrix2_tag in common_tags and 
+            data1[matrix1_tag] and data1[matrix2_tag] and 
+            data2[matrix1_tag] and data2[matrix2_tag] and 
+            data3[matrix1_tag] and data3[matrix2_tag]):
+            
+            # Calculate angles for all three files
+            angle1 = calculate_frontal_plane_angle(data1[matrix1_tag], data1[matrix2_tag])
+            angle2 = calculate_frontal_plane_angle(data2[matrix1_tag], data2[matrix2_tag])
+            angle3 = calculate_frontal_plane_angle(data3[matrix1_tag], data3[matrix2_tag])
+            
+            max_dev = max(abs(angle1-angle2), abs(angle1-angle3), abs(angle2-angle3))
+            
+            stats_html += f"<tr><td>{title}</td><td>{angle1:.2f}°</td><td>{angle2:.2f}°</td><td>{angle3:.2f}°</td><td>{max_dev:.2f}°</td></tr>"
     
     stats_html += "</table>"
     return stats_html
@@ -1118,21 +1441,26 @@ if __name__ == "__main__":
                        help="Compare three XML files (provide paths to all three files)")
     parser.add_argument("--output", "-o", help="Output filename prefix (without extension)")
     parser.add_argument("--pdf", action="store_true", help="Also export results to PDF format")
+    parser.add_argument("--translation-only", action="store_true", 
+                       help="Only display translation (positional) data from matrices, skip rotation and other measurements")
     args = parser.parse_args()
 
     if args.compare:
         # Compare three XML files
         output_prefix = args.output if args.output else "planning_data_comparison"
-        comparePlanningData(args.compare[0], args.compare[1], args.compare[2], output_prefix, export_pdf=args.pdf)
+        comparePlanningData(args.compare[0], args.compare[1], args.compare[2], output_prefix, 
+                          export_pdf=args.pdf, translation_only=args.translation_only)
     elif args.xml_path:
         # Single file analysis
         output_prefix = args.output if args.output else "planning_data"
-        extractPlanningData(args.xml_path, output_prefix, export_pdf=args.pdf)
+        extractPlanningData(args.xml_path, output_prefix, export_pdf=args.pdf, translation_only=args.translation_only)
     else:
         print("Please provide either --xml_path for single file analysis or --compare with three XML file paths")
         print("Examples:")
         print("  python excerpts.py --xml_path planning.xml")
         print("  python excerpts.py --xml_path planning.xml --output my_analysis")
         print("  python excerpts.py --xml_path planning.xml --pdf")
+        print("  python excerpts.py --xml_path planning.xml --translation-only")
         print("  python excerpts.py --compare plan1.xml plan2.xml plan3.xml")
         print("  python excerpts.py --compare plan1.xml plan2.xml plan3.xml --output comparison_study --pdf")
+        print("  python excerpts.py --compare plan1.xml plan2.xml plan3.xml --translation-only")
