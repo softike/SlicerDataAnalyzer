@@ -19,6 +19,8 @@ def main_demo():
                        help="Also export results to PDF format")
     parser.add_argument("--translation-only", action="store_true", 
                        help="Only display translation (positional) data from matrices")
+    parser.add_argument("--no-landmark-rotation", action="store_true",
+                       help="Exclude rotation analysis for anatomical landmarks (S3GreaterTroch, S3TopLesserTroch, S3FemoralSphere)")
     parser.add_argument("--side", choices=['Left', 'Right', 'Both', 'Auto'], default='Both',
                        help="Filter data by patient side: Left, Right, Both, or Auto (detect from XML) - default: Both")
     
@@ -48,7 +50,7 @@ def main_demo():
             result = generate_case_comparison_data(
                 h001_xml, h002_xml, h003_xml, 
                 case_name, output_dir, 
-                args.translation_only, args.side
+                args.translation_only, args.side, args.no_landmark_rotation
             )
             case_results.append(result)
             

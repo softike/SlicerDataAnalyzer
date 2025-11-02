@@ -444,8 +444,25 @@ def export_to_pdf(html_content, plot_files, output_prefix, title="Planning Data 
         
     return success, pdf_filename if success else None
 
+def is_landmark_matrix(tag):
+    """
+    Check if a matrix tag corresponds to an anatomical landmark that should skip rotation analysis.
+    
+    Args:
+        tag: Matrix tag name (e.g., 'S3GreaterTroch_R_matrix')
+        
+    Returns:
+        bool: True if this is a landmark matrix that should skip rotation analysis
+    """
+    landmark_patterns = [
+        'S3GreaterTroch_',
+        'S3TopLesserTroch_', 
+        'S3FemoralSphere_'
+    ]
+    return any(pattern in tag for pattern in landmark_patterns)
+
 ##
-def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix, translation_only=False, side_filter='Both'):
+def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix, translation_only=False, side_filter='Both', no_landmark_rotation=False):
     """
     Create individual plots for each measure and save them as separate image files.
     Returns a list of dictionaries containing plot information.
@@ -483,8 +500,8 @@ def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix
         rotation_part = mat[:3, :3]
         translation_part = mat[3, :3]
         
-        # Only create rotation plots if not translation_only mode
-        if not translation_only:
+        # Only create rotation plots if not translation_only mode and not excluded landmark
+        if not translation_only and not (no_landmark_rotation and is_landmark_matrix(tag)):
             # Plot rotation part as heatmap
             fig, ax = plt.subplots(figsize=(8, 6))
             im = ax.imshow(rotation_part, cmap='viridis', interpolation='nearest')
@@ -654,7 +671,7 @@ def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix
     return plot_files
 
 ##
-def create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix, translation_only=False, side_filter='Both'):
+def create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix, translation_only=False, side_filter='Both', no_landmark_rotation=False):
     """
     Create individual comparison plots for each measure from three datasets.
     Returns a list of dictionaries containing plot information.
@@ -685,8 +702,8 @@ def create_individual_comparison_plots(data1, data2, data3, common_tags, output_
         mat2 = np.array([float(x) for x in data2[tag].split()]).reshape((4, 4))
         mat3 = np.array([float(x) for x in data3[tag].split()]).reshape((4, 4))
         
-        # Only create rotation plots if not translation_only mode
-        if not translation_only:
+        # Only create rotation plots if not translation_only mode and not excluded landmark
+        if not translation_only and not (no_landmark_rotation and is_landmark_matrix(tag)):
             # Extract rotation parts (3x3)
             rot1, rot2, rot3 = mat1[:3, :3], mat2[:3, :3], mat3[:3, :3]
             
@@ -918,7 +935,7 @@ def loadDICOMToDatabase(dcm_path):
                 print("Found series:", seriesUID)
 
 ##
-def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=False, translation_only=False, side_filter='Both'):
+def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=False, translation_only=False, side_filter='Both', no_landmark_rotation=False):
     """
     Read the planning configuration from a file.
     """
@@ -980,7 +997,7 @@ def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=Fals
         return
     
     # Create individual plots for each measure
-    plot_files = create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix, translation_only, actual_side_filter)
+    plot_files = create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix, translation_only, actual_side_filter, no_landmark_rotation)
     
     # Generate HTML content with individual plots
     plots_html = ""
@@ -1117,7 +1134,7 @@ def extractPlanningData(xml_path, output_prefix="planning_data", export_pdf=Fals
     #plt.show()
 
 
-def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning_data_comparison", export_pdf=False, translation_only=False, side_filter='Both'):
+def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning_data_comparison", export_pdf=False, translation_only=False, side_filter='Both', no_landmark_rotation=False):
     """
     Read and compare planning configuration from three XML files.
     Shows deviations between the three datasets.
@@ -1206,7 +1223,7 @@ def comparePlanningData(xml_path1, xml_path2, xml_path3, output_prefix="planning
         return
     
     # Create individual comparison plots for each measure
-    plot_files = create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix, translation_only, actual_side_filter)
+    plot_files = create_individual_comparison_plots(data1, data2, data3, common_tags, output_prefix, translation_only, actual_side_filter, no_landmark_rotation)
     
     # Generate HTML content with individual plots
     plots_html = ""
@@ -1610,6 +1627,8 @@ if __name__ == "__main__":
     parser.add_argument("--pdf", action="store_true", help="Also export results to PDF format")
     parser.add_argument("--translation-only", action="store_true", 
                        help="Only display translation (positional) data from matrices, skip rotation and other measurements")
+    parser.add_argument("--no-landmark-rotation", action="store_true",
+                       help="Exclude rotation analysis for anatomical landmarks (S3GreaterTroch, S3TopLesserTroch, S3FemoralSphere)")
     parser.add_argument("--side", choices=['Left', 'Right', 'Both', 'Auto'], default='Both',
                        help="Filter data by patient side: Left, Right, Both, or Auto (detect from XML) - default: Both")
     args = parser.parse_args()
@@ -1618,12 +1637,12 @@ if __name__ == "__main__":
         # Compare three XML files
         output_prefix = args.output if args.output else "planning_data_comparison"
         comparePlanningData(args.compare[0], args.compare[1], args.compare[2], output_prefix, 
-                          export_pdf=args.pdf, translation_only=args.translation_only, side_filter=args.side)
+                          export_pdf=args.pdf, translation_only=args.translation_only, side_filter=args.side, no_landmark_rotation=args.no_landmark_rotation)
     elif args.xml_path:
         # Single file analysis
         output_prefix = args.output if args.output else "planning_data"
         extractPlanningData(args.xml_path, output_prefix, export_pdf=args.pdf, 
-                          translation_only=args.translation_only, side_filter=args.side)
+                          translation_only=args.translation_only, side_filter=args.side, no_landmark_rotation=args.no_landmark_rotation)
     else:
         print("Please provide either --xml_path for single file analysis or --compare with three XML file paths")
         print("Examples:")

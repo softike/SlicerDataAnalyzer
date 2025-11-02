@@ -73,7 +73,7 @@ def find_case_folders(base_path):
     
     return case_sets
 
-def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, output_dir, translation_only=False, side_filter='Both'):
+def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, output_dir, translation_only=False, side_filter='Both', no_landmark_rotation=False):
     """
     Generate comparison data for a single case across three testers.
     
@@ -165,7 +165,7 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
         }
     
     # Generate comparison plots
-    plot_files = create_individual_comparison_plots(data1, data2, data3, common_tags, case_output_prefix, translation_only, actual_side_filter)
+    plot_files = create_individual_comparison_plots(data1, data2, data3, common_tags, case_output_prefix, translation_only, actual_side_filter, no_landmark_rotation)
     
     # Generate statistics
     stats_html = generate_comparison_stats(data1, data2, data3, common_tags)
@@ -539,6 +539,8 @@ def main():
                        help="Also export results to PDF format")
     parser.add_argument("--translation-only", action="store_true", 
                        help="Only display translation (positional) data from matrices")
+    parser.add_argument("--no-landmark-rotation", action="store_true",
+                       help="Exclude rotation analysis for anatomical landmarks (S3GreaterTroch, S3TopLesserTroch, S3FemoralSphere)")
     parser.add_argument("--side", choices=['Left', 'Right', 'Both', 'Auto'], default='Both',
                        help="Filter data by patient side: Left, Right, Both, or Auto (detect from XML) - default: Both")
     
@@ -572,7 +574,7 @@ def main():
             result = generate_case_comparison_data(
                 h001_xml, h002_xml, h003_xml, 
                 case_name, output_dir, 
-                args.translation_only, args.side
+                args.translation_only, args.side, args.no_landmark_rotation
             )
             case_results.append(result)
             
