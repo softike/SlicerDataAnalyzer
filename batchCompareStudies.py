@@ -87,6 +87,8 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
     
     # Determine actual side filter based on mode
     actual_side_filter = side_filter
+    detected_side = None  # Initialize to ensure it's always defined
+    
     if side_filter == 'Auto':
         xml_paths = [xml_path1, xml_path2, xml_path3]
         is_consistent, detected_side, sides_list = validate_patient_sides(xml_paths, case_name)
@@ -98,7 +100,15 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
                 'common_tags': [],
                 'plot_files': [],
                 'stats_html': f'<p>Auto mode failed: Inconsistent PatientSide values: {sides_list}</p>',
-                'side_error': f'Auto mode failed: Inconsistent PatientSide values: {sides_list}'
+                'side_error': f'Auto mode failed: Inconsistent PatientSide values: {sides_list}',
+                'side_info': {
+                    'side_filter': side_filter,
+                    'detected_side': None,
+                    'actual_side_filter': None,
+                    'is_auto_mode': True,
+                    'sides_list': sides_list,
+                    'is_consistent': False
+                }
             }
         elif detected_side is None:
             print(f"Warning: Could not determine PatientSide for case {case_name}. Using 'Both' mode.")
@@ -119,7 +129,15 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
                 'common_tags': [],
                 'plot_files': [],
                 'stats_html': f'<p>Inconsistent PatientSide values: {sides_list}</p>',
-                'side_error': f'Inconsistent PatientSide values: {sides_list}'
+                'side_error': f'Inconsistent PatientSide values: {sides_list}',
+                'side_info': {
+                    'side_filter': side_filter,
+                    'detected_side': detected_side,
+                    'actual_side_filter': None,
+                    'is_auto_mode': False,
+                    'sides_list': sides_list,
+                    'is_consistent': False
+                }
             }
     
     # Create case-specific output prefix
@@ -170,14 +188,218 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
     # Generate statistics
     stats_html = generate_comparison_stats(data1, data2, data3, common_tags)
     
+    # Determine side information for reporting
+    side_info = {
+        'side_filter': side_filter,
+        'detected_side': detected_side if side_filter == 'Auto' else None,
+        'actual_side_filter': actual_side_filter,
+        'is_auto_mode': side_filter == 'Auto'
+    }
+    
     return {
         'case_name': case_name,
         'status': 'success',
         'common_tags': common_tags,
         'plot_files': plot_files,
         'stats_html': stats_html,
-        'xml_paths': [xml_path1, xml_path2, xml_path3]
+        'xml_paths': [xml_path1, xml_path2, xml_path3],
+        'side_info': side_info
     }
+
+def generate_anteversion_summary_table(anteversion_data, case_results):
+    """
+    Generate HTML table summarizing femoral anteversion angles across all cases and testers.
+    
+    Args:
+        anteversion_data: dict with case_name -> {'Right': [H001, H002, H003], 'Left': [...]}
+        case_results: list of case comparison results with side information
+    
+    Returns:
+        str: HTML table with femoral anteversion angle summary
+    """
+    if not anteversion_data:
+        return ""
+    
+    # Create a map of case_name -> side_info for easy lookup
+    case_side_info = {}
+    for result in case_results:
+        if 'side_info' in result:
+            case_side_info[result['case_name']] = result['side_info']
+    
+    table_html = """
+    <div class="anteversion-summary">
+        <h2>Femoral Anteversion Angle Summary</h2>
+        <p>This table shows the femoral anteversion angles (degrees) measured between S3FemurFrame and S3BCP matrices for each case and tester.</p>
+        
+        <table class="anteversion-table">
+            <thead>
+                <tr>
+                    <th rowspan="2">Case</th>
+                    <th colspan="3">Right Femoral Anteversion Angle (°)</th>
+                    <th colspan="3">Left Femoral Anteversion Angle (°)</th>
+                    <th colspan="2">Right Side Statistics</th>
+                    <th colspan="2">Left Side Statistics</th>
+                </tr>
+                <tr>
+                    <th>H001</th>
+                    <th>H002</th>
+                    <th>H003</th>
+                    <th>H001</th>
+                    <th>H002</th>
+                    <th>H003</th>
+                    <th>Mean ± SD</th>
+                    <th>Range</th>
+                    <th>Mean ± SD</th>
+                    <th>Range</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+    
+    # Process each case
+    for case_name in sorted(anteversion_data.keys()):
+        case_data = anteversion_data[case_name]
+        side_info = case_side_info.get(case_name, {})
+        
+        # Determine case name styling based on side information
+        case_name_class = 'case-name'
+        side_indicator = ''
+        
+        if side_info:
+            if side_info.get('is_consistent', True):  # Default to True if not specified
+                if side_info.get('is_auto_mode', False):
+                    detected_side = side_info.get('detected_side')
+                    if detected_side:
+                        case_name_class += ' auto-detected-side'
+                        side_indicator = f" <span class='side-indicator auto-{detected_side.lower()}'>[Auto: {detected_side}]</span>"
+                else:
+                    actual_side = side_info.get('actual_side_filter')
+                    if actual_side and actual_side != 'Both':
+                        case_name_class += ' explicit-side'
+                        side_indicator = f" <span class='side-indicator explicit-{actual_side.lower()}'>[{actual_side}]</span>"
+            else:
+                case_name_class += ' inconsistent-side'
+                sides_list = side_info.get('sides_list', [])
+                side_indicator = f" <span class='side-indicator inconsistent'>⚠ Inconsistent: {sides_list}</span>"
+        
+        table_html += f"<tr><td class='{case_name_class}'>{case_name}{side_indicator}</td>"
+        
+        # Right side angles
+        right_angles = case_data.get('Right', [None, None, None])
+        for angle in right_angles:
+            if angle is not None:
+                table_html += f"<td class='angle-value'>{angle:.2f}</td>"
+            else:
+                table_html += "<td class='angle-missing'>N/A</td>"
+        
+        # Left side angles
+        left_angles = case_data.get('Left', [None, None, None])
+        for angle in left_angles:
+            if angle is not None:
+                table_html += f"<td class='angle-value'>{angle:.2f}</td>"
+            else:
+                table_html += "<td class='angle-missing'>N/A</td>"
+        
+        # Right side statistics
+        valid_right = [a for a in right_angles if a is not None]
+        if len(valid_right) >= 2:
+            import numpy as np
+            mean_right = np.mean(valid_right)
+            std_right = np.std(valid_right)
+            min_right = min(valid_right)
+            max_right = max(valid_right)
+            table_html += f"<td class='stats-value'>{mean_right:.2f} ± {std_right:.2f}</td>"
+            table_html += f"<td class='stats-value'>{min_right:.2f} - {max_right:.2f}</td>"
+        else:
+            table_html += "<td class='stats-missing'>N/A</td><td class='stats-missing'>N/A</td>"
+        
+        # Left side statistics
+        valid_left = [a for a in left_angles if a is not None]
+        if len(valid_left) >= 2:
+            import numpy as np
+            mean_left = np.mean(valid_left)
+            std_left = np.std(valid_left)
+            min_left = min(valid_left)
+            max_left = max(valid_left)
+            table_html += f"<td class='stats-value'>{mean_left:.2f} ± {std_left:.2f}</td>"
+            table_html += f"<td class='stats-value'>{min_left:.2f} - {max_left:.2f}</td>"
+        else:
+            table_html += "<td class='stats-missing'>N/A</td><td class='stats-missing'>N/A</td>"
+        
+        table_html += "</tr>"
+    
+    table_html += """
+            </tbody>
+        </table>
+        
+        <div class="table-notes">
+            <h4>Notes:</h4>
+            <ul>
+                <li><strong>Angle Calculation:</strong> Angle between frontal planes of S3FemurFrame and S3BCP matrices</li>
+                <li><strong>N/A:</strong> Data not available (missing matrix data or calculation error)</li>
+                <li><strong>Statistics:</strong> Mean ± Standard Deviation and Range calculated from available measurements</li>
+                <li><strong>H001/H002/H003:</strong> Different testers/operators performing the measurements</li>
+            </ul>
+        </div>
+    </div>
+    """
+    
+    return table_html
+
+def extract_femoral_anteversion_angles(case_results):
+    """
+    Extract femoral anteversion angles for each case and tester.
+    
+    Returns:
+        dict: Case name -> {'Right': [H001_angle, H002_angle, H003_angle], 'Left': [...]}
+    """
+    anteversion_data = {}
+    
+    for result in case_results:
+        if result['status'] != 'success':
+            continue
+            
+        case_name = result['case_name']
+        anteversion_data[case_name] = {}
+        
+        # Process each side
+        for side in ['Right', 'Left']:
+            femur_tag = f'S3FemurFrame_{side[0]}_matrix'
+            bcp_tag = f'S3BCP_{side[0]}_matrix'
+            
+            angles = []
+            
+            # Calculate angle for each tester's data
+            for xml_path in result['xml_paths']:
+                try:
+                    # Extract data from XML file
+                    tree = ET.parse(xml_path)
+                    root = tree.getroot()
+                    
+                    def get_elem_value(elem):
+                        if elem is not None and 'value' in elem.attrib:
+                            return elem.attrib['value']
+                        return None
+                    
+                    # Get matrix values
+                    femur_elem = root.find(f".//s3Shape[@name='S3FemurFrame_{side[0]}']/matrix4[@name='mat']")
+                    bcp_elem = root.find(f".//s3Shape[@name='S3BCP_{side[0]}']/matrix4[@name='mat']")
+                    
+                    femur_matrix = get_elem_value(femur_elem)
+                    bcp_matrix = get_elem_value(bcp_elem)
+                    
+                    if femur_matrix and bcp_matrix:
+                        angle = calculate_frontal_plane_angle(femur_matrix, bcp_matrix)
+                        angles.append(angle)
+                    else:
+                        angles.append(None)
+                        
+                except Exception as e:
+                    angles.append(None)
+            
+            anteversion_data[case_name][side] = angles
+    
+    return anteversion_data
 
 def generate_consolidated_html_report(case_results, output_prefix, export_pdf=False):
     """
@@ -229,6 +451,10 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
     </div>
     """
     
+    # Generate femoral anteversion angle summary table
+    anteversion_data = extract_femoral_anteversion_angles(case_results)
+    anteversion_table_html = generate_anteversion_summary_table(anteversion_data, case_results)
+    
     # Generate individual case sections
     cases_html = ""
     for result in case_results:
@@ -264,9 +490,26 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
             </div>
             """
         
+        # Generate side information for case header
+        side_info_text = ""
+        side_header_class = "case-section"
+        
+        if 'side_info' in result:
+            side_info = result['side_info']
+            if side_info.get('is_auto_mode', False):
+                detected_side = side_info.get('detected_side')
+                if detected_side:
+                    side_info_text = f" <span class='case-side-indicator auto-{detected_side.lower()}'>Auto-detected: {detected_side}</span>"
+                    side_header_class += " auto-detected"
+            else:
+                actual_side = side_info.get('actual_side_filter')
+                if actual_side and actual_side != 'Both':
+                    side_info_text = f" <span class='case-side-indicator explicit-{actual_side.lower()}'>Side: {actual_side}</span>"
+                    side_header_class += " explicit-side"
+        
         cases_html += f"""
-        <div class="case-section" id="case-{result['case_name']}">
-            <h2>Case: {result['case_name']}</h2>
+        <div class="{side_header_class}" id="case-{result['case_name']}">
+            <h2>Case: {result['case_name']}{side_info_text}</h2>
             
             <div class="case-info">
                 <h3>File Paths:</h3>
@@ -480,6 +723,186 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
             padding: 20px;
             margin-top: 40px;
         }}
+        
+        /* Anteversion Summary Table Styles */
+        .anteversion-summary {{
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }}
+        .anteversion-summary h2 {{
+            color: #495057;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }}
+        .anteversion-summary p {{
+            color: #6c757d;
+            margin-bottom: 20px;
+            font-style: italic;
+        }}
+        .anteversion-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background-color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }}
+        .anteversion-table th {{
+            background-color: #007bff;
+            color: white;
+            padding: 12px 8px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 12px;
+            border: 1px solid #0056b3;
+        }}
+        .anteversion-table td {{
+            padding: 10px 8px;
+            text-align: center;
+            border: 1px solid #dee2e6;
+            font-size: 13px;
+        }}
+        .anteversion-table .case-name {{
+            background-color: #e9ecef;
+            font-weight: bold;
+            text-align: left;
+            min-width: 120px;
+        }}
+        .anteversion-table .angle-value {{
+            background-color: #d4edda;
+            color: #155724;
+            font-weight: bold;
+        }}
+        .anteversion-table .angle-missing {{
+            background-color: #f8d7da;
+            color: #721c24;
+            font-style: italic;
+        }}
+        .anteversion-table .stats-value {{
+            background-color: #d1ecf1;
+            color: #0c5460;
+            font-weight: bold;
+        }}
+        .anteversion-table .stats-missing {{
+            background-color: #f8d7da;
+            color: #721c24;
+            font-style: italic;
+        }}
+        .table-notes {{
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+        }}
+        .table-notes h4 {{
+            color: #495057;
+            margin-bottom: 10px;
+        }}
+        .table-notes ul {{
+            margin: 0;
+            padding-left: 20px;
+        }}
+        .table-notes li {{
+            margin-bottom: 5px;
+            color: #6c757d;
+        }}
+        
+        /* Side Indicator Styles */
+        .side-indicator {{
+            font-size: 0.85em;
+            font-weight: normal;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+        }}
+        
+        .auto-detected-side .side-indicator.auto-left {{
+            background-color: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #90caf9;
+        }}
+        
+        .auto-detected-side .side-indicator.auto-right {{
+            background-color: #f3e5f5;
+            color: #7b1fa2;
+            border: 1px solid #ce93d8;
+        }}
+        
+        .explicit-side .side-indicator.explicit-left {{
+            background-color: #e8f5e8;
+            color: #2e7d32;
+            border: 1px solid #81c784;
+        }}
+        
+        .explicit-side .side-indicator.explicit-right {{
+            background-color: #fff3e0;
+            color: #ef6c00;
+            border: 1px solid #ffcc02;
+        }}
+        
+        .inconsistent-side .side-indicator.inconsistent {{
+            background-color: #ffebee;
+            color: #c62828;
+            border: 1px solid #ef5350;
+            font-weight: bold;
+        }}
+        
+        .case-name.auto-detected-side {{
+            background-color: #f8f9ff;
+        }}
+        
+        .case-name.explicit-side {{
+            background-color: #f8fff8;
+        }}
+        
+        .case-name.inconsistent-side {{
+            background-color: #fff8f8;
+        }}
+        
+        /* Case Header Side Indicators */
+        .case-side-indicator {{
+            font-size: 0.7em;
+            font-weight: normal;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-left: 12px;
+            vertical-align: middle;
+        }}
+        
+        .case-side-indicator.auto-left {{
+            background-color: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #90caf9;
+        }}
+        
+        .case-side-indicator.auto-right {{
+            background-color: #f3e5f5;
+            color: #7b1fa2;
+            border: 1px solid #ce93d8;
+        }}
+        
+        .case-side-indicator.explicit-left {{
+            background-color: #e8f5e8;
+            color: #2e7d32;
+            border: 1px solid #81c784;
+        }}
+        
+        .case-side-indicator.explicit-right {{
+            background-color: #fff3e0;
+            color: #ef6c00;
+            border: 1px solid #ffcc02;
+        }}
+        
+        .case-section.auto-detected {{
+            border-left: 4px solid #90caf9;
+        }}
+        
+        .case-section.explicit-side {{
+            border-left: 4px solid #81c784;
+        }}
     </style>
 </head>
 <body>
@@ -494,6 +917,7 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
             
             <div class="main-content">
                 {summary_html}
+                {anteversion_table_html}
                 {cases_html}
             </div>
         </div>
