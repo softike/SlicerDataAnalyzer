@@ -401,7 +401,7 @@ def extract_femoral_anteversion_angles(case_results):
     
     return anteversion_data
 
-def generate_consolidated_html_report(case_results, output_prefix, export_pdf=False):
+def generate_consolidated_html_report(case_results, output_prefix, export_pdf=False, inter_rater_results=None):
     """
     Generate a consolidated HTML report containing all case comparisons.
     """
@@ -454,6 +454,9 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
     # Generate femoral anteversion angle summary table
     anteversion_data = extract_femoral_anteversion_angles(case_results)
     anteversion_table_html = generate_anteversion_summary_table(anteversion_data, case_results)
+    
+    # Generate inter-rater analysis section
+    inter_rater_html = generate_inter_rater_html_section(inter_rater_results) if inter_rater_results else ""
     
     # Generate individual case sections
     cases_html = ""
@@ -918,6 +921,7 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
             <div class="main-content">
                 {summary_html}
                 {anteversion_table_html}
+                {inter_rater_html}
                 {cases_html}
             </div>
         </div>
@@ -1019,7 +1023,12 @@ def main():
     
     # Generate consolidated report
     print("\nGenerating consolidated HTML report...")
-    html_filename = generate_consolidated_html_report(case_results, args.output, args.pdf)
+    
+    # Generate inter-rater analysis
+    print("Generating inter-rater analysis...")
+    inter_rater_results = generate_inter_rater_analysis(case_results, output_dir)
+    
+    html_filename = generate_consolidated_html_report(case_results, args.output, args.pdf, inter_rater_results)
     
     # Print summary
     successful_cases = len([r for r in case_results if r['status'] == 'success'])
@@ -1030,6 +1039,533 @@ def main():
     print(f"Successful: {successful_cases}")
     print(f"Total plots generated: {total_plots}")
     print(f"Report saved as: {html_filename}")
+
+def generate_inter_rater_html_section(inter_rater_results):
+    """
+    Generate HTML section for inter-rater analysis results.
+    
+    Args:
+        inter_rater_results: Results from generate_inter_rater_analysis()
+    
+    Returns:
+        HTML string for inter-rater analysis section
+    """
+    if not inter_rater_results:
+        return ""
+    
+    html = """
+    <div class="inter-rater-analysis">
+        <h2>Inter-Rater Reliability Analysis</h2>
+        <p>Comprehensive analysis of measurement agreement and reliability between the three testers (H001, H002, H003).</p>
+        
+        <!-- Reliability Metrics Summary -->
+        <div class="reliability-summary">
+            <h3>Reliability Metrics</h3>
+            <div class="metrics-grid">
+    """
+    
+    # Add ICC values
+    reliability_metrics = inter_rater_results.get('reliability_metrics', {})
+    for metric_name, metric_data in reliability_metrics.items():
+        side = metric_name.replace('_ICC', '')
+        icc_value = metric_data['value']
+        ci_lower = metric_data['ci_lower']
+        ci_upper = metric_data['ci_upper']
+        n_cases = metric_data['n_cases']
+        
+        # Interpret ICC value
+        if icc_value < 0.5:
+            interpretation = "Poor"
+            color_class = "poor"
+        elif icc_value < 0.75:
+            interpretation = "Moderate"
+            color_class = "moderate"
+        elif icc_value < 0.9:
+            interpretation = "Good"
+            color_class = "good"
+        else:
+            interpretation = "Excellent"
+            color_class = "excellent"
+        
+        html += f"""
+                <div class="metric-card {color_class}">
+                    <h4>{side} Side Femoral Anteversion</h4>
+                    <div class="metric-value">ICC = {icc_value:.3f}</div>
+                    <div class="metric-ci">95% CI: [{ci_lower:.3f}, {ci_upper:.3f}]</div>
+                    <div class="metric-interpretation">{interpretation} Reliability</div>
+                    <div class="metric-n">n = {n_cases} cases</div>
+                </div>
+        """
+    
+    html += """
+            </div>
+        </div>
+        
+        <!-- Bland-Altman Plots -->
+        <div class="bland-altman-section">
+            <h3>Bland-Altman Agreement Analysis</h3>
+            <p>These plots show the agreement between pairs of testers. Points should be randomly distributed around zero with minimal bias.</p>
+            <div class="plots-grid">
+    """
+    
+    # Add Bland-Altman plots
+    for plot_info in inter_rater_results.get('bland_altman_plots', []):
+        filename = os.path.basename(plot_info['filename'])
+        side = plot_info['side']
+        testers = plot_info['testers']
+        stats = plot_info['stats']
+        
+        html += f"""
+                <div class="plot-item">
+                    <h4>{side} Side: {testers}</h4>
+                    <img src="inter_rater_analysis/{filename}" alt="Bland-Altman {side} {testers}" class="inter-rater-plot">
+                    <div class="plot-stats">
+                        <span>Mean Diff: {stats['mean_diff']:.3f}°</span> | 
+                        <span>SD: {stats['std_diff']:.3f}°</span> | 
+                        <span>n = {stats['n_pairs']}</span>
+                    </div>
+                </div>
+        """
+    
+    html += """
+            </div>
+        </div>
+        
+        <!-- Correlation Analysis -->
+        <div class="correlation-section">
+            <h3>Correlation Analysis</h3>
+            <p>Scatter plots showing linear relationships between tester measurements with correlation coefficients.</p>
+            <div class="plots-grid">
+    """
+    
+    # Add correlation plots
+    for plot_info in inter_rater_results.get('correlation_plots', []):
+        filename = os.path.basename(plot_info['filename'])
+        side = plot_info['side']
+        testers = plot_info['testers']
+        stats = plot_info['stats']
+        
+        html += f"""
+                <div class="plot-item">
+                    <h4>{side} Side: {testers}</h4>
+                    <img src="inter_rater_analysis/{filename}" alt="Correlation {side} {testers}" class="inter-rater-plot">
+                    <div class="plot-stats">
+                        <span>r = {stats['correlation']:.3f}</span> | 
+                        <span>R² = {stats['r_squared']:.3f}</span> | 
+                        <span>p = {stats['p_value']:.3e}</span>
+                    </div>
+                </div>
+        """
+    
+    html += """
+            </div>
+        </div>
+        
+        <!-- Distribution Analysis -->
+        <div class="distribution-section">
+            <h3>Measurement Distribution</h3>
+            <p>Box plots showing the distribution of measurements for each tester, useful for identifying systematic biases.</p>
+            <div class="plots-grid">
+    """
+    
+    # Add distribution plots
+    for plot_info in inter_rater_results.get('distribution_plots', []):
+        filename = os.path.basename(plot_info['filename'])
+        side = plot_info['side']
+        stats = plot_info['stats']
+        
+        html += f"""
+                <div class="plot-item">
+                    <h4>{side} Side Distribution</h4>
+                    <img src="inter_rater_analysis/{filename}" alt="Distribution {side}" class="inter-rater-plot">
+                    <div class="plot-stats">
+                        <span>H001: μ={stats['means'][0]:.2f}°</span> | 
+                        <span>H002: μ={stats['means'][1]:.2f}°</span> | 
+                        <span>H003: μ={stats['means'][2]:.2f}°</span>
+                    </div>
+                </div>
+        """
+    
+    html += """
+            </div>
+        </div>
+        
+        <div class="inter-rater-notes">
+            <h4>Interpretation Guidelines:</h4>
+            <ul>
+                <li><strong>ICC Values:</strong> &lt;0.5 Poor, 0.5-0.75 Moderate, 0.75-0.9 Good, &gt;0.9 Excellent reliability</li>
+                <li><strong>Bland-Altman:</strong> Points should scatter randomly around zero; systematic patterns indicate bias</li>
+                <li><strong>Correlation:</strong> High correlation (r&gt;0.8) indicates strong linear relationship between testers</li>
+                <li><strong>Distribution:</strong> Similar box plot shapes indicate consistent measurement distributions</li>
+            </ul>
+        </div>
+    </div>
+    """
+    
+    return html
+
+def create_bland_altman_plot(data1, data2, title, output_filename, tester1="H001", tester2="H002"):
+    """
+    Create Bland-Altman plot for inter-rater agreement analysis.
+    
+    Args:
+        data1, data2: Arrays of measurements from two testers
+        title: Plot title
+        output_filename: Output file path
+        tester1, tester2: Names of the testers being compared
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    # Remove any None values
+    valid_pairs = [(d1, d2) for d1, d2 in zip(data1, data2) if d1 is not None and d2 is not None]
+    if len(valid_pairs) < 2:
+        return None
+    
+    data1_clean, data2_clean = zip(*valid_pairs)
+    data1_clean = np.array(data1_clean)
+    data2_clean = np.array(data2_clean)
+    
+    # Calculate means and differences
+    means = (data1_clean + data2_clean) / 2
+    differences = data1_clean - data2_clean
+    
+    # Calculate statistics
+    mean_diff = np.mean(differences)
+    std_diff = np.std(differences)
+    
+    # Create plot
+    plt.figure(figsize=(10, 8))
+    plt.scatter(means, differences, alpha=0.6, s=50)
+    
+    # Add horizontal lines for mean and limits of agreement
+    plt.axhline(mean_diff, color='red', linestyle='-', linewidth=2, label=f'Mean difference: {mean_diff:.3f}')
+    plt.axhline(mean_diff + 1.96*std_diff, color='red', linestyle='--', linewidth=1, 
+                label=f'+1.96 SD: {mean_diff + 1.96*std_diff:.3f}')
+    plt.axhline(mean_diff - 1.96*std_diff, color='red', linestyle='--', linewidth=1, 
+                label=f'-1.96 SD: {mean_diff - 1.96*std_diff:.3f}')
+    plt.axhline(0, color='black', linestyle='-', alpha=0.3)
+    
+    plt.xlabel(f'Mean of {tester1} and {tester2}')
+    plt.ylabel(f'Difference ({tester1} - {tester2})')
+    plt.title(f'Bland-Altman Plot: {title}\n({tester1} vs {tester2})')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Add text box with statistics
+    textstr = f'n = {len(valid_pairs)}\nMean diff = {mean_diff:.3f}\nSD = {std_diff:.3f}'
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+    plt.text(0.05, 0.95, textstr, transform=plt.gca().transAxes, fontsize=10,
+             verticalalignment='top', bbox=props)
+    
+    plt.tight_layout()
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    return {
+        'mean_diff': mean_diff,
+        'std_diff': std_diff,
+        'n_pairs': len(valid_pairs),
+        'limits_agreement': (mean_diff - 1.96*std_diff, mean_diff + 1.96*std_diff)
+    }
+
+def create_correlation_plot(data1, data2, title, output_filename, tester1="H001", tester2="H002"):
+    """
+    Create correlation scatter plot with regression line and statistics.
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from scipy import stats
+    
+    # Remove any None values
+    valid_pairs = [(d1, d2) for d1, d2 in zip(data1, data2) if d1 is not None and d2 is not None]
+    if len(valid_pairs) < 2:
+        return None
+    
+    data1_clean, data2_clean = zip(*valid_pairs)
+    data1_clean = np.array(data1_clean)
+    data2_clean = np.array(data2_clean)
+    
+    # Calculate correlation and regression
+    correlation, p_value = stats.pearsonr(data1_clean, data2_clean)
+    slope, intercept, r_value, p_val, std_err = stats.linregress(data1_clean, data2_clean)
+    
+    # Create plot
+    plt.figure(figsize=(10, 8))
+    plt.scatter(data1_clean, data2_clean, alpha=0.6, s=50)
+    
+    # Add regression line
+    line_x = np.linspace(min(data1_clean), max(data1_clean), 100)
+    line_y = slope * line_x + intercept
+    plt.plot(line_x, line_y, 'r-', linewidth=2, 
+             label=f'y = {slope:.3f}x + {intercept:.3f}')
+    
+    # Add identity line for reference
+    min_val = min(min(data1_clean), min(data2_clean))
+    max_val = max(max(data1_clean), max(data2_clean))
+    plt.plot([min_val, max_val], [min_val, max_val], 'k--', alpha=0.5, label='Perfect agreement')
+    
+    plt.xlabel(f'{tester1} Measurements')
+    plt.ylabel(f'{tester2} Measurements')
+    plt.title(f'Correlation Plot: {title}\n({tester1} vs {tester2})')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Add text box with statistics
+    textstr = f'n = {len(valid_pairs)}\nr = {correlation:.3f}\nR² = {r_value**2:.3f}\np = {p_value:.3e}'
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+    plt.text(0.05, 0.95, textstr, transform=plt.gca().transAxes, fontsize=10,
+             verticalalignment='top', bbox=props)
+    
+    plt.tight_layout()
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    return {
+        'correlation': correlation,
+        'p_value': p_value,
+        'r_squared': r_value**2,
+        'slope': slope,
+        'intercept': intercept,
+        'n_pairs': len(valid_pairs)
+    }
+
+def create_box_plot_distribution(data_dict, title, output_filename):
+    """
+    Create box plot showing distribution of measurements across testers.
+    
+    Args:
+        data_dict: Dict with keys 'H001', 'H002', 'H003' and list values
+        title: Plot title
+        output_filename: Output file path
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    # Prepare data for box plot
+    tester_names = ['H001', 'H002', 'H003']
+    plot_data = []
+    labels = []
+    
+    for tester in tester_names:
+        if tester in data_dict:
+            clean_data = [x for x in data_dict[tester] if x is not None]
+            if clean_data:
+                plot_data.append(clean_data)
+                labels.append(f'{tester}\n(n={len(clean_data)})')
+    
+    if not plot_data:
+        return None
+    
+    # Create box plot
+    plt.figure(figsize=(10, 8))
+    box_plot = plt.boxplot(plot_data, labels=labels, patch_artist=True)
+    
+    # Color the boxes
+    colors = ['lightblue', 'lightgreen', 'lightcoral']
+    for patch, color in zip(box_plot['boxes'], colors[:len(plot_data)]):
+        patch.set_facecolor(color)
+    
+    plt.ylabel('Measurement Value')
+    plt.title(f'Distribution Comparison: {title}')
+    plt.grid(True, alpha=0.3)
+    
+    # Add statistics text
+    stats_text = []
+    for i, (data, label) in enumerate(zip(plot_data, labels)):
+        mean_val = np.mean(data)
+        std_val = np.std(data)
+        stats_text.append(f'{tester_names[i]}: μ={mean_val:.3f}, σ={std_val:.3f}')
+    
+    plt.text(0.02, 0.98, '\n'.join(stats_text), transform=plt.gca().transAxes, 
+             fontsize=10, verticalalignment='top',
+             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
+    plt.tight_layout()
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    return {
+        'means': [np.mean(data) for data in plot_data],
+        'stds': [np.std(data) for data in plot_data],
+        'n_values': [len(data) for data in plot_data]
+    }
+
+def calculate_icc(data_matrix):
+    """
+    Calculate Intraclass Correlation Coefficient (ICC) for inter-rater reliability.
+    
+    Args:
+        data_matrix: 2D array where rows are subjects and columns are raters
+    
+    Returns:
+        ICC value and 95% confidence interval
+    """
+    import numpy as np
+    from scipy import stats
+    
+    # Remove rows with any missing data
+    clean_matrix = []
+    for row in data_matrix:
+        if all(x is not None for x in row):
+            clean_matrix.append(row)
+    
+    if len(clean_matrix) < 2:
+        return None, None, None
+    
+    data = np.array(clean_matrix)
+    n_subjects, n_raters = data.shape
+    
+    # Calculate ICC(2,1) - Two-way random effects, single measures, absolute agreement
+    # This is the most common ICC for inter-rater reliability
+    
+    # Calculate means
+    subject_means = np.mean(data, axis=1)
+    rater_means = np.mean(data, axis=0)
+    grand_mean = np.mean(data)
+    
+    # Calculate sum of squares
+    SST = np.sum((data - grand_mean)**2)
+    SSB = n_raters * np.sum((subject_means - grand_mean)**2)  # Between subjects
+    SSW = np.sum((data - subject_means[:, np.newaxis])**2)    # Within subjects
+    SSE = SSW - (n_subjects * np.sum((rater_means - grand_mean)**2))  # Error
+    
+    # Calculate mean squares
+    MSB = SSB / (n_subjects - 1)
+    MSE = SSE / ((n_subjects - 1) * (n_raters - 1))
+    
+    # Calculate ICC
+    icc = (MSB - MSE) / (MSB + (n_raters - 1) * MSE)
+    
+    # Calculate confidence interval (approximate)
+    F = MSB / MSE
+    df1 = n_subjects - 1
+    df2 = (n_subjects - 1) * (n_raters - 1)
+    
+    F_lower = F / stats.f.ppf(0.975, df1, df2)
+    F_upper = F / stats.f.ppf(0.025, df1, df2)
+    
+    ci_lower = (F_lower - 1) / (F_lower + n_raters - 1)
+    ci_upper = (F_upper - 1) / (F_upper + n_raters - 1)
+    
+    return icc, ci_lower, ci_upper
+
+def generate_inter_rater_analysis(case_results, output_dir):
+    """
+    Generate comprehensive inter-rater analysis plots and statistics.
+    
+    Args:
+        case_results: List of case comparison results
+        output_dir: Directory to save plots
+    
+    Returns:
+        Dictionary with analysis results and plot filenames
+    """
+    import os
+    import numpy as np
+    
+    # Create inter-rater analysis subdirectory
+    inter_rater_dir = os.path.join(output_dir, "inter_rater_analysis")
+    os.makedirs(inter_rater_dir, exist_ok=True)
+    
+    analysis_results = {
+        'bland_altman_plots': [],
+        'correlation_plots': [],
+        'distribution_plots': [],
+        'reliability_metrics': {}
+    }
+    
+    # Extract femoral anteversion angles for analysis
+    anteversion_data = extract_femoral_anteversion_angles(case_results)
+    
+    if anteversion_data:
+        # Prepare data for analysis
+        right_h001 = []
+        right_h002 = []
+        right_h003 = []
+        left_h001 = []
+        left_h002 = []
+        left_h003 = []
+        
+        for case_name, case_data in anteversion_data.items():
+            right_angles = case_data.get('Right', [None, None, None])
+            left_angles = case_data.get('Left', [None, None, None])
+            
+            right_h001.append(right_angles[0])
+            right_h002.append(right_angles[1])
+            right_h003.append(right_angles[2])
+            
+            left_h001.append(left_angles[0])
+            left_h002.append(left_angles[1])
+            left_h003.append(left_angles[2])
+        
+        # Generate Bland-Altman plots for each pair of testers
+        tester_pairs = [('H001', 'H002'), ('H001', 'H003'), ('H002', 'H003')]
+        
+        for side, side_data in [('Right', (right_h001, right_h002, right_h003)), 
+                               ('Left', (left_h001, left_h002, left_h003))]:
+            h001_data, h002_data, h003_data = side_data
+            data_arrays = [h001_data, h002_data, h003_data]
+            
+            for i, (tester1, tester2) in enumerate(tester_pairs):
+                data1 = data_arrays[0] if tester1 == 'H001' else (data_arrays[1] if tester1 == 'H002' else data_arrays[2])
+                data2 = data_arrays[0] if tester2 == 'H001' else (data_arrays[1] if tester2 == 'H002' else data_arrays[2])
+                
+                # Bland-Altman plot
+                ba_filename = os.path.join(inter_rater_dir, f"bland_altman_{side.lower()}_{tester1}_{tester2}.png")
+                ba_stats = create_bland_altman_plot(data1, data2, f"{side} Femoral Anteversion Angle", 
+                                                  ba_filename, tester1, tester2)
+                if ba_stats:
+                    analysis_results['bland_altman_plots'].append({
+                        'filename': ba_filename,
+                        'side': side,
+                        'testers': f"{tester1} vs {tester2}",
+                        'stats': ba_stats
+                    })
+                
+                # Correlation plot
+                corr_filename = os.path.join(inter_rater_dir, f"correlation_{side.lower()}_{tester1}_{tester2}.png")
+                corr_stats = create_correlation_plot(data1, data2, f"{side} Femoral Anteversion Angle", 
+                                                   corr_filename, tester1, tester2)
+                if corr_stats:
+                    analysis_results['correlation_plots'].append({
+                        'filename': corr_filename,
+                        'side': side,
+                        'testers': f"{tester1} vs {tester2}",
+                        'stats': corr_stats
+                    })
+            
+            # Distribution box plot
+            dist_filename = os.path.join(inter_rater_dir, f"distribution_{side.lower()}_all_testers.png")
+            dist_stats = create_box_plot_distribution({
+                'H001': h001_data,
+                'H002': h002_data, 
+                'H003': h003_data
+            }, f"{side} Femoral Anteversion Angle", dist_filename)
+            if dist_stats:
+                analysis_results['distribution_plots'].append({
+                    'filename': dist_filename,
+                    'side': side,
+                    'stats': dist_stats
+                })
+            
+            # Calculate ICC for this side
+            data_matrix = []
+            for h1, h2, h3 in zip(h001_data, h002_data, h003_data):
+                if all(x is not None for x in [h1, h2, h3]):
+                    data_matrix.append([h1, h2, h3])
+            
+            if len(data_matrix) >= 2:
+                icc, ci_lower, ci_upper = calculate_icc(data_matrix)
+                if icc is not None:
+                    analysis_results['reliability_metrics'][f'{side}_ICC'] = {
+                        'value': icc,
+                        'ci_lower': ci_lower,
+                        'ci_upper': ci_upper,
+                        'n_cases': len(data_matrix)
+                    }
+    
+    return analysis_results
 
 if __name__ == "__main__":
     main()
