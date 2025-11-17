@@ -1,0 +1,15 @@
+# Requirements for Excel export functionality
+# Install with: pip install -r requirements_excel.txt
+
+# Core dependencies for data manipulation
+pandas
+
+# Excel export options (install at least one)
+# Option 1: openpyxl (recommended - supports .xlsx format)
+openpyxl
+
+# Option 2: xlsxwriter (alternative Excel writer)
+# xlsxwriter
+
+# Note: matplotlib and numpy should already be installed 
+# as they are required for the main plotting functionality

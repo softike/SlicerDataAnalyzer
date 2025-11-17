@@ -1,13 +1,28 @@
 #!/usr/bin/env python3
 """
-Batch comparison script for medical planning data across multiple testers.
+
+
+
+
+
+
+
+
+
+
+
+
+
+# and supports more advanced formatting options# Note: openpyxl is preferred as it allows both reading and writing Excel files# xlsxwriter>=1.3.0# Option 2: xlsxwriter (alternative - creates .xlsx files, good performance)openpyxl>=3.0.0# Option 1: openpyxl (recommended - supports .xlsx files with formatting)# Excel file format engines (install at least one)pandas>=1.0.0# Core dependency for Excel exportBatch comparison script for medical planning data across multiple testers.
 This script automatically finds corresponding case folders across H001, H002, H003 directories
 and generates a consolidated HTML report with all case comparisons.
 
 Usage:
     python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_comparison_report
     python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_comparison_report --pdf
-    python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_comparison_report --translation-only
+    python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_comparison_report --excel
+    python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_comparison_report --excel-detailed
+    python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_comparison_report --pdf --excel --translation-only
 """
 
 import os
@@ -203,8 +218,49 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
         'plot_files': plot_files,
         'stats_html': stats_html,
         'xml_paths': [xml_path1, xml_path2, xml_path3],
-        'side_info': side_info
+        'side_info': side_info,
+        'raw_data': (data1, data2, data3),  # Store raw data for Excel export
+        'anteversion_angles': extract_anteversion_from_data(data1, data2, data3)  # Store anteversion angles
     }
+
+def extract_anteversion_from_data(data1, data2, data3):
+    """
+    Extract femoral anteversion angles from the raw data for each side.
+    
+    Args:
+        data1, data2, data3: Raw planning data dictionaries from three testers
+        
+    Returns:
+        Dictionary with anteversion angles organized by side
+    """
+    anteversion_angles = {'Right': [None, None, None], 'Left': [None, None, None]}
+    
+    datasets = [data1, data2, data3]
+    
+    for side in ['Right', 'Left']:
+        side_suffix = 'R' if side == 'Right' else 'L'
+        
+        for i, data in enumerate(datasets):
+            # Look for femoral frame and BCP data to calculate anteversion
+            femur_matrix_tag = f'S3FemurFrame_{side_suffix}_mat'
+            bcp_matrix_tag = f'S3BCP_{side_suffix}_mat'
+            
+            if femur_matrix_tag in data and bcp_matrix_tag in data:
+                try:
+                    # Calculate frontal plane angle using the same method as the main script
+                    from compareResults_3Studies import calculate_frontal_plane_angle
+                    
+                    femur_matrix = data[femur_matrix_tag]
+                    bcp_matrix = data[bcp_matrix_tag]
+                    
+                    if femur_matrix and bcp_matrix:
+                        angle = calculate_frontal_plane_angle(femur_matrix, bcp_matrix, side)
+                        anteversion_angles[side][i] = angle
+                except Exception:
+                    # If calculation fails, leave as None
+                    pass
+    
+    return anteversion_angles
 
 def generate_anteversion_summary_table(anteversion_data, case_results):
     """
@@ -965,6 +1021,10 @@ def main():
                        help="Output filename prefix (without extension)")
     parser.add_argument("--pdf", action="store_true", 
                        help="Also export results to PDF format")
+    parser.add_argument("--excel", action="store_true",
+                       help="Export raw data to Excel spreadsheet format (.xlsx)")
+    parser.add_argument("--excel-detailed", action="store_true",
+                       help="Export detailed Excel with matrices and vectors broken into individual components")
     parser.add_argument("--translation-only", action="store_true", 
                        help="Only display translation (positional) data from matrices")
     parser.add_argument("--no-landmark-rotation", action="store_true",
@@ -1029,6 +1089,20 @@ def main():
     inter_rater_results = generate_inter_rater_analysis(case_results, output_dir)
     
     html_filename = generate_consolidated_html_report(case_results, args.output, args.pdf, inter_rater_results)
+    
+    # Export to Excel if requested
+    if args.excel:
+        print("Exporting raw data to Excel...")
+        excel_filename = export_to_excel(case_results, args.output)
+        if excel_filename:
+            print(f"Excel export saved as: {excel_filename}")
+    
+    # Export to detailed Excel if requested  
+    if args.excel_detailed:
+        print("Exporting detailed component-wise data to Excel...")
+        detailed_excel_filename = export_to_excel_detailed(case_results, args.output)
+        if detailed_excel_filename:
+            print(f"Detailed Excel export saved as: {detailed_excel_filename}")
     
     # Print summary
     successful_cases = len([r for r in case_results if r['status'] == 'success'])
@@ -1566,6 +1640,413 @@ def generate_inter_rater_analysis(case_results, output_dir):
                     }
     
     return analysis_results
+
+def export_to_excel(case_results, output_prefix):
+    """
+    Export raw planning data from all cases to Excel format.
+    
+    Args:
+        case_results: List of case comparison results
+        output_prefix: Output filename prefix (without extension)
+    
+    Returns:
+        Excel filename if successful, None if failed
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        print("Warning: pandas not available. Install with: pip install pandas")
+        print("Excel export skipped.")
+        return None
+    
+    try:
+        import openpyxl
+        excel_engine = 'openpyxl'
+    except ImportError:
+        try:
+            import xlsxwriter
+            excel_engine = 'xlsxwriter'
+        except ImportError:
+            print("Warning: Neither openpyxl nor xlsxwriter available.")
+            print("Install with: pip install openpyxl  OR  pip install xlsxwriter")
+            print("Excel export skipped.")
+            return None
+    
+    # Prepare data for Excel export
+    all_data_rows = []
+    
+    for result in case_results:
+        if result['status'] != 'success':
+            continue
+        
+        case_name = result['case_name']
+        
+        # Extract raw data from each case
+        if 'raw_data' in result:
+            data1, data2, data3 = result['raw_data']
+            common_tags = result['common_tags']
+            
+            for tag in common_tags:
+                # Get values from all three testers
+                value1 = data1.get(tag)
+                value2 = data2.get(tag)  
+                value3 = data3.get(tag)
+                
+                # Determine data type based on tag name and content
+                data_type = "Unknown"
+                if "matrix" in tag.lower() or "mat" in tag.lower():
+                    data_type = "Matrix"
+                elif "vector" in tag.lower() or any(x in tag.lower() for x in ['p0', 'p1', 'normal']):
+                    data_type = "Vector"
+                elif any(x in tag.lower() for x in ['angle', 'length', 'distance', 'radius']):
+                    data_type = "Scalar"
+                elif value1 and len(str(value1).split()) == 16:
+                    data_type = "Matrix" 
+                elif value1 and len(str(value1).split()) == 3:
+                    data_type = "Vector"
+                else:
+                    data_type = "Scalar"
+                
+                # Determine anatomical side
+                anatomical_side = "Both"
+                if "_R" in tag or "_Right" in tag:
+                    anatomical_side = "Right"
+                elif "_L" in tag or "_Left" in tag:
+                    anatomical_side = "Left"
+                
+                # Add row for this measurement
+                row = {
+                    'Case': case_name,
+                    'Parameter': tag,
+                    'Data_Type': data_type,
+                    'Anatomical_Side': anatomical_side,
+                    'H001_Value': value1,
+                    'H002_Value': value2,
+                    'H003_Value': value3
+                }
+                all_data_rows.append(row)
+    
+    if not all_data_rows:
+        print("Warning: No data available for Excel export.")
+        return None
+    
+    # Create DataFrame
+    df = pd.DataFrame(all_data_rows)
+    
+    # Create Excel file with multiple sheets
+    excel_filename = f"{output_prefix}_raw_data.xlsx"
+    
+    with pd.ExcelWriter(excel_filename, engine=excel_engine) as writer:
+        # Main sheet with all data
+        df.to_excel(writer, sheet_name='All_Data', index=False)
+        
+        # Separate sheets by data type
+        for data_type in df['Data_Type'].unique():
+            type_df = df[df['Data_Type'] == data_type]
+            sheet_name = data_type.replace(' ', '_')
+            type_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        # Separate sheets by anatomical side
+        for side in df['Anatomical_Side'].unique():
+            if side != 'Both':
+                side_df = df[df['Anatomical_Side'] == side]
+                sheet_name = f'{side}_Side'
+                side_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        # Summary statistics sheet
+        summary_data = []
+        for case in df['Case'].unique():
+            case_df = df[df['Case'] == case]
+            summary_data.append({
+                'Case': case,
+                'Total_Parameters': len(case_df),
+                'Matrix_Parameters': len(case_df[case_df['Data_Type'] == 'Matrix']),
+                'Vector_Parameters': len(case_df[case_df['Data_Type'] == 'Vector']),
+                'Scalar_Parameters': len(case_df[case_df['Data_Type'] == 'Scalar']),
+                'Left_Side_Parameters': len(case_df[case_df['Anatomical_Side'] == 'Left']),
+                'Right_Side_Parameters': len(case_df[case_df['Anatomical_Side'] == 'Right']),
+                'Both_Side_Parameters': len(case_df[case_df['Anatomical_Side'] == 'Both'])
+            })
+        
+        summary_df = pd.DataFrame(summary_data)
+        summary_df.to_excel(writer, sheet_name='Summary', index=False)
+        
+        # Special sheet for femoral anteversion angles (if available)
+        anteversion_rows = []
+        for result in case_results:
+            if result['status'] == 'success' and 'anteversion_angles' in result:
+                case_name = result['case_name']
+                angles = result['anteversion_angles']
+                
+                anteversion_rows.append({
+                    'Case': case_name,
+                    'Right_H001': angles.get('Right', [None, None, None])[0],
+                    'Right_H002': angles.get('Right', [None, None, None])[1],
+                    'Right_H003': angles.get('Right', [None, None, None])[2],
+                    'Left_H001': angles.get('Left', [None, None, None])[0],
+                    'Left_H002': angles.get('Left', [None, None, None])[1],
+                    'Left_H003': angles.get('Left', [None, None, None])[2]
+                })
+        
+        if anteversion_rows:
+            anteversion_df = pd.DataFrame(anteversion_rows)
+            anteversion_df.to_excel(writer, sheet_name='Femoral_Anteversion_Angles', index=False)
+    
+    print(f"Raw data exported to Excel: {excel_filename}")
+    return excel_filename
+
+def export_to_excel_detailed(case_results, output_prefix):
+    """
+    Export detailed planning data with matrices and vectors broken into individual components.
+    
+    Args:
+        case_results: List of case comparison results
+        output_prefix: Output filename prefix (without extension)
+    
+    Returns:
+        Excel filename if successful, None if failed
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        print("Warning: pandas not available. Install with: pip install pandas")
+        print("Detailed Excel export skipped.")
+        return None
+    
+    try:
+        import openpyxl
+        excel_engine = 'openpyxl'
+    except ImportError:
+        try:
+            import xlsxwriter
+            excel_engine = 'xlsxwriter'
+        except ImportError:
+            print("Warning: Neither openpyxl nor xlsxwriter available.")
+            print("Install with: pip install openpyxl  OR  pip install xlsxwriter")
+            print("Detailed Excel export skipped.")
+            return None
+    
+    # Prepare detailed data for Excel export
+    detailed_rows = []
+    
+    def parse_matrix_values(value_string):
+        """Parse matrix string into individual components."""
+        if not value_string:
+            return {}
+        
+        try:
+            values = value_string.strip().split()
+            if len(values) == 16:  # 4x4 matrix
+                matrix_dict = {}
+                for i in range(4):
+                    for j in range(4):
+                        idx = i * 4 + j
+                        matrix_dict[f'M_{i+1}{j+1}'] = float(values[idx])
+                # Also extract translation components
+                matrix_dict['Translation_X'] = float(values[3])
+                matrix_dict['Translation_Y'] = float(values[7])
+                matrix_dict['Translation_Z'] = float(values[11])
+                return matrix_dict
+        except:
+            pass
+        return {}
+    
+    def parse_vector_values(value_string):
+        """Parse vector string into individual components."""
+        if not value_string:
+            return {}
+        
+        try:
+            values = value_string.strip().split()
+            if len(values) == 3:  # 3D vector
+                return {
+                    'X': float(values[0]),
+                    'Y': float(values[1]),
+                    'Z': float(values[2])
+                }
+        except:
+            pass
+        return {}
+    
+    for result in case_results:
+        if result['status'] != 'success':
+            continue
+        
+        case_name = result['case_name']
+        
+        # Extract raw data from each case
+        if 'raw_data' in result:
+            data1, data2, data3 = result['raw_data']
+            common_tags = result['common_tags']
+            
+            for tag in common_tags:
+                # Get values from all three testers
+                value1 = data1.get(tag)
+                value2 = data2.get(tag)  
+                value3 = data3.get(tag)
+                
+                # Determine data type and anatomical side
+                data_type = "Unknown"
+                anatomical_side = "Both"
+                
+                if "matrix" in tag.lower() or "mat" in tag.lower():
+                    data_type = "Matrix"
+                elif "vector" in tag.lower() or any(x in tag.lower() for x in ['p0', 'p1', 'normal']):
+                    data_type = "Vector"
+                elif any(x in tag.lower() for x in ['angle', 'length', 'distance', 'radius']):
+                    data_type = "Scalar"
+                elif value1 and len(str(value1).split()) == 16:
+                    data_type = "Matrix" 
+                elif value1 and len(str(value1).split()) == 3:
+                    data_type = "Vector"
+                else:
+                    data_type = "Scalar"
+                
+                if "_R" in tag or "_Right" in tag:
+                    anatomical_side = "Right"
+                elif "_L" in tag or "_Left" in tag:
+                    anatomical_side = "Left"
+                
+                # Process based on data type
+                if data_type == "Matrix":
+                    # Break down matrix into components
+                    matrix1 = parse_matrix_values(value1)
+                    matrix2 = parse_matrix_values(value2)
+                    matrix3 = parse_matrix_values(value3)
+                    
+                    # Create a row for each matrix component
+                    all_components = set()
+                    if matrix1: all_components.update(matrix1.keys())
+                    if matrix2: all_components.update(matrix2.keys())
+                    if matrix3: all_components.update(matrix3.keys())
+                    
+                    for component in sorted(all_components):
+                        row = {
+                            'Case': case_name,
+                            'Parameter': tag,
+                            'Component': component,
+                            'Data_Type': f"Matrix_{component}",
+                            'Anatomical_Side': anatomical_side,
+                            'H001_Value': matrix1.get(component),
+                            'H002_Value': matrix2.get(component),
+                            'H003_Value': matrix3.get(component)
+                        }
+                        detailed_rows.append(row)
+                
+                elif data_type == "Vector":
+                    # Break down vector into components
+                    vector1 = parse_vector_values(value1)
+                    vector2 = parse_vector_values(value2)
+                    vector3 = parse_vector_values(value3)
+                    
+                    # Create a row for each vector component
+                    for component in ['X', 'Y', 'Z']:
+                        row = {
+                            'Case': case_name,
+                            'Parameter': tag,
+                            'Component': component,
+                            'Data_Type': f"Vector_{component}",
+                            'Anatomical_Side': anatomical_side,
+                            'H001_Value': vector1.get(component),
+                            'H002_Value': vector2.get(component),
+                            'H003_Value': vector3.get(component)
+                        }
+                        detailed_rows.append(row)
+                
+                else:  # Scalar
+                    # Single value - no breakdown needed
+                    try:
+                        val1 = float(value1) if value1 else None
+                        val2 = float(value2) if value2 else None
+                        val3 = float(value3) if value3 else None
+                    except:
+                        val1, val2, val3 = value1, value2, value3
+                    
+                    row = {
+                        'Case': case_name,
+                        'Parameter': tag,
+                        'Component': 'Value',
+                        'Data_Type': data_type,
+                        'Anatomical_Side': anatomical_side,
+                        'H001_Value': val1,
+                        'H002_Value': val2,
+                        'H003_Value': val3
+                    }
+                    detailed_rows.append(row)
+    
+    if not detailed_rows:
+        print("Warning: No data available for detailed Excel export.")
+        return None
+    
+    # Create DataFrame
+    df = pd.DataFrame(detailed_rows)
+    
+    # Create Excel file with multiple sheets
+    excel_filename = f"{output_prefix}_detailed_data.xlsx"
+    
+    with pd.ExcelWriter(excel_filename, engine=excel_engine) as writer:
+        # Main sheet with all detailed data
+        df.to_excel(writer, sheet_name='Detailed_Data', index=False)
+        
+        # Matrices sheet with all matrix components
+        matrix_df = df[df['Data_Type'].str.startswith('Matrix_')]
+        if not matrix_df.empty:
+            # Pivot to create matrix component analysis
+            matrix_pivot = matrix_df.pivot_table(
+                index=['Case', 'Parameter', 'Anatomical_Side'],
+                columns=['Component'],
+                values=['H001_Value', 'H002_Value', 'H003_Value'],
+                fill_value=None
+            )
+            matrix_pivot.to_excel(writer, sheet_name='Matrix_Components')
+        
+        # Vectors sheet with all vector components
+        vector_df = df[df['Data_Type'].str.startswith('Vector_')]
+        if not vector_df.empty:
+            # Pivot to create vector component analysis
+            vector_pivot = vector_df.pivot_table(
+                index=['Case', 'Parameter', 'Anatomical_Side'],
+                columns=['Component'],
+                values=['H001_Value', 'H002_Value', 'H003_Value'],
+                fill_value=None
+            )
+            vector_pivot.to_excel(writer, sheet_name='Vector_Components')
+        
+        # Translation components only (from matrices)
+        translation_df = df[df['Component'].isin(['Translation_X', 'Translation_Y', 'Translation_Z'])]
+        if not translation_df.empty:
+            translation_pivot = translation_df.pivot_table(
+                index=['Case', 'Parameter', 'Anatomical_Side'],
+                columns=['Component'],
+                values=['H001_Value', 'H002_Value', 'H003_Value'],
+                fill_value=None
+            )
+            translation_pivot.to_excel(writer, sheet_name='Translation_Components')
+        
+        # Scalars sheet
+        scalar_df = df[~df['Data_Type'].str.contains('Matrix_|Vector_')]
+        if not scalar_df.empty:
+            scalar_df.to_excel(writer, sheet_name='Scalar_Values', index=False)
+        
+        # Summary statistics by component type
+        summary_data = []
+        for case in df['Case'].unique():
+            case_df = df[df['Case'] == case]
+            summary_data.append({
+                'Case': case,
+                'Total_Components': len(case_df),
+                'Matrix_Components': len(case_df[case_df['Data_Type'].str.startswith('Matrix_')]),
+                'Vector_Components': len(case_df[case_df['Data_Type'].str.startswith('Vector_')]),
+                'Scalar_Values': len(case_df[~case_df['Data_Type'].str.contains('Matrix_|Vector_')]),
+                'Translation_Components': len(case_df[case_df['Component'].isin(['Translation_X', 'Translation_Y', 'Translation_Z'])]),
+                'Rotation_Components': len(case_df[case_df['Component'].str.startswith('M_') & ~case_df['Component'].isin(['Translation_X', 'Translation_Y', 'Translation_Z'])])
+            })
+        
+        summary_df = pd.DataFrame(summary_data)
+        summary_df.to_excel(writer, sheet_name='Component_Summary', index=False)
+    
+    print(f"Detailed data (component-wise) exported to Excel: {excel_filename}")
+    return excel_filename
 
 if __name__ == "__main__":
     main()
