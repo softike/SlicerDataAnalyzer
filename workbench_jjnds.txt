@@ -1,0 +1,209 @@
+//enum Product { CORAIL,PINNACLE,ACTIS };
+
+const constexpr SboShape3UID companyRangeStartsAt = 160000L;
+const constexpr SboShape3UID companyRangeEndsAt   = 190000L;
+
+
+inline constexpr SboShape3UID productRangeStartsAt(Product aP)
+{
+switch(aP) {
+case Product::CORAIL:     return companyRangeStartsAt + 0L;
+// case Product::CORAIL_REV: return companyRangeStartsAt + 500L;
+// case Product::PINNACLE:   return companyRangeStartsAt + 1000L;
+// case Product::ACTIS:      return companyRangeStartsAt + 1250L;
+};
+return 0;
+}
+
+
+
+enum class S3UID: SboShape3UID{
+        STEM_KHO_A_135_0= ProductRangeStartsAt + 90L,
+        STEM_KHO_A_135_1,
+        STEM_KHO_A_135_2,
+        STEM_KHO_A_135_3,
+        STEM_KHO_A_135_4,
+        STEM_KHO_A_135_5,
+        STEM_KHO_A_135_6,
+        STEM_KHO_A_135_7,
+        STEM_KHO_A_135_8,
+        STEM_KHO_A_135_9,
+
+        STEM_KS_STD135_0, //offset 10
+        STEM_KS_STD135_1,
+        STEM_KS_STD135_2,
+        STEM_KS_STD135_3,
+        STEM_KS_STD135_4,
+        STEM_KS_STD135_5,
+        STEM_KS_STD135_6,
+        STEM_KS_STD135_7,
+        STEM_KS_STD135_8,
+        STEM_KS_STD135_9,
+        STEM_KS_STD135_10,
+
+         STEM_KA_STD135_0, //offset 21
+        STEM_KA_STD135_1,
+        STEM_KA_STD135_2,
+        STEM_KA_STD135_3,
+        STEM_KA_STD135_4,
+        STEM_KA_STD135_5,
+        STEM_KA_STD135_6,
+        STEM_KA_STD135_7,
+        STEM_KA_STD135_8,
+        STEM_KA_STD135_9,
+        STEM_KA_STD135_10,
+
+         STEM_KHO_S_135_0, //offset 32
+        STEM_KHO_S_135_1,
+        STEM_KHO_S_135_2,
+        STEM_KHO_S_135_3,
+        STEM_KHO_S_135_4,
+        STEM_KHO_S_135_5,
+        STEM_KHO_S_135_6,
+        STEM_KHO_S_135_7,
+        STEM_KHO_S_135_8,
+        STEM_KHO_S_135_9,
+
+         STEM_KLA_125_0, //offset 42
+        STEM_KLA_125_1,
+        STEM_KLA_125_2,
+        STEM_KLA_125_3,
+        STEM_KLA_125_4,
+        STEM_KLA_125_5,
+        STEM_KLA_125_6,
+        STEM_KLA_125_7,
+        STEM_KLA_125_8,
+        STEM_KLA_125_9,
+
+        STEM_STD125_S_0, //offset 52
+        STEM_STD125_S_1,
+        STEM_STD125_S_2,
+        STEM_STD125_S_3,
+
+        STEM_STD125_A_0, //offset 56
+        STEM_STD125_A_1,
+        STEM_STD125_A_2,
+        STEM_STD125_A_3,
+        STEM_STD125_A_4,
+        STEM_STD125_A_5,
+        STEM_STD125_A_6,
+        STEM_STD125_A_7,
+
+        STEM_SN_S_0,//offset 64
+        STEM_SN_S_1,
+        STEM_SN_S_2,
+        STEM_SN_S_3,
+
+        STEM_SN_A_0,//offset 68
+        STEM_SN_A_1,
+        STEM_SN_A_2,
+        STEM_SN_A_3,
+        STEM_SN_A_4,
+        STEM_SN_A_5,
+        STEM_SN_A_6,
+        STEM_SN_A_7,
+
+        CUTPLANE,
+        HEAD_M4,
+        HEAD_P0,
+        HEAD_P4,
+        HEAD_P8,
+
+        RANGE_CCD_KS_STD135, //range labels are not save on disk
+        RANGE_CCD_KA_STD135,
+        RANGE_CCD_KHO_S_135,
+        RANGE_CCD_KHO_A_135,
+        RANGE_CCD_KLA_125,
+        RANGE_CCD_STD125_S,
+        RANGE_CCD_STD125_A,
+        RANGE_CCD_SN_S,
+        RANGE_CCD_SN_A
+
+  };
+
+
+  next(S3UID::STEM_KS_STD135_0, "103427643_1",RCCIdName);
+  next(S3UID::STEM_KS_STD135_1, "103427644_1",RCCIdName);
+  next(S3UID::STEM_KS_STD135_2, "103427646_1",RCCIdName);
+  next(S3UID::STEM_KS_STD135_3, "103427648_1",RCCIdName);
+  next(S3UID::STEM_KS_STD135_4, "103427649_1",RCCIdName);
+  next(S3UID::STEM_KS_STD135_5, "103427650_1",RCCIdName);
+  next(S3UID::STEM_KS_STD135_6, "103427651_1",RCCIdName);
+  next(S3UID::STEM_KS_STD135_7, "103427652_1",RCCIdName);
+  next(S3UID::STEM_KS_STD135_8, "103427653_1",RCCIdName);
+  next(S3UID::STEM_KS_STD135_9, "103427654_1",RCCIdName);
+  next(S3UID::STEM_KS_STD135_10,"103427657_1",RCCIdName);
+
+  next(S3UID::STEM_KA_STD135_0, "103414240_1",RCCIdName);
+  next(S3UID::STEM_KA_STD135_1, "103414964_1",RCCIdName);
+  next(S3UID::STEM_KA_STD135_2, "103414966_1",RCCIdName);
+  next(S3UID::STEM_KA_STD135_3, "103414967_1",RCCIdName);
+  next(S3UID::STEM_KA_STD135_4, "103414968_1",RCCIdName);
+  next(S3UID::STEM_KA_STD135_5, "103414969_1",RCCIdName);
+  next(S3UID::STEM_KA_STD135_6, "103414970_1",RCCIdName);
+  next(S3UID::STEM_KA_STD135_7, "103414971_1",RCCIdName);
+  next(S3UID::STEM_KA_STD135_8, "103427630_1",RCCIdName);
+  next(S3UID::STEM_KA_STD135_9, "103427639_1",RCCIdName);
+  next(S3UID::STEM_KA_STD135_10,"103427658_1",RCCIdName);
+
+  next(S3UID::STEM_KHO_S_135_0, "103607083_1",RCCIdName);
+  next(S3UID::STEM_KHO_S_135_1, "103607086_1",RCCIdName);
+  next(S3UID::STEM_KHO_S_135_2, "103607087_1",RCCIdName);
+  next(S3UID::STEM_KHO_S_135_3, "103607088_1",RCCIdName);
+  next(S3UID::STEM_KHO_S_135_4, "103607091_1",RCCIdName);
+  next(S3UID::STEM_KHO_S_135_5, "103607092_1",RCCIdName);
+  next(S3UID::STEM_KHO_S_135_6, "103607093_1",RCCIdName);
+  next(S3UID::STEM_KHO_S_135_7, "103607094_1",RCCIdName);
+  next(S3UID::STEM_KHO_S_135_8, "103607095_1",RCCIdName);
+  next(S3UID::STEM_KHO_S_135_9, "103607099_1",RCCIdName);
+
+  next(S3UID::STEM_KHO_A_135_0, "103550471_1",RCCIdName);
+  next(S3UID::STEM_KHO_A_135_1, "103550472_1",RCCIdName);
+  next(S3UID::STEM_KHO_A_135_2, "103550473_1",RCCIdName);
+  next(S3UID::STEM_KHO_A_135_3, "103550474_1",RCCIdName);
+  next(S3UID::STEM_KHO_A_135_4, "103550475_1",RCCIdName);
+  next(S3UID::STEM_KHO_A_135_5, "103550476_1",RCCIdName);
+  next(S3UID::STEM_KHO_A_135_6, "103550477_1",RCCIdName);
+  next(S3UID::STEM_KHO_A_135_7, "103550478_1",RCCIdName);
+  next(S3UID::STEM_KHO_A_135_8, "103550481_1",RCCIdName);
+  next(S3UID::STEM_KHO_A_135_9, "103550482_1",RCCIdName);
+
+
+  next(S3UID::STEM_KLA_125_0, "103610427_1",RCCIdName);
+  next(S3UID::STEM_KLA_125_1, "103610428_1",RCCIdName);
+  next(S3UID::STEM_KLA_125_2, "103610429_1",RCCIdName);
+  next(S3UID::STEM_KLA_125_3, "103610430_1",RCCIdName);
+  next(S3UID::STEM_KLA_125_4, "103610431_1",RCCIdName);
+  next(S3UID::STEM_KLA_125_5, "103610432_1",RCCIdName);
+  next(S3UID::STEM_KLA_125_6, "103610433_1",RCCIdName);
+  next(S3UID::STEM_KLA_125_7, "103610434_1",RCCIdName);
+  next(S3UID::STEM_KLA_125_8, "103610435_1",RCCIdName);
+  next(S3UID::STEM_KLA_125_9, "103610436_1",RCCIdName);
+
+  next(S3UID::STEM_STD125_S_0, "103548905_1",RCCIdName);
+  next(S3UID::STEM_STD125_S_1, "103550468_1",RCCIdName);
+  next(S3UID::STEM_STD125_S_2, "103550469_1",RCCIdName);
+  next(S3UID::STEM_STD125_S_3, "103550470_1",RCCIdName);
+
+  next(S3UID::STEM_STD125_A_0, "103548903_1",RCCIdName);
+  next(S3UID::STEM_STD125_A_1, "103550462_1",RCCIdName);
+  next(S3UID::STEM_STD125_A_2, "103550463_1",RCCIdName);
+  next(S3UID::STEM_STD125_A_3, "103550464_1",RCCIdName);
+  next(S3UID::STEM_STD125_A_4, "103550908_1",RCCIdName);
+  next(S3UID::STEM_STD125_A_5, "103550915_1",RCCIdName);
+  next(S3UID::STEM_STD125_A_6, "103550917_1",RCCIdName);
+  next(S3UID::STEM_STD125_A_7, "103550918_1",RCCIdName);
+
+  next(S3UID::STEM_SN_S_0, "103548906_1",RCCIdName);
+  next(S3UID::STEM_SN_S_1, "103550465_1",RCCIdName);
+  next(S3UID::STEM_SN_S_2, "103550466_1",RCCIdName);
+  next(S3UID::STEM_SN_S_3, "103550467_1",RCCIdName);
+
+  next(S3UID::STEM_SN_A_0, "103548904_1",RCCIdName);
+  next(S3UID::STEM_SN_A_1, "103550459_1",RCCIdName);
+  next(S3UID::STEM_SN_A_2, "103550460_1",RCCIdName);
+  next(S3UID::STEM_SN_A_3, "103550461_1",RCCIdName);
+  next(S3UID::STEM_SN_A_4, "103550919_1",RCCIdName);
+  next(S3UID::STEM_SN_A_5, "103550920_1",RCCIdName);
+  next(S3UID::STEM_SN_A_6, "103550921_1",RCCIdName);
+  next(S3UID::STEM_SN_A_7, "103550922_1",RCCIdName);

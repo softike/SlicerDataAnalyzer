@@ -10,6 +10,35 @@ Setup for Slicer related development with Python, featuring individual plot gene
 - **Excel Export**: Raw data export to Excel spreadsheets for statistical analysis
 - **Batch Processing**: Process multiple case folders automatically
 - **Three Comparison Methods**: Support for single file analysis and three-file comparisons
+- **Implant STL Viewer**: Locate Mathys or Johnson STL files by S3UID and preview them interactively
+
+## Implant STL Viewer
+
+Use `view_implant.py` to resolve a Mathys or Johnson implant S3UID to its RCC identifier, locate the matching STL in one or more folders, and render it with VTK. You can pass either the enum name (`STEM_STD_1`) or the numeric UID value (`130506`).
+
+1. Install VTK once per environment:
+
+   ```shell
+   pip install vtk
+   ```
+
+2. Launch the viewer (example scans two folders for a Mathys implant and prints verbose details):
+
+   ```shell
+   python view_implant.py STEM_STD_1 D:\implants\mathys E:\archives --manufacturer mathys --verbose
+   ```
+
+   Or by numeric value (manufacturer becomes optional if the value is unique):
+
+   ```shell
+   python view_implant.py 130506 D:\implants\mathys E:\archives --verbose
+   ```
+
+   Omit `--manufacturer` to try every known implant module (`mathys_implants`, `johnson_implants`). The script first searches for an STL whose filename matches the RCC identifier, then falls back to substrings of the S3UID name.
+
+3. An interactive VTK window opens so you can inspect the geometry. Close the window to exit the script.
+
+> Tip: Run `python view_implant.py --help` for the full CLI reference.
 
 ## Conda Environment
 
@@ -70,6 +99,7 @@ python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_report
 ```
 
 **Standard Excel Export (`--excel`)** creates a comprehensive workbook with:
+
 - **All_Data**: Complete dataset with all cases and parameters
 - **Matrix/Vector/Scalar**: Separate sheets by data type
 - **Left_Side/Right_Side**: Anatomical side-specific data
@@ -77,6 +107,7 @@ python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_report
 - **Femoral_Anteversion_Angles**: Calculated anteversion angles for analysis
 
 **Detailed Excel Export (`--excel-detailed`)** breaks down complex data into individual components:
+
 - **Matrices**: Each 4x4 matrix element in separate columns (M_11, M_12, ... M_44, Translation_X/Y/Z)
 - **Vectors**: Individual X, Y, Z components in separate columns
 - **Component Analysis**: Pivot tables for easier statistical analysis
@@ -103,12 +134,14 @@ python batchCompareStudies.py --base_path /mnt/localstore3 --output comprehensiv
 ### Individual Plots Generated
 
 **For single file analysis:**
+
 - `{prefix}_{tag}_rotation.png` - Matrix rotation heatmaps
 - `{prefix}_{tag}_translation.png` - Translation bar charts
 - `{prefix}_{tag}_vector.png` - Vector component charts
 - `{prefix}_{tag}_scalar.png` - Scalar value displays
 
 **For three-file comparison:**
+
 - `{prefix}_{tag}_rotation_deviation.png` - Rotation deviation heatmaps
 - `{prefix}_{tag}_translation_comparison.png` - Translation comparison charts
 - `{prefix}_{tag}_vector_comparison.png` - Vector comparison charts
@@ -130,6 +163,7 @@ pip install weasyprint
 ```
 
 For alternative PDF generation:
+
 ```shell
 pip install pdfkit
 sudo apt-get install wkhtmltopdf  # Linux
@@ -146,11 +180,13 @@ pip install -r requirements_excel.txt
 ```
 
 Or manually:
+
 ```shell
 pip install pandas openpyxl
 ```
 
 Alternative Excel engine:
+
 ```shell
 pip install xlsxwriter  # Alternative to openpyxl
 ```
@@ -183,7 +219,8 @@ This format enables advanced statistical analysis in Excel, R, SPSS, or other st
 ### Excel Export Examples
 
 **Standard Format** (`--excel`): Raw values preserved as strings
-```
+
+```text
 Case      | Parameter           | Data_Type | H001_Value                              | H002_Value
 ----------|--------------------|-----------|-----------------------------------------|------------
 test_case | S3BCP_R_matrix     | Matrix    | "1.0 0.0 0.0 125.5 0.0 1.0 0.0 89.2..." | "0.99 0.01..."
@@ -191,7 +228,8 @@ test_case | S3BCP_R_p0_vector  | Vector    | "125.5 89.2 -15.8"                 
 ```
 
 **Detailed Format** (`--excel-detailed`): Individual components in separate columns
-```
+
+```text
 Case      | Parameter         | Component     | Data_Type    | H001_Value | H002_Value | H003_Value
 ----------|-------------------|---------------|--------------|------------|------------|------------
 test_case | S3BCP_R_matrix    | M_11         | Matrix_M_11  | 1.0        | 0.99       | 0.98
@@ -202,6 +240,7 @@ test_case | S3BCP_R_p0_vector | Y            | Vector_Y     | 89.2       | 88.9 
 ```
 
 This detailed format is ideal for:
+
 - Statistical analysis of individual matrix/vector components
 - ICC calculations for specific measurements  
 - Component-wise correlation analysis
