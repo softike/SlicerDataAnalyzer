@@ -588,6 +588,16 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
     """
     Generate a consolidated HTML report containing all case comparisons.
     """
+    html_filename = f"{output_prefix}.html"
+    report_dir = os.path.dirname(html_filename) or os.curdir
+
+    def _relative_to_report(path):
+        if not path:
+            return path
+        try:
+            return os.path.relpath(path, start=report_dir)
+        except ValueError:
+            return path
     
     # Generate navigation menu
     nav_html = """
@@ -639,7 +649,7 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
     anteversion_table_html = generate_anteversion_summary_table(anteversion_data, case_results)
     
     # Generate inter-rater analysis section
-    inter_rater_html = generate_inter_rater_html_section(inter_rater_results) if inter_rater_results else ""
+    inter_rater_html = generate_inter_rater_html_section(inter_rater_results, report_dir) if inter_rater_results else ""
     
     # Generate individual case sections
     cases_html = ""
@@ -669,10 +679,11 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
         # Generate plots grid for this case
         plots_html = ""
         for plot_info in result['plot_files']:
+            img_src = _relative_to_report(plot_info['filename'])
             plots_html += f"""
             <div class="plot-item">
                 <h4>{plot_info['title']}</h4>
-                <img src="{plot_info['filename']}" alt="{plot_info['title']}" class="individual-plot">
+                <img src="{img_src}" alt="{plot_info['title']}" class="individual-plot">
             </div>
             """
         
@@ -1118,7 +1129,6 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
 """
     
     # Save HTML report
-    html_filename = f"{output_prefix}.html"
     with open(html_filename, 'w') as f:
         f.write(html_content)
     
@@ -1241,18 +1251,28 @@ def main():
     print(f"Total plots generated: {total_plots}")
     print(f"Report saved as: {html_filename}")
 
-def generate_inter_rater_html_section(inter_rater_results):
+def generate_inter_rater_html_section(inter_rater_results, report_dir=None):
     """
     Generate HTML section for inter-rater analysis results.
     
     Args:
         inter_rater_results: Results from generate_inter_rater_analysis()
+        report_dir: Directory that will contain the final HTML file
     
     Returns:
         HTML string for inter-rater analysis section
     """
     if not inter_rater_results:
         return ""
+    base_dir = report_dir or os.curdir
+
+    def _relative_path(path):
+        if not path:
+            return path
+        try:
+            return os.path.relpath(path, start=base_dir)
+        except ValueError:
+            return path
     
     html = """
     <div class="inter-rater-analysis">
@@ -1311,7 +1331,7 @@ def generate_inter_rater_html_section(inter_rater_results):
     
     # Add Bland-Altman plots
     for plot_info in inter_rater_results.get('bland_altman_plots', []):
-        filename = os.path.basename(plot_info['filename'])
+        img_src = _relative_path(plot_info['filename'])
         side = plot_info['side']
         testers = plot_info['testers']
         stats = plot_info['stats']
@@ -1319,7 +1339,7 @@ def generate_inter_rater_html_section(inter_rater_results):
         html += f"""
                 <div class="plot-item">
                     <h4>{side} Side: {testers}</h4>
-                    <img src="inter_rater_analysis/{filename}" alt="Bland-Altman {side} {testers}" class="inter-rater-plot">
+                    <img src="{img_src}" alt="Bland-Altman {side} {testers}" class="inter-rater-plot">
                     <div class="plot-stats">
                         <span>Mean Diff: {stats['mean_diff']:.3f}°</span> | 
                         <span>SD: {stats['std_diff']:.3f}°</span> | 
@@ -1341,7 +1361,7 @@ def generate_inter_rater_html_section(inter_rater_results):
     
     # Add correlation plots
     for plot_info in inter_rater_results.get('correlation_plots', []):
-        filename = os.path.basename(plot_info['filename'])
+        img_src = _relative_path(plot_info['filename'])
         side = plot_info['side']
         testers = plot_info['testers']
         stats = plot_info['stats']
@@ -1349,7 +1369,7 @@ def generate_inter_rater_html_section(inter_rater_results):
         html += f"""
                 <div class="plot-item">
                     <h4>{side} Side: {testers}</h4>
-                    <img src="inter_rater_analysis/{filename}" alt="Correlation {side} {testers}" class="inter-rater-plot">
+                    <img src="{img_src}" alt="Correlation {side} {testers}" class="inter-rater-plot">
                     <div class="plot-stats">
                         <span>r = {stats['correlation']:.3f}</span> | 
                         <span>R² = {stats['r_squared']:.3f}</span> | 
@@ -1371,14 +1391,14 @@ def generate_inter_rater_html_section(inter_rater_results):
     
     # Add distribution plots
     for plot_info in inter_rater_results.get('distribution_plots', []):
-        filename = os.path.basename(plot_info['filename'])
+        img_src = _relative_path(plot_info['filename'])
         side = plot_info['side']
         stats = plot_info['stats']
         
         html += f"""
                 <div class="plot-item">
                     <h4>{side} Side Distribution</h4>
-                    <img src="inter_rater_analysis/{filename}" alt="Distribution {side}" class="inter-rater-plot">
+                    <img src="{img_src}" alt="Distribution {side}" class="inter-rater-plot">
                     <div class="plot-stats">
                         <span>H001: μ={stats['means'][0]:.2f}°</span> | 
                         <span>H002: μ={stats['means'][1]:.2f}°</span> | 
