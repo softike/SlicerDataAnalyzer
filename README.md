@@ -245,5 +245,3 @@ This detailed format is ideal for:
 - ICC calculations for specific measurements  
 - Component-wise correlation analysis
 - Precision assessment of translation vs rotation measurements
-
-

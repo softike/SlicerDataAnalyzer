@@ -33,6 +33,22 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
+from implant_registry import resolve_stem_uid
+
+TESTER_IDS = ("H001", "H002", "H003")
+STEM_ROTATION_KEYS = (
+    "R11",
+    "R12",
+    "R13",
+    "R21",
+    "R22",
+    "R23",
+    "R31",
+    "R32",
+    "R33",
+)
+STEM_TRANSLATION_KEYS = ("Tx", "Ty", "Tz")
+
 # Import the main comparison functions from the existing script
 from compareResults_3Studies import (
     comparePlanningData, extractPlanningData_plain, 
@@ -41,6 +57,113 @@ from compareResults_3Studies import (
     extract_patient_side, validate_patient_sides, filter_tags_by_side,
     TAGS_XPATHS
 )
+
+
+def _decompose_matrix_components(matrix_value):
+    """Split a flattened 4x4 matrix string into rotation and translation parts."""
+
+    components = {"rotation": {}, "translation": {}}
+    if not matrix_value:
+        return components
+
+    try:
+        values = [float(x) for x in matrix_value.strip().split()]
+    except (TypeError, ValueError):
+        return components
+
+    if len(values) != 16:
+        return components
+
+    rotation = {}
+    for row in range(3):
+        for col in range(3):
+            rotation[f"R{row + 1}{col + 1}"] = values[row * 4 + col]
+
+    components["rotation"] = rotation
+    components["translation"] = {
+        "Tx": values[12],
+        "Ty": values[13],
+        "Tz": values[14],
+    }
+    return components
+
+
+def extract_stem_info_from_xml(xml_path):
+    """Collect implant stem metadata and pose from a single seedplan XML file."""
+
+    info = {
+        "xml_path": xml_path,
+        "uid": None,
+        "matrix_raw": None,
+        "rotation": {},
+        "translation": {},
+        "requested_side": None,
+        "configured_side": None,
+        "state": None,
+        "hip_config_uid": None,
+        "source": None,
+        "manufacturer": None,
+        "stem_enum_name": None,
+        "stem_friendly_name": None,
+        "rcc_id": None,
+        "error": None,
+    }
+
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+    except Exception as exc:
+        info["error"] = f"parse_error: {exc}"
+        return info
+
+    hip_configs = root.findall(".//hipImplantConfig")
+    history_configs = root.findall(".//hipImplantConfigHistoryList/hipImplantConfig")
+
+    for source_label, configs in (("active", hip_configs), ("history", history_configs)):
+        for hip_config in configs:
+            fem_config = hip_config.find("./femImplantConfig")
+            if fem_config is None:
+                continue
+
+            stem_shape = fem_config.find(".//s3Shape[@part='stem']")
+            if stem_shape is None:
+                continue
+
+            info["hip_config_uid"] = hip_config.attrib.get("uid")
+            info["requested_side"] = fem_config.attrib.get("requestedSide")
+            info["configured_side"] = fem_config.attrib.get("side")
+            info["state"] = fem_config.attrib.get("state")
+            info["source"] = source_label
+
+            uid_attr = stem_shape.attrib.get("uid")
+            if uid_attr:
+                try:
+                    info["uid"] = int(uid_attr)
+                except ValueError:
+                    info["error"] = f"invalid_uid: {uid_attr}"
+                else:
+                    lookup = resolve_stem_uid(info["uid"])
+                    if lookup:
+                        info["manufacturer"] = lookup.manufacturer
+                        info["stem_enum_name"] = lookup.enum_name
+                        info["stem_friendly_name"] = lookup.friendly_name
+                        info["rcc_id"] = lookup.rcc_id
+
+            matrix_elem = stem_shape.find("matrix4[@name='mat']")
+            if matrix_elem is None:
+                matrix_elem = stem_shape.find("matrix4")
+            if matrix_elem is not None:
+                info["matrix_raw"] = matrix_elem.attrib.get("value")
+                components = _decompose_matrix_components(info["matrix_raw"])
+                info["rotation"] = components.get("rotation", {})
+                info["translation"] = components.get("translation", {})
+            else:
+                info["error"] = info["error"] or "stem_matrix_missing"
+
+            return info
+
+    info["error"] = info["error"] or "stem_not_found"
+    return info
 
 def find_case_folders(base_path):
     """
@@ -53,9 +176,6 @@ def find_case_folders(base_path):
         List of tuples (case_name, h001_path, h002_path, h003_path)
     """
     case_sets = []
-    
-    # Define tester directories
-    tester_dirs = ['H001', 'H002', 'H003']
     
     # Find all case folders in H001 first (use as reference)
     h001_path = os.path.join(base_path, 'H001')
@@ -210,6 +330,12 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
         'actual_side_filter': actual_side_filter,
         'is_auto_mode': side_filter == 'Auto'
     }
+
+    stem_details = []
+    for tester_label, xml_path in zip(TESTER_IDS, [xml_path1, xml_path2, xml_path3]):
+        stem_info = extract_stem_info_from_xml(xml_path)
+        stem_info['tester'] = tester_label
+        stem_details.append(stem_info)
     
     return {
         'case_name': case_name,
@@ -220,7 +346,8 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
         'xml_paths': [xml_path1, xml_path2, xml_path3],
         'side_info': side_info,
         'raw_data': (data1, data2, data3),  # Store raw data for Excel export
-        'anteversion_angles': extract_anteversion_from_data(data1, data2, data3)  # Store anteversion angles
+        'anteversion_angles': extract_anteversion_from_data(data1, data2, data3),  # Store anteversion angles
+        'stem_info': stem_details,
     }
 
 def extract_anteversion_from_data(data1, data2, data3):
@@ -242,8 +369,8 @@ def extract_anteversion_from_data(data1, data2, data3):
         
         for i, data in enumerate(datasets):
             # Look for femoral frame and BCP data to calculate anteversion
-            femur_matrix_tag = f'S3FemurFrame_{side_suffix}_mat'
-            bcp_matrix_tag = f'S3BCP_{side_suffix}_mat'
+            femur_matrix_tag = f'S3FemurFrame_{side_suffix}_matrix'
+            bcp_matrix_tag = f'S3BCP_{side_suffix}_matrix'
             
             if femur_matrix_tag in data and bcp_matrix_tag in data:
                 try:
@@ -254,7 +381,7 @@ def extract_anteversion_from_data(data1, data2, data3):
                     bcp_matrix = data[bcp_matrix_tag]
                     
                     if femur_matrix and bcp_matrix:
-                        angle = calculate_frontal_plane_angle(femur_matrix, bcp_matrix, side)
+                        angle = calculate_frontal_plane_angle(femur_matrix, bcp_matrix)
                         anteversion_angles[side][i] = angle
                 except Exception:
                     # If calculation fails, leave as None
@@ -1433,7 +1560,7 @@ def create_box_plot_distribution(data_dict, title, output_filename):
     
     # Create box plot
     plt.figure(figsize=(10, 8))
-    box_plot = plt.boxplot(plot_data, labels=labels, patch_artist=True)
+    box_plot = plt.boxplot(plot_data, tick_labels=labels, patch_artist=True)
     
     # Color the boxes
     colors = ['lightblue', 'lightgreen', 'lightcoral']
@@ -1674,6 +1801,7 @@ def export_to_excel(case_results, output_prefix):
     
     # Prepare data for Excel export
     all_data_rows = []
+    stem_sheet_rows = []
     
     for result in case_results:
         if result['status'] != 'success':
@@ -1725,6 +1853,34 @@ def export_to_excel(case_results, output_prefix):
                     'H003_Value': value3
                 }
                 all_data_rows.append(row)
+
+        for stem_entry in result.get('stem_info', []):
+            rotation = stem_entry.get('rotation') or {}
+            translation = stem_entry.get('translation') or {}
+            row = {
+                'Case': case_name,
+                'Tester': stem_entry.get('tester'),
+                'Stem_UID': stem_entry.get('uid'),
+                'Manufacturer': stem_entry.get('manufacturer'),
+                'Stem_Model': stem_entry.get('stem_enum_name'),
+                'Stem_Label': stem_entry.get('stem_friendly_name'),
+                'RCC_ID': stem_entry.get('rcc_id'),
+                'Requested_Side': stem_entry.get('requested_side'),
+                'Configured_Side': stem_entry.get('configured_side'),
+                'Config_State': stem_entry.get('state'),
+                'Hip_Config_UID': stem_entry.get('hip_config_uid'),
+                'Matrix_Source': stem_entry.get('source'),
+                'Matrix_Value': stem_entry.get('matrix_raw'),
+                'XML_Path': stem_entry.get('xml_path'),
+                'Error': stem_entry.get('error'),
+            }
+
+            for key in STEM_ROTATION_KEYS:
+                row[f'Rot_{key}'] = rotation.get(key)
+            for key in STEM_TRANSLATION_KEYS:
+                row[f'Trans_{key}'] = translation.get(key)
+
+            stem_sheet_rows.append(row)
     
     if not all_data_rows:
         print("Warning: No data available for Excel export.")
@@ -1791,6 +1947,10 @@ def export_to_excel(case_results, output_prefix):
         if anteversion_rows:
             anteversion_df = pd.DataFrame(anteversion_rows)
             anteversion_df.to_excel(writer, sheet_name='Femoral_Anteversion_Angles', index=False)
+
+        if stem_sheet_rows:
+            stems_df = pd.DataFrame(stem_sheet_rows)
+            stems_df.to_excel(writer, sheet_name='Stem_Info', index=False)
     
     print(f"Raw data exported to Excel: {excel_filename}")
     return excel_filename
@@ -1828,6 +1988,7 @@ def export_to_excel_detailed(case_results, output_prefix):
     
     # Prepare detailed data for Excel export
     detailed_rows = []
+    stem_sheet_rows = []
     
     def parse_matrix_values(value_string):
         """Parse matrix string into individual components."""
@@ -1973,6 +2134,34 @@ def export_to_excel_detailed(case_results, output_prefix):
                         'H003_Value': val3
                     }
                     detailed_rows.append(row)
+
+        for stem_entry in result.get('stem_info', []):
+            rotation = stem_entry.get('rotation') or {}
+            translation = stem_entry.get('translation') or {}
+            row = {
+                'Case': case_name,
+                'Tester': stem_entry.get('tester'),
+                'Stem_UID': stem_entry.get('uid'),
+                'Manufacturer': stem_entry.get('manufacturer'),
+                'Stem_Model': stem_entry.get('stem_enum_name'),
+                'Stem_Label': stem_entry.get('stem_friendly_name'),
+                'RCC_ID': stem_entry.get('rcc_id'),
+                'Requested_Side': stem_entry.get('requested_side'),
+                'Configured_Side': stem_entry.get('configured_side'),
+                'Config_State': stem_entry.get('state'),
+                'Hip_Config_UID': stem_entry.get('hip_config_uid'),
+                'Matrix_Source': stem_entry.get('source'),
+                'Matrix_Value': stem_entry.get('matrix_raw'),
+                'XML_Path': stem_entry.get('xml_path'),
+                'Error': stem_entry.get('error'),
+            }
+
+            for key in STEM_ROTATION_KEYS:
+                row[f'Rot_{key}'] = rotation.get(key)
+            for key in STEM_TRANSLATION_KEYS:
+                row[f'Trans_{key}'] = translation.get(key)
+
+            stem_sheet_rows.append(row)
     
     if not detailed_rows:
         print("Warning: No data available for detailed Excel export.")
@@ -2044,6 +2233,10 @@ def export_to_excel_detailed(case_results, output_prefix):
         
         summary_df = pd.DataFrame(summary_data)
         summary_df.to_excel(writer, sheet_name='Component_Summary', index=False)
+
+        if stem_sheet_rows:
+            stems_df = pd.DataFrame(stem_sheet_rows)
+            stems_df.to_excel(writer, sheet_name='Stem_Info', index=False)
     
     print(f"Detailed data (component-wise) exported to Excel: {excel_filename}")
     return excel_filename
