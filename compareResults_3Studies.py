@@ -7,6 +7,12 @@ from pathlib import Path
 
 dcm_path = r"C:\\Users\\Coder\\Desktop\\001-M-30\\001-M-30\\Dataset"
 
+# Basis vectors for anatomical reference frame
+X_UNIT = np.array([1.0, 0.0, 0.0])  # Right ➜ Left
+Y_UNIT = np.array([0.0, 1.0, 0.0])  # Front ➜ Back
+Z_UNIT = np.cross(X_UNIT, Y_UNIT)
+Z_UNIT = Z_UNIT / np.linalg.norm(Z_UNIT)  # Headward direction (X × Y)
+
 # Centralized definition of XML tags and XPath expressions to extract
 TAGS_XPATHS = [
     ("S3FemoralSphere_R_matrix", ".//s3Shape[@name='S3FemoralSphere_R']/matrix4[@name='mat']"),
@@ -34,6 +40,8 @@ TAGS_XPATHS = [
 
 # Filtered version for extractPlanningData function (only enabled elements)
 TAGS_XPATHS_EXTRACT_ONLY = [
+    ("S3FemoralSphere_R_matrix", ".//s3Shape[@name='S3FemoralSphere_R']/matrix4[@name='mat']"),
+    ("S3FemoralSphere_L_matrix", ".//s3Shape[@name='S3FemoralSphere_L']/matrix4[@name='mat']"),
     ("S3FemoralSphere_R_diameter", ".//s3Shape[@name='S3FemoralSphere_R']/scalar[@name='diameter']"),
     ("S3FemoralSphere_L_diameter", ".//s3Shape[@name='S3FemoralSphere_L']/scalar[@name='diameter']"),
     ("S3GreaterTroch_R_matrix", ".//s3Shape[@name='S3GreaterTroch_R']/matrix4[@name='mat']"),
@@ -51,41 +59,135 @@ TAGS_XPATHS_EXTRACT_ONLY = [
 ]
 
 ##
-def calculate_frontal_plane_angle(matrix1_str, matrix2_str):
-    """
-    Calculate the angle between the frontal planes (AP planes) of two 4x4 transformation matrices.
-    The frontal plane is defined by the Y-Z plane (normal vector along X-axis).
+def _matrix_from_string(matrix_str):
+    values = [float(x) for x in matrix_str.split()]
+    if len(values) != 16:
+        raise ValueError("Matrix entries must contain 16 floats")
+    return np.array(values).reshape((4, 4))
+
+
+def _vector_from_string(vector_str):
+    values = [float(x) for x in vector_str.split()]
+    if len(values) != 3:
+        raise ValueError("Vector entries must contain 3 floats")
+    return np.array(values)
+
+
+def _project_onto_xy_plane(vector):
+    projection = vector - np.dot(vector, Z_UNIT) * Z_UNIT
+    norm = np.linalg.norm(projection)
+    if norm < 1e-8:
+        raise ValueError("Projection onto XY plane is undefined (vector near +Z)")
+    return projection / norm
+
+
+def _vector_angle_deg(vector, side, test_bcp_angle=False):
+    # Calculate angle using dot product with X_UNIT (pointing Right/+X)
+    # First normalize the vector
+    norm = np.linalg.norm(vector)
+    if norm < 1e-8:
+        raise ValueError("Vector magnitude too small for angle calculation")
+    unit_vec = vector / norm
     
-    Args:
-        matrix1_str: String representation of first 4x4 matrix
-        matrix2_str: String representation of second 4x4 matrix
+    # Get angle from X_UNIT using arccos of dot product
+    cos_angle = np.dot(unit_vec, X_UNIT)
+    if side == 'Left':
+        cos_angle = np.dot(unit_vec, -X_UNIT) 
+    # Clamp to [-1, 1] to avoid numerical errors with arccos
+    cos_angle = np.clip(cos_angle, -1.0, 1.0)
+    angle = np.degrees(np.arccos(cos_angle))
     
-    Returns:
-        angle_degrees: Angle between the frontal planes in degrees
-    """
-    # Parse matrices
-    mat1 = np.array([float(x) for x in matrix1_str.split()]).reshape((4, 4))
-    mat2 = np.array([float(x) for x in matrix2_str.split()]).reshape((4, 4))
-    
-    # Extract rotation parts (3x3)
-    rot1 = mat1[:3, :3]
-    rot2 = mat2[:3, :3]
-    
-    # Get the X-axis vectors (first columns) which are normal to the frontal plane
-    # In a transformation matrix, the first column represents the transformed X-axis
-    normal1 = rot1[:, 0]  # X-axis of first coordinate system
-    normal2 = rot2[:, 0]  # X-axis of second coordinate system
-    
-    # Normalize the vectors
-    normal1 = normal1 / np.linalg.norm(normal1)
-    normal2 = normal2 / np.linalg.norm(normal2)
-    
-    # Calculate angle between normal vectors using dot product
-    dot_product = np.clip(np.dot(normal1, normal2), -1.0, 1.0)
-    angle_radians = np.arccos(abs(dot_product))  # Use abs to get acute angle
-    angle_degrees = np.degrees(angle_radians)
-    
-    return angle_degrees
+    # Determine sign using cross product with Z_UNIT
+    # Positive Z component means counter-clockwise (positive angle)
+    if test_bcp_angle:
+        test_angle = np.dot(unit_vec, Y_UNIT)
+        if test_angle > 0:
+            angle = -angle
+
+    return angle
+
+
+def _femoral_neck_angle(femur_frame_matrix_str, femoral_sphere_matrix_str, side):
+    frame_mat = _matrix_from_string(femur_frame_matrix_str)
+    sphere_mat = _matrix_from_string(femoral_sphere_matrix_str)
+    frame_origin = frame_mat[3, :3]
+    sphere_center = sphere_mat[3, :3]
+    direction = sphere_center - frame_origin
+    neck_proj = _project_onto_xy_plane(direction)
+    angle = _vector_angle_deg(neck_proj, side)
+    return angle
+
+
+def _bcp_direction_angle(bcp_matrix_str, p0_str, p1_str, side):
+    mat = _matrix_from_string(bcp_matrix_str)
+    rot = mat[:3, :3]
+    translation = mat[3, :3]
+
+    if not (p0_str and p1_str):
+        axis = mat[:3, 0]
+        direction = axis if side == 'Right' else -axis
+    else:
+        p0 = _vector_from_string(p0_str)
+        p1 = _vector_from_string(p1_str)
+        p0_xy = p0.copy()
+        p1_xy = p1.copy()
+        p0_xy[2] = 0.0
+        p1_xy[2] = 0.0
+        rot_T = rot.T
+        tp0 = rot_T @ p0_xy + translation
+        tp1 = rot_T @ p1_xy + translation
+        direction = tp0 - tp1 if side == 'Left' else tp1 - tp0
+
+    bcp_proj = _project_onto_xy_plane(direction)
+    angle = _vector_angle_deg(bcp_proj, side, test_bcp_angle=True)
+    return angle
+
+
+def calculate_femoral_anteversion(
+    femur_matrix_str,
+    bcp_matrix_str,
+    *,
+    femoral_sphere_matrix_str,
+    bcp_p0_str,
+    bcp_p1_str,
+    side='Right',
+    return_components=False,
+):
+    """Compute anteversion using femoral neck-to-sphere and BCP projected vectors."""
+
+    neck_angle = _femoral_neck_angle(femur_matrix_str, femoral_sphere_matrix_str, side)
+    print ("TEST : " + neck_angle.__str__())
+    bcp_angle = _bcp_direction_angle(bcp_matrix_str, bcp_p0_str, bcp_p1_str, side)
+    print ("TEST : " + bcp_angle.__str__()) 
+    anteversion = neck_angle - bcp_angle
+    print ("ANTEVERSION: " + anteversion.__str__())
+    if return_components:
+        return anteversion, neck_angle, bcp_angle
+    return anteversion
+
+
+def calculate_femoral_anteversion_from_dict(data, side):
+    """Convenience helper for callers that operate on planning data dictionaries."""
+    suffix = 'R' if side == 'Right' else 'L'
+    femur_key = f'S3FemurFrame_{suffix}_matrix'
+    sphere_key = f'S3FemoralSphere_{suffix}_matrix'
+    bcp_key = f'S3BCP_{suffix}_matrix'
+    p0_key = f'S3BCP_{suffix}_p0'
+    p1_key = f'S3BCP_{suffix}_p1'
+
+    required = [femur_key, sphere_key, bcp_key, p0_key, p1_key]
+    missing = [key for key in required if not data.get(key)]
+    if missing:
+        raise ValueError(f"Missing anteversion inputs: {', '.join(missing)}")
+
+    return calculate_femoral_anteversion(
+        data[femur_key],
+        data[bcp_key],
+        femoral_sphere_matrix_str=data[sphere_key],
+        bcp_p0_str=data[p0_key],
+        bcp_p1_str=data[p1_key],
+        side=side,
+    )
 
 ##
 def extract_patient_side(xml_path):
@@ -607,25 +709,40 @@ def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix
             'tag': tag
         })
     
-    # Calculate and plot frontal plane angles between specific matrix pairs
+    # Calculate and plot femoral anteversion based on femoral neck vs BCP projection
     matrix_dict = {tag: value for tag, value in matrix_data}
+    vector_dict = {tag: value for tag, value in vector_data}
+    planning_values = {**matrix_dict, **vector_dict}
     
-    # Define the pairs to compare
-    angle_pairs = [
-        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Femoral Anteversion Angle'),
-        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Femoral Anteversion Angle')
-    ]
-    
-    for matrix1_tag, matrix2_tag, title in angle_pairs:
-        if matrix1_tag in matrix_dict and matrix2_tag in matrix_dict:
-            angle = calculate_frontal_plane_angle(matrix_dict[matrix1_tag], matrix_dict[matrix2_tag])
+    side_labels = [('Right', 'R'), ('Left', 'L')]
+    for side, suffix in side_labels:
+        title = f"{side} Femoral Anteversion Angle"
+        femur_key = f'S3FemurFrame_{suffix}_matrix'
+        sphere_key = f'S3FemoralSphere_{suffix}_matrix'
+        bcp_key = f'S3BCP_{suffix}_matrix'
+        p0_key = f'S3BCP_{suffix}_p0'
+        p1_key = f'S3BCP_{suffix}_p1'
+        requirements = [femur_key, sphere_key, bcp_key, p0_key, p1_key]
+        if all(planning_values.get(key) for key in requirements):
+            try:
+                angle = calculate_femoral_anteversion(
+                    planning_values[femur_key],
+                    planning_values[bcp_key],
+                    femoral_sphere_matrix_str=planning_values[sphere_key],
+                    bcp_p0_str=planning_values[p0_key],
+                    bcp_p1_str=planning_values[p1_key],
+                    side=side,
+                )
+            except ValueError:
+                continue
             
+            label = f'{femur_key}\nvs\n{bcp_key}'
+
             # Create angle visualization plot
             fig, ax = plt.subplots(figsize=(8, 6))
             
             # Create a simple bar chart showing the angle
-            bar = ax.bar([f'{matrix1_tag}\nvs\n{matrix2_tag}'], [angle], 
-                        color='orange', alpha=0.8, width=0.6)
+            bar = ax.bar([label], [angle], color='orange', alpha=0.8, width=0.6)
             ax.set_title(f"{title}", fontsize=14, pad=20)
             ax.set_ylabel("Angle (degrees)")
             ax.grid(True, alpha=0.3)
@@ -656,15 +773,15 @@ def create_individual_plots(matrix_data, vector_data, scalar_data, output_prefix
             # Remove x-tick labels for cleaner look
             ax.set_xticklabels([])
             
-            angle_filename = f"{output_prefix}_{matrix1_tag}_{matrix2_tag}_angle.png"
+            angle_filename = f"{output_prefix}_{femur_key}_{bcp_key}_angle.png"
             plt.savefig(angle_filename, dpi=300, bbox_inches='tight')
             plt.close()
             
             plot_files.append({
                 'filename': angle_filename,
-                'title': f"{title}",
-                'type': 'frontal_plane_angle',
-                'tag': f"{matrix1_tag}_{matrix2_tag}",
+                'title': title,
+                'type': 'femoral_anteversion',
+                'tag': f"{femur_key}_{bcp_key}",
                 'angle': angle
             })
     
@@ -854,60 +971,79 @@ def create_individual_comparison_plots(data1, data2, data3, common_tags, output_
                 'tag': tag
             })
     
-    # Calculate and compare frontal plane angles between specific matrix pairs
-    # Define the pairs to compare
-    angle_pairs = [
-        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Femoral Anteversion Angle'),
-        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Femoral Anteversion Angle')
-    ]
-    
-    for matrix1_tag, matrix2_tag, title in angle_pairs:
-        if (matrix1_tag in common_tags and matrix2_tag in common_tags and 
-            data1[matrix1_tag] and data1[matrix2_tag] and 
-            data2[matrix1_tag] and data2[matrix2_tag] and 
-            data3[matrix1_tag] and data3[matrix2_tag]):
-            
-            # Calculate angles for all three files
-            angle1 = calculate_frontal_plane_angle(data1[matrix1_tag], data1[matrix2_tag])
-            angle2 = calculate_frontal_plane_angle(data2[matrix1_tag], data2[matrix2_tag])
-            angle3 = calculate_frontal_plane_angle(data3[matrix1_tag], data3[matrix2_tag])
-            
-            # Create comparison plot
-            fig, ax = plt.subplots(figsize=(10, 6))
-            
-            angles = [angle1, angle2, angle3]
-            labels = ['File 1', 'File 2', 'File 3']
-            colors = ['#ffcccc', '#ccffcc', '#ccccff']
-            
-            bars = ax.bar(labels, angles, color=colors, alpha=0.8)
-            ax.set_title(f"{title} Comparison", fontsize=14, pad=20)
-            ax.set_ylabel("Angle (degrees)")
-            ax.grid(True, alpha=0.3)
-            
-            # Add value labels on bars
-            for bar, angle in zip(bars, angles):
-                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(angles)*0.01,
-                       f'{angle:.2f}°', ha='center', va='bottom', fontsize=10, weight='bold')
-            
-            # Add deviation information
-            max_dev = max(abs(angle1-angle2), abs(angle1-angle3), abs(angle2-angle3))
-            mean_angle = np.mean(angles)
-            ax.text(0.02, 0.98, f'Max Deviation: {max_dev:.2f}°\nMean Angle: {mean_angle:.2f}°', 
-                   transform=ax.transAxes, va='top', ha='left',
-                   bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
-            
-            angle_comp_filename = f"{output_prefix}_{matrix1_tag}_{matrix2_tag}_angle_comparison.png"
-            plt.savefig(angle_comp_filename, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            plot_files.append({
-                'filename': angle_comp_filename,
-                'title': f"{title} Comparison",
-                'type': 'frontal_plane_angle_comparison',
-                'tag': f"{matrix1_tag}_{matrix2_tag}",
-                'angles': angles,
-                'deviation': max_dev
-            })
+    # Calculate and compare femoral anteversion angles across the three planners
+    for side, suffix in [('Right', 'R'), ('Left', 'L')]:
+        femur_key = f'S3FemurFrame_{suffix}_matrix'
+        sphere_key = f'S3FemoralSphere_{suffix}_matrix'
+        bcp_key = f'S3BCP_{suffix}_matrix'
+        p0_key = f'S3BCP_{suffix}_p0'
+        p1_key = f'S3BCP_{suffix}_p1'
+        requirements = [femur_key, sphere_key, bcp_key, p0_key, p1_key]
+
+        if not all(key in common_tags for key in requirements):
+            continue
+
+        try:
+            angle1 = calculate_femoral_anteversion(
+                data1[femur_key],
+                data1[bcp_key],
+                femoral_sphere_matrix_str=data1[sphere_key],
+                bcp_p0_str=data1[p0_key],
+                bcp_p1_str=data1[p1_key],
+                side=side,
+            )
+            angle2 = calculate_femoral_anteversion(
+                data2[femur_key],
+                data2[bcp_key],
+                femoral_sphere_matrix_str=data2[sphere_key],
+                bcp_p0_str=data2[p0_key],
+                bcp_p1_str=data2[p1_key],
+                side=side,
+            )
+            angle3 = calculate_femoral_anteversion(
+                data3[femur_key],
+                data3[bcp_key],
+                femoral_sphere_matrix_str=data3[sphere_key],
+                bcp_p0_str=data3[p0_key],
+                bcp_p1_str=data3[p1_key],
+                side=side,
+            )
+        except (KeyError, ValueError):
+            continue
+
+        title = f"{side} Femoral Anteversion Angle"
+        angles = [angle1, angle2, angle3]
+        labels = ['File 1', 'File 2', 'File 3']
+        colors = ['#ffcccc', '#ccffcc', '#ccccff']
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bars = ax.bar(labels, angles, color=colors, alpha=0.8)
+        ax.set_title(f"{title} Comparison", fontsize=14, pad=20)
+        ax.set_ylabel("Angle (degrees)")
+        ax.grid(True, alpha=0.3)
+
+        for bar, angle in zip(bars, angles):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(angles)*0.01,
+                   f'{angle:.2f}°', ha='center', va='bottom', fontsize=10, weight='bold')
+
+        max_dev = max(abs(angle1-angle2), abs(angle1-angle3), abs(angle2-angle3))
+        mean_angle = np.mean(angles)
+        ax.text(0.02, 0.98, f'Max Deviation: {max_dev:.2f}°\nMean Angle: {mean_angle:.2f}°',
+               transform=ax.transAxes, va='top', ha='left',
+               bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
+
+        angle_comp_filename = f"{output_prefix}_{femur_key}_{bcp_key}_angle_comparison.png"
+        plt.savefig(angle_comp_filename, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        plot_files.append({
+            'filename': angle_comp_filename,
+            'title': f"{title} Comparison",
+            'type': 'femoral_anteversion_comparison',
+            'tag': f"{femur_key}_{bcp_key}",
+            'angles': angles,
+            'deviation': max_dev
+        })
     
     return plot_files
 
@@ -1394,26 +1530,52 @@ def generate_comparison_stats(data1, data2, data3, common_tags):
             
             stats_html += f"<tr><td>{tag}</td><td>4x4 Matrix</td><td>4x4 Matrix</td><td>4x4 Matrix</td><td>{max_dev:.4f}</td></tr>"
     
-    # Add frontal plane angle comparisons
-    angle_pairs = [
-        ('S3FemurFrame_R_matrix', 'S3BCP_R_matrix', 'Right Femoral Anteversion Angle'),
-        ('S3FemurFrame_L_matrix', 'S3BCP_L_matrix', 'Left Femoral Anteversion Angle')
-    ]
-    
-    for matrix1_tag, matrix2_tag, title in angle_pairs:
-        if (matrix1_tag in common_tags and matrix2_tag in common_tags and 
-            data1[matrix1_tag] and data1[matrix2_tag] and 
-            data2[matrix1_tag] and data2[matrix2_tag] and 
-            data3[matrix1_tag] and data3[matrix2_tag]):
-            
-            # Calculate angles for all three files
-            angle1 = calculate_frontal_plane_angle(data1[matrix1_tag], data1[matrix2_tag])
-            angle2 = calculate_frontal_plane_angle(data2[matrix1_tag], data2[matrix2_tag])
-            angle3 = calculate_frontal_plane_angle(data3[matrix1_tag], data3[matrix2_tag])
-            
-            max_dev = max(abs(angle1-angle2), abs(angle1-angle3), abs(angle2-angle3))
-            
-            stats_html += f"<tr><td>{title}</td><td>{angle1:.2f}°</td><td>{angle2:.2f}°</td><td>{angle3:.2f}°</td><td>{max_dev:.2f}°</td></tr>"
+    # Add femoral anteversion comparisons
+    for side, suffix in [('Right', 'R'), ('Left', 'L')]:
+        femur_key = f'S3FemurFrame_{suffix}_matrix'
+        sphere_key = f'S3FemoralSphere_{suffix}_matrix'
+        bcp_key = f'S3BCP_{suffix}_matrix'
+        p0_key = f'S3BCP_{suffix}_p0'
+        p1_key = f'S3BCP_{suffix}_p1'
+        requirements = [femur_key, sphere_key, bcp_key, p0_key, p1_key]
+
+        if not all(key in common_tags for key in requirements):
+            continue
+
+        try:
+            angle1 = calculate_femoral_anteversion(
+                data1[femur_key],
+                data1[bcp_key],
+                femoral_sphere_matrix_str=data1[sphere_key],
+                bcp_p0_str=data1[p0_key],
+                bcp_p1_str=data1[p1_key],
+                side=side,
+            )
+            angle2 = calculate_femoral_anteversion(
+                data2[femur_key],
+                data2[bcp_key],
+                femoral_sphere_matrix_str=data2[sphere_key],
+                bcp_p0_str=data2[p0_key],
+                bcp_p1_str=data2[p1_key],
+                side=side,
+            )
+            angle3 = calculate_femoral_anteversion(
+                data3[femur_key],
+                data3[bcp_key],
+                femoral_sphere_matrix_str=data3[sphere_key],
+                bcp_p0_str=data3[p0_key],
+                bcp_p1_str=data3[p1_key],
+                side=side,
+            )
+        except (KeyError, ValueError):
+            continue
+
+        max_dev = max(abs(angle1-angle2), abs(angle1-angle3), abs(angle2-angle3))
+        title = f"{side} Femoral Anteversion Angle"
+        stats_html += (
+            f"<tr><td>{title}</td><td>{angle1:.2f}°</td><td>{angle2:.2f}°</td>"
+            f"<td>{angle3:.2f}°</td><td>{max_dev:.2f}°</td></tr>"
+        )
     
     stats_html += "</table>"
     return stats_html

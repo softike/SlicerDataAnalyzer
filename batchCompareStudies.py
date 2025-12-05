@@ -51,11 +51,17 @@ STEM_TRANSLATION_KEYS = ("Tx", "Ty", "Tz")
 
 # Import the main comparison functions from the existing script
 from compareResults_3Studies import (
-    comparePlanningData, extractPlanningData_plain, 
-    calculate_frontal_plane_angle, generate_comparison_stats,
-    create_individual_comparison_plots, export_to_pdf,
-    extract_patient_side, validate_patient_sides, filter_tags_by_side,
-    TAGS_XPATHS
+    comparePlanningData,
+    extractPlanningData_plain,
+    calculate_femoral_anteversion,
+    calculate_femoral_anteversion_from_dict,
+    generate_comparison_stats,
+    create_individual_comparison_plots,
+    export_to_pdf,
+    extract_patient_side,
+    validate_patient_sides,
+    filter_tags_by_side,
+    TAGS_XPATHS,
 )
 
 
@@ -368,24 +374,11 @@ def extract_anteversion_from_data(data1, data2, data3):
         side_suffix = 'R' if side == 'Right' else 'L'
         
         for i, data in enumerate(datasets):
-            # Look for femoral frame and BCP data to calculate anteversion
-            femur_matrix_tag = f'S3FemurFrame_{side_suffix}_matrix'
-            bcp_matrix_tag = f'S3BCP_{side_suffix}_matrix'
-            
-            if femur_matrix_tag in data and bcp_matrix_tag in data:
-                try:
-                    # Calculate frontal plane angle using the same method as the main script
-                    from compareResults_3Studies import calculate_frontal_plane_angle
-                    
-                    femur_matrix = data[femur_matrix_tag]
-                    bcp_matrix = data[bcp_matrix_tag]
-                    
-                    if femur_matrix and bcp_matrix:
-                        angle = calculate_frontal_plane_angle(femur_matrix, bcp_matrix)
-                        anteversion_angles[side][i] = angle
-                except Exception:
-                    # If calculation fails, leave as None
-                    pass
+            try:
+                angle = calculate_femoral_anteversion_from_dict(data, side)
+                anteversion_angles[side][i] = angle
+            except Exception:
+                pass
     
     return anteversion_angles
 
@@ -518,7 +511,7 @@ def generate_anteversion_summary_table(anteversion_data, case_results):
         <div class="table-notes">
             <h4>Notes:</h4>
             <ul>
-                <li><strong>Angle Calculation:</strong> Angle between frontal planes of S3FemurFrame and S3BCP matrices</li>
+                <li><strong>Angle Calculation:</strong> Angle between the projected femoral neck vector (S3FemurFrame + S3FemoralSphere) and the transformed S3BCP line</li>
                 <li><strong>N/A:</strong> Data not available (missing matrix data or calculation error)</li>
                 <li><strong>Statistics:</strong> Mean ± Standard Deviation and Range calculated from available measurements</li>
                 <li><strong>H001/H002/H003:</strong> Different testers/operators performing the measurements</li>
@@ -547,8 +540,12 @@ def extract_femoral_anteversion_angles(case_results):
         
         # Process each side
         for side in ['Right', 'Left']:
-            femur_tag = f'S3FemurFrame_{side[0]}_matrix'
-            bcp_tag = f'S3BCP_{side[0]}_matrix'
+            suffix = side[0]
+            femur_tag = f'S3FemurFrame_{suffix}_matrix'
+            bcp_tag = f'S3BCP_{suffix}_matrix'
+            sphere_tag = f'S3FemoralSphere_{suffix}_matrix'
+            p0_tag = f'S3BCP_{suffix}_p0'
+            p1_tag = f'S3BCP_{suffix}_p1'
             
             angles = []
             
@@ -565,14 +562,30 @@ def extract_femoral_anteversion_angles(case_results):
                         return None
                     
                     # Get matrix values
-                    femur_elem = root.find(f".//s3Shape[@name='S3FemurFrame_{side[0]}']/matrix4[@name='mat']")
-                    bcp_elem = root.find(f".//s3Shape[@name='S3BCP_{side[0]}']/matrix4[@name='mat']")
-                    
+                    femur_elem = root.find(f".//s3Shape[@name='S3FemurFrame_{suffix}']/matrix4[@name='mat']")
+                    bcp_elem = root.find(f".//s3Shape[@name='S3BCP_{suffix}']/matrix4[@name='mat']")
+                    sphere_elem = root.find(f".//s3Shape[@name='S3FemoralSphere_{suffix}']/matrix4[@name='mat']")
+                    p0_elem = root.find(f".//s3Shape[@name='S3BCP_{suffix}']/vector3[@name='p0']")
+                    p1_elem = root.find(f".//s3Shape[@name='S3BCP_{suffix}']/vector3[@name='p1']")
+
                     femur_matrix = get_elem_value(femur_elem)
                     bcp_matrix = get_elem_value(bcp_elem)
-                    
-                    if femur_matrix and bcp_matrix:
-                        angle = calculate_frontal_plane_angle(femur_matrix, bcp_matrix)
+                    sphere_matrix = get_elem_value(sphere_elem)
+                    p0_vector = get_elem_value(p0_elem)
+                    p1_vector = get_elem_value(p1_elem)
+
+                    if all([femur_matrix, bcp_matrix, sphere_matrix, p0_vector, p1_vector]):
+                        try:
+                            angle = calculate_femoral_anteversion(
+                                femur_matrix,
+                                bcp_matrix,
+                                femoral_sphere_matrix_str=sphere_matrix,
+                                bcp_p0_str=p0_vector,
+                                bcp_p1_str=p1_vector,
+                                side=side,
+                            )
+                        except ValueError:
+                            angle = None
                         angles.append(angle)
                     else:
                         angles.append(None)

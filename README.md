@@ -104,7 +104,7 @@ python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_report
 - **Matrix/Vector/Scalar**: Separate sheets by data type
 - **Left_Side/Right_Side**: Anatomical side-specific data
 - **Summary**: Statistics summary by case
-- **Femoral_Anteversion_Angles**: Calculated anteversion angles for analysis
+- **Femoral_Anteversion_Angles**: Angle between the projected femoral-neck vector (FemurFrame→FemoralSphere) and the transformed BCP line (planner p0/p1)
 
 **Detailed Excel Export (`--excel-detailed`)** breaks down complex data into individual components:
 
@@ -211,10 +211,20 @@ The Excel export (`--excel` flag) generates a comprehensive `.xlsx` workbook wit
 4. **Summary**: Case-by-case statistics
    - Parameter counts by data type and anatomical side
 
-5. **Femoral_Anteversion_Angles**: Calculated clinical angles
+5. **Femoral_Anteversion_Angles**: Angle between the projected femoral-neck vector and the transformed BCP line
    - Direct comparison values for inter-rater analysis
 
 This format enables advanced statistical analysis in Excel, R, SPSS, or other statistical software while preserving the complete raw dataset without any statistical processing or summarization.
+
+### Femoral Anteversion Calculation
+
+The anteversion worksheet/plots now mirror the projected-vector workflow validated with the planning team:
+
+1. Form the femoral-neck vector by connecting the femur-frame origin to the femoral-sphere center, then project it onto the anatomical XY plane. The resulting azimuth defines the femoral-neck angle (Left sides are shifted by 180° for continuity).
+2. Transform the planner-provided BCP measurement points (`p0`, `p1`): zero their Z components, rotate them by `Rᵀ` of the BCP matrix, translate into world coordinates, and take the directed difference (`p0 - p1` for Right, `p1 - p0` for Left). Project this direction onto the XY plane to obtain the BCP azimuth, again applying the left-side adjustment.
+3. Report anteversion as the shortest unsigned difference between the neck and BCP angles, preserving the +21°/−21° conventions established during manual validation.
+
+This approach encodes the same calculation sequence used during manual verification (case 008), ensuring planner outputs, plots, and Excel exports all reflect the trusted anatomy-driven reference frame.
 
 ### Excel Export Examples
 
