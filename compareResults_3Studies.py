@@ -81,7 +81,7 @@ def _project_onto_xy_plane(vector):
     return projection / norm
 
 
-def _vector_angle_deg(vector, side, test_bcp_angle=False):
+def _vector_angle_deg(vector, side, test_angle_sign=False):
     # Calculate angle using dot product with X_UNIT (pointing Right/+X)
     # First normalize the vector
     norm = np.linalg.norm(vector)
@@ -96,10 +96,8 @@ def _vector_angle_deg(vector, side, test_bcp_angle=False):
     # Clamp to [-1, 1] to avoid numerical errors with arccos
     cos_angle = np.clip(cos_angle, -1.0, 1.0)
     angle = np.degrees(np.arccos(cos_angle))
-    
-    # Determine sign using cross product with Z_UNIT
-    # Positive Z component means counter-clockwise (positive angle)
-    if test_bcp_angle:
+
+    if test_angle_sign:
         test_angle = np.dot(unit_vec, Y_UNIT)
         if test_angle > 0:
             angle = -angle
@@ -114,7 +112,10 @@ def _femoral_neck_angle(femur_frame_matrix_str, femoral_sphere_matrix_str, side)
     sphere_center = sphere_mat[3, :3]
     direction = sphere_center - frame_origin
     neck_proj = _project_onto_xy_plane(direction)
-    angle = _vector_angle_deg(neck_proj, side)
+    angle = _vector_angle_deg(neck_proj, side, True)
+
+
+
     return angle
 
 
@@ -125,7 +126,7 @@ def _bcp_direction_angle(bcp_matrix_str, p0_str, p1_str, side):
 
     if not (p0_str and p1_str):
         axis = mat[:3, 0]
-        direction = axis if side == 'Right' else -axis
+        direction = axis if side == 'Left' else -axis
     else:
         p0 = _vector_from_string(p0_str)
         p1 = _vector_from_string(p1_str)
@@ -139,7 +140,8 @@ def _bcp_direction_angle(bcp_matrix_str, p0_str, p1_str, side):
         direction = tp0 - tp1 if side == 'Left' else tp1 - tp0
 
     bcp_proj = _project_onto_xy_plane(direction)
-    angle = _vector_angle_deg(bcp_proj, side, test_bcp_angle=True)
+    angle = _vector_angle_deg(bcp_proj, side, True)
+
     return angle
 
 
@@ -156,11 +158,11 @@ def calculate_femoral_anteversion(
     """Compute anteversion using femoral neck-to-sphere and BCP projected vectors."""
 
     neck_angle = _femoral_neck_angle(femur_matrix_str, femoral_sphere_matrix_str, side)
-    print ("TEST : " + neck_angle.__str__())
+    #print ("TEST : " + neck_angle.__str__())
     bcp_angle = _bcp_direction_angle(bcp_matrix_str, bcp_p0_str, bcp_p1_str, side)
-    print ("TEST : " + bcp_angle.__str__()) 
+    #print ("TEST : " + bcp_angle.__str__()) 
     anteversion = neck_angle - bcp_angle
-    print ("ANTEVERSION: " + anteversion.__str__())
+    #print ("ANTEVERSION: " + anteversion.__str__())
     if return_components:
         return anteversion, neck_angle, bcp_angle
     return anteversion
