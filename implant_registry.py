@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-import johnson_implants as jj_implants
+import johnson_implants_actis as jj_actis_implants
+import johnson_implants_corail as jj_corail_implants
 import mathys_implants as mys_implants
 
 
@@ -34,7 +35,8 @@ def resolve_stem_uid(uid: Optional[int]) -> Optional[StemLookupResult]:
 
     lookup_table = (
         ("Mathys", mys_implants.S3UID, mys_implants.get_rcc_id),
-        ("Johnson & Johnson", jj_implants.S3UID, jj_implants.get_rcc_id),
+        ("Johnson & Johnson (Corail)", jj_corail_implants.S3UID, jj_corail_implants.get_rcc_id),
+        ("Johnson & Johnson (Actis)", jj_actis_implants.S3UID, jj_actis_implants.get_rcc_id),
     )
 
     for manufacturer, enum_cls, get_rcc in lookup_table:

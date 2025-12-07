@@ -10,7 +10,9 @@ from typing import Iterable, List, Sequence, Tuple
 
 AVAILABLE_MANUFACTURERS = {
     "mathys": "mathys_implants",
-    "johnson": "johnson_implants",
+    "johnson": "johnson_implants_corail",  # backward compatibility alias
+    "johnson-corail": "johnson_implants_corail",
+    "johnson-actis": "johnson_implants_actis",
 }
 
 

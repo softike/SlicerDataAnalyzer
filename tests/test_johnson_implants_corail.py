@@ -1,11 +1,11 @@
-"""Tests for johnson_implants module."""
+"""Tests for the Johnson & Johnson CORAIL implant module."""
 
 from __future__ import annotations
 
 import unittest
 
-import johnson_implants
-from johnson_implants import (
+import johnson_implants_corail as johnson_implants
+from johnson_implants_corail import (
 	JJ_RANGE_START_AT,
 	RCC_ID_NAME,
 	S3UID,

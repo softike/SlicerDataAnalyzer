@@ -894,6 +894,30 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
             border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }}
+        .inter-rater-analysis .plots-grid {{
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        }}
+        .inter-rater-analysis .plot-item {{
+            padding: 12px;
+        }}
+        .inter-rater-plot {{
+            width: 100%;
+            max-width: 100%;
+            max-height: 320px;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: block;
+            object-fit: contain;
+            background-color: #fff;
+            margin: 0 auto;
+        }}
+        .plot-stats {{
+            margin-top: 10px;
+            font-size: 0.85em;
+            color: #495057;
+        }}
         .stats-section {{
             margin: 20px 0;
             padding: 15px;
@@ -1469,7 +1493,7 @@ def create_bland_altman_plot(data1, data2, title, output_filename, tester1="H001
     std_diff = np.std(differences)
     
     # Create plot
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=(5, 4))
     plt.scatter(means, differences, alpha=0.6, s=50)
     
     # Add horizontal lines for mean and limits of agreement
@@ -1525,7 +1549,7 @@ def create_correlation_plot(data1, data2, title, output_filename, tester1="H001"
     slope, intercept, r_value, p_val, std_err = stats.linregress(data1_clean, data2_clean)
     
     # Create plot
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=(5, 4))
     plt.scatter(data1_clean, data2_clean, alpha=0.6, s=50)
     
     # Add regression line
@@ -1591,8 +1615,8 @@ def create_box_plot_distribution(data_dict, title, output_filename):
     if not plot_data:
         return None
     
-    # Create box plot
-    plt.figure(figsize=(10, 8))
+    # Create box plot with adjusted figure size for 2-column grid
+    plt.figure(figsize=(8, 5))
     box_plot = plt.boxplot(plot_data, tick_labels=labels, patch_artist=True)
     
     # Color the boxes
