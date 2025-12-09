@@ -287,6 +287,8 @@ Add the `--compute-stem-scalars` flag to probe the image volume onto the hardene
 
 Add `--exit-after-run` if you need the launched Slicer GUI to close itself automatically when processing finishes (useful when running several cases back-to-back without manual interaction).
 
+Whenever stem scalars are computed, the script also writes the original (non-hardened) stem geometry—with the sampled scalar array attached—to `Slicer-exports/<volume>_stem_original.vtp`, so you can reload the untouched implant in future sessions without re-running the sampling step.
+
 ### Batch stem screenshots
 
 Use `batch_stem_screenshots.py` to iterate over every `seedplan.xml` in a planning root, locate the matching per-case NIfTI under an image root, and call `load_nifti_and_stem.py` headlessly for each case:

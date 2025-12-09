@@ -172,6 +172,7 @@ def build_slicer_script(
             (400.0, 1000.0, (0.0, 1.0, 0.0), "Stable"),
             (1000.0, 1500.0, (1.0, 0.0, 0.0), "Cortical"),
         ]
+        OUTPUT_DIR_CLEARED = False
 
         if not os.path.exists(VOLUME_PATH):
             raise FileNotFoundError(VOLUME_PATH)
@@ -298,12 +299,13 @@ def build_slicer_script(
             point_data.SetActiveScalars(array_name)
             target_poly.Modified()
 
-        def _screenshot_prefix():
+        def _stem_output_prefix(clear_dir=False):
+            global OUTPUT_DIR_CLEARED
             if not os.path.isdir(SCREENSHOT_DIR):
                 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
                 print("Created screenshot directory: %s" % SCREENSHOT_DIR)
-            else:
-                print("Using existing screenshot directory (clearing old contents): %s" % SCREENSHOT_DIR)
+            if clear_dir and not OUTPUT_DIR_CLEARED:
+                print("Clearing existing exports in: %s" % SCREENSHOT_DIR)
                 for entry in os.listdir(SCREENSHOT_DIR):
                     path = os.path.join(SCREENSHOT_DIR, entry)
                     try:
@@ -314,6 +316,7 @@ def build_slicer_script(
                             shutil.rmtree(path)
                     except Exception as exc:
                         print("Warning: unable to remove '%s' (%s)" % (path, exc))
+                OUTPUT_DIR_CLEARED = True
             base = os.path.basename(VOLUME_PATH)
             lower = base.lower()
             if lower.endswith(".nii.gz"):
@@ -397,7 +400,7 @@ def build_slicer_script(
                 ("SAG_left", (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
                 ("SAG_right", (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
             ]
-            prefix = _screenshot_prefix()
+            prefix = _stem_output_prefix(clear_dir=True)
             for label, axis, up in orientations:
                 position = [center[i] + axis[i] * distance for i in range(3)]
                 camera.SetFocalPoint(*center)
@@ -411,6 +414,27 @@ def build_slicer_script(
                 pixmap = view.grab()
                 pixmap.save(file_path)
                 print("Saved screenshot: %s" % file_path)
+
+        def _export_original_stem(model_node):
+            poly = model_node.GetPolyData()
+            if poly is None:
+                print("Model has no polydata; skipping stem export")
+                return
+            prefix = _stem_output_prefix(clear_dir=True)
+            file_path = prefix + "_original.vtp"
+            writer = vtk.vtkXMLPolyDataWriter()
+            writer.SetFileName(file_path)
+            writer.SetInputData(poly)
+            writer.SetDataModeToBinary()
+            try:
+                success = writer.Write()
+            except Exception as exc:
+                print("Warning: unable to write original stem export (%s)" % exc)
+                return
+            if success == 0:
+                print("Warning: vtkXMLPolyDataWriter reported failure for %s" % file_path)
+            else:
+                print("Saved original (non-hardened) stem with scalars: %s" % file_path)
 
         def _probe_volume_onto_model(volume_node, model_node, array_name=None):
             image_data = volume_node.GetImageData()
@@ -746,6 +770,7 @@ def build_slicer_script(
                 print("Stored sampled scalars on '{}' and applied '{}' LUT".format(
                     target_node.GetName(), EZPLAN_LUT_NAME
                 ))
+                _export_original_stem(model_node)
                 if EXPORT_STEM_SCREENSHOTS:
                     original_display = model_node.GetDisplayNode()
                     original_visibility = None
