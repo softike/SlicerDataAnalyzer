@@ -314,6 +314,10 @@ def build_slicer_script(
                 print("Model has no polydata; skipping screenshots")
                 return
             layout_manager = slicer.app.layoutManager()
+            if layout_manager is None:
+                raise RuntimeError(
+                    "Screenshot capture requires a GUI session (layout manager unavailable; run without --no-main-window)"
+                )
             widget = layout_manager.threeDWidget(0)
             if widget is None:
                 print("No 3D widget available; skipping screenshots")
@@ -556,7 +560,11 @@ def build_slicer_script(
         if volume_node is None:
             raise RuntimeError("Failed to load volume: {}".format(VOLUME_PATH))
         setSliceViewerLayers(background=volume_node)
-        slicer.app.layoutManager().resetSliceViews()
+        layout_manager = slicer.app.layoutManager()
+        if layout_manager:
+            layout_manager.resetSliceViews()
+        else:
+            print("Info: layout manager unavailable (likely headless mode); skipping slice reset")
 
         matrix_global = vtk.vtkMatrix4x4()
         for row in range(4):

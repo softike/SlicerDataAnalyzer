@@ -278,3 +278,25 @@ Here is an Actis case
 ```shell
 python ./load_nifti_and_stem.py --nifti /home/developer/Projects/Code/AZDiffRadio/outputs/classif_2/011-F-54/Dataset/series_by_id/1.2.840.113619.2.416.154329578107230525325724120376429504045/stacks/stack_03/nifti/1.2.840.113619.2.416.154329578107230525325724120376429504045_stack_03.nii.gz --seedplan /mnt/localstore1/H003/011-F-54/Mediplan3D/seedplan.xml --stl-folder /mnt/localstore1/Implants4EZplan  --no-splash --pre-rotate-z-180 --post-rotate-z-180
 ```
+
+Add the `--compute-stem-scalars` flag to probe the image volume onto the hardened stem clone and print the HU distribution, and tack on `--export-stem-screenshots` to automatically capture AP/Sagittal PNGs with the EZplan LUT. Screenshots land in a `Slicer-exports/` folder next to each case's `seedplan.xml` and are overwritten on every run.
+
+> **Note:** Screenshot export requires a GUI-capable Slicer run (e.g., omit `--no-main-window`); headless sessions cannot capture 3D views and will raise an explicit error.
+
+### Batch stem screenshots
+
+Use `batch_stem_screenshots.py` to iterate over every `seedplan.xml` in a planning root, locate the matching per-case NIfTI under an image root, and call `load_nifti_and_stem.py` headlessly for each case:
+
+```shell
+python batch_stem_screenshots.py \
+   --image-root /home/developer/Projects/Code/AZDiffRadio/outputs/classif_2 \
+   --planning-root /mnt/localstore1 \
+   --stl-folder /mnt/localstore1/Implants4EZplan \
+   --case 001-M-30 --case 007-F-87 --case 011-F-54
+```
+
+Key options:
+
+- `--case` / `--cases-file`: restrict which case IDs to process (otherwise every seedplan under the planning root is included).
+- `--slicer-extra-arg`: forward additional flags to Slicer (defaults to `--no-main-window`; drop it if you need screenshots).
+- `--dry-run`: print the resolved commands without launching Slicer. Every invocation automatically enables `--compute-stem-scalars` and `--export-stem-screenshots` on the loader.
