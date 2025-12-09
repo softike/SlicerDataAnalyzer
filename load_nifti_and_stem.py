@@ -754,6 +754,8 @@ def build_slicer_script(
             model_node.SetAttribute("stem.%s" % key, attr_value)
             hardened_clone.SetAttribute("stem.%s" % key, attr_value)
 
+        exported_original_stem = False
+
         if COMPUTE_STEM_SCALARS:
             target_node = hardened_clone or model_node
             try:
@@ -771,6 +773,7 @@ def build_slicer_script(
                     target_node.GetName(), EZPLAN_LUT_NAME
                 ))
                 _export_original_stem(model_node)
+                exported_original_stem = True
                 if EXPORT_STEM_SCREENSHOTS:
                     original_display = model_node.GetDisplayNode()
                     original_visibility = None
@@ -785,6 +788,9 @@ def build_slicer_script(
                     finally:
                         if original_display and original_visibility is not None:
                             original_display.SetVisibility(original_visibility)
+
+        if not exported_original_stem:
+            _export_original_stem(model_node)
 
         print("Loaded volume: {}".format(volume_node.GetName()))
         print("Added implant stem UID: {}".format(stem_info.get("uid")))
