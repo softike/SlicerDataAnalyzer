@@ -270,13 +270,11 @@ python ./load_nifti_and_stem.py --nifti /home/developer/Projects/Code/AZDiffRadi
 Here is a Corail case
 
 ```shell
-python ./load_nifti_and_stem.py --nifti /home/developer/Projects/Code/AZDiffRadio/outputs/classif_2/007-F-87/Dataset/series_by_id/1.3.46.670589.33.1.63837029670551863400001.4767352654215964939/nifti/1.3.46.670589.33.1.63837029670551863400001.4767352654215964939.nii.gz --seedplan /mnt/localstore1/H001/007-F-87/Mediplan3D/seedplan.xml --stl-folder /mnt/localstore1/Implan
-ts4EZplan  --no-splash --pre-rotate-z-180 --post-rotate-z-180
+python ./load_nifti_and_stem.py --nifti /home/developer/Projects/Code/AZDiffRadio/outputs/classif_2/007-F-87/Dataset/series_by_id/1.3.46.670589.33.1.63837029670551863400001.4767352654215964939/nifti/1.3.46.670589.33.1.63837029670551863400001.4767352654215964939.nii.gz --seedplan /mnt/localstore1/H001/007-F-87/Mediplan3D/seedplan.xml --stl-folder /mnt/localstore1/Implants4EZplan  --no-splash --pre-rotate-z-180 --post-rotate-z-180
 ```
 
 Here is an Actis case
 
 ```shell
-python ./load_nifti_and_stem.py --nifti /home/developer/Projects/Code/AZDiffRadio/outputs/classif_2/011-F-54/Dataset/series_by_id/1.2.840.113619.2.416.154329578107230525325724120376429504045/stacks/stack_03/nifti/1.2.840.113619.2.416.154329578107230525325724120376429504045_stack_03.nii.gz --seedplan /mnt/localstore1/H003/011-F-54/Mediplan3D/seedplan.xml --stl-folder /mnt/localstore1/Implan
-ts4EZplan  --no-splash --pre-rotate-z-180 --post-rotate-z-180
+python ./load_nifti_and_stem.py --nifti /home/developer/Projects/Code/AZDiffRadio/outputs/classif_2/011-F-54/Dataset/series_by_id/1.2.840.113619.2.416.154329578107230525325724120376429504045/stacks/stack_03/nifti/1.2.840.113619.2.416.154329578107230525325724120376429504045_stack_03.nii.gz --seedplan /mnt/localstore1/H003/011-F-54/Mediplan3D/seedplan.xml --stl-folder /mnt/localstore1/Implants4EZplan  --no-splash --pre-rotate-z-180 --post-rotate-z-180
 ```
