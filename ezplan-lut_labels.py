@@ -7,8 +7,8 @@ import slicer.util as su
 from vtk import vtkColorTransferFunction
 
 ZONE_DEFS = [
-	(-200.0, 100.0, (1.0, 0.5, 0.0), "Loosening"),
-	(100.0, 400.0, (1.0, 1.0, 0.0), "MicroMove"),
+	(-200.0, 100.0, (0.0, 0.0, 1.0), "Loosening"),
+	(100.0, 400.0, (1.0, 0.0, 1.0), "MicroMove"),
 	(400.0, 1000.0, (0.0, 1.0, 0.0), "Stable"),
 	(1000.0, 1500.0, (1.0, 0.0, 0.0), "Cortical"),
 ]
