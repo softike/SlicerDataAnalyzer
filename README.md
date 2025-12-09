@@ -285,6 +285,8 @@ Add the `--compute-stem-scalars` flag to probe the image volume onto the hardene
 
 > **Note:** Screenshot export requires a GUI-capable Slicer run (e.g., omit `--no-main-window`); headless sessions cannot capture 3D views and will raise an explicit error.
 
+Add `--exit-after-run` if you need the launched Slicer GUI to close itself automatically when processing finishes (useful when running several cases back-to-back without manual interaction).
+
 ### Batch stem screenshots
 
 Use `batch_stem_screenshots.py` to iterate over every `seedplan.xml` in a planning root, locate the matching per-case NIfTI under an image root, and call `load_nifti_and_stem.py` headlessly for each case:
@@ -303,3 +305,4 @@ Key options:
 - `--slicer-extra-arg`: forward additional flags to Slicer (defaults to `--no-main-window`; drop it if you need screenshots).
 - `--dry-run`: print the resolved commands without launching Slicer. Every invocation automatically enables `--compute-stem-scalars` and `--export-stem-screenshots` on the loader.
 - Implant-specific rotations are applied automatically: detected Mathys stems get `--post-rotate-z-180`, while Johnson Corail/Actis stems get both `--pre-rotate-z-180` and `--post-rotate-z-180` so the loader receives the same arguments you would pass manually.
+- `--exit-after-run`: close each Slicer instance automatically after its screenshots finish (handy when a GUI window would otherwise block the batch).

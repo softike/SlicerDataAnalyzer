@@ -76,6 +76,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--exit-after-run",
+        action="store_true",
+        help="Request each launched Slicer instance to close itself automatically when processing completes.",
+    )
+    parser.add_argument(
         "--max-cases",
         type=int,
         help="Optional limit on the number of cases to process (useful for smoke tests).",
@@ -220,6 +225,8 @@ def _build_command(
     command.append("--no-splash")
     command.append("--compute-stem-scalars")
     command.append("--export-stem-screenshots")
+    if args.exit_after_run:
+        command.append("--exit-after-run")
     extras_raw = args.extra_args if args.extra_args else [["--no-main-window"]]
     extras: list[str] = []
     for chunk in extras_raw:

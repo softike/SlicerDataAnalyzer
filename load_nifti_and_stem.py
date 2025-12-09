@@ -105,6 +105,13 @@ def parse_args() -> argparse.Namespace:
             "applied and store them next to the NIfTI volume"
         ),
     )
+    parser.add_argument(
+        "--exit-after-run",
+        action="store_true",
+        help=(
+            "Request the launched Slicer instance to close itself once processing finishes (useful when running with a GUI)"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -121,6 +128,7 @@ def build_slicer_script(
     compute_stem_scalars: bool,
     rotation_mode: str,
     export_stem_screenshots: bool,
+    exit_after_run: bool,
 ) -> str:
     stl_folders_literal = "[{}]".format(
         ", ".join(f"r\"{folder}\"" for folder in stl_folders)
@@ -154,6 +162,7 @@ def build_slicer_script(
         COMPUTE_STEM_SCALARS = $COMPUTE_STEM_SCALARS
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
+        EXIT_AFTER_RUN = $EXIT_AFTER_RUN
         SCREENSHOT_DIR = os.path.join(os.path.dirname(SEEDPLAN_PATH), "Slicer-exports")
         EZPLAN_LUT_NAME = "EZplan HU Zones"
         EZPLAN_LUT_CATEGORY = "Implant Scalars"
@@ -754,6 +763,24 @@ def build_slicer_script(
 
         print("Loaded volume: {}".format(volume_node.GetName()))
         print("Added implant stem UID: {}".format(stem_info.get("uid")))
+
+        if EXIT_AFTER_RUN:
+            print("Exit-after-run requested; closing Slicer session...")
+            util_module = getattr(slicer, "util", None)
+            exited = False
+            if util_module and hasattr(util_module, "exit"):
+                try:
+                    util_module.exit()
+                except Exception as exc:
+                    print("Warning: slicer.util.exit() raised %s" % exc)
+                else:
+                    exited = True
+            if not exited:
+                app = qt.QApplication.instance()
+                if app:
+                    app.quit()
+                    exited = True
+            raise SystemExit(0)
         """
     ))
 
@@ -770,6 +797,7 @@ def build_slicer_script(
         COMPUTE_STEM_SCALARS="True" if compute_stem_scalars else "False",
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
         AUTO_ROTATION_MODE=rotation_mode,
+        EXIT_AFTER_RUN="True" if exit_after_run else "False",
     )
 
 
@@ -812,6 +840,7 @@ def main() -> int:
         args.compute_stem_scalars,
         args.rotation_mode,
         args.export_stem_screenshots,
+        args.exit_after_run,
     )
     temp_script = write_temp_script(slicer_script)
 
