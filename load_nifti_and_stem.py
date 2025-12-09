@@ -138,6 +138,17 @@ def build_slicer_script(
             transformer.Update()
             return transformer.GetOutput()
 
+        def _needs_mathys_flip(info):
+            markers = (
+                info.get("manufacturer"),
+                info.get("stem_enum_name"),
+                info.get("stem_friendly_name"),
+            )
+            for marker in markers:
+                if marker and "mathys" in marker.lower():
+                    return True
+            return False
+
         def _extract_stem_info(xml_path):
             tree = ET.parse(xml_path)
             root = tree.getroot()
@@ -216,17 +227,7 @@ def build_slicer_script(
         matrix = vtk.vtkMatrix4x4()
         vtk.vtkMatrix4x4.Multiply4x4(matrix_global, matrix_local, matrix)
 
-        flip_lps_to_ras = vtk.vtkMatrix4x4()
-        flip_lps_to_ras.Identity()
-        flip_lps_to_ras.SetElement(0, 0, -1)
-        flip_lps_to_ras.SetElement(1, 1, -1)
-
-        temp = vtk.vtkMatrix4x4()
-        converted = vtk.vtkMatrix4x4()
-        # Convert LPS transform (seedplan convention) to RAS (Slicer convention).
-        vtk.vtkMatrix4x4.Multiply4x4(flip_lps_to_ras, matrix, temp)
-        vtk.vtkMatrix4x4.Multiply4x4(temp, flip_lps_to_ras, converted)
-        matrix = converted
+        # Seedplan matrices are already expressed in Slicer's RAS coordinate system.
 
         transform_node = slicer.mrmlScene.AddNewNodeByClass(
             "vtkMRMLLinearTransformNode", "StemTransform"
@@ -267,13 +268,13 @@ def build_slicer_script(
                         model_node = loadModel(str(stl_path))
                         if model_node is None:
                             print("Warning: loadModel failed for %s; using cylinder" % stl_path)
-                        else:
+                        elif _needs_mathys_flip(stem_info):
                             flipped = _flip_polydata_lps_to_ras(model_node.GetPolyData())
                             if flipped:
                                 model_node.SetAndObservePolyData(flipped)
-                                model_node.SetAttribute("stem.geometryCoordinateSystem", "RAS")
+                                model_node.SetAttribute("stem.geometryCoordinateSystem", "RAS (Mathys)")
                             else:
-                                print("Warning: Unable to flip STL polydata to RAS, geometry left in loader default")
+                                print("Warning: failed to flip Mathys STL to RAS; proceeding with original data")
 
         if model_node is None:
             cylinder = vtk.vtkCylinderSource()
