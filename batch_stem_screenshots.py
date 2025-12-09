@@ -7,8 +7,11 @@ import argparse
 import os
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Iterable
+
+from implant_registry import resolve_stem_uid
 
 LOAD_SCRIPT = Path(__file__).with_name("load_nifti_and_stem.py")
 VALID_NIFTI_SUFFIXES = (".nii", ".nii.gz")
@@ -151,10 +154,57 @@ def _find_unique_nifti(image_root: Path, case_id: str) -> Path | None:
     return unique_candidates[0]
 
 
+def _detect_rotation_mode(seedplan_path: Path, case_id: str | None = None) -> str:
+    label = f"case '{case_id}'" if case_id else str(seedplan_path)
+    try:
+        tree = ET.parse(seedplan_path)
+        root = tree.getroot()
+    except Exception as exc:
+        print(f"Warning: unable to parse seedplan for {label}: {exc}")
+        return "auto"
+
+    hip_configs = root.findall(".//hipImplantConfig")
+    history_configs = root.findall(".//hipImplantConfigHistoryList/hipImplantConfig")
+    for configs in (hip_configs, history_configs):
+        for hip_config in configs:
+            fem_config = hip_config.find("./femImplantConfig")
+            if fem_config is None:
+                continue
+            stem_shape = fem_config.find(".//s3Shape[@part='stem']")
+            if stem_shape is None:
+                continue
+            uid_attr = stem_shape.attrib.get("uid")
+            if not uid_attr:
+                continue
+            try:
+                uid_val = int(uid_attr)
+            except (TypeError, ValueError):
+                continue
+            lookup = resolve_stem_uid(uid_val)
+            if lookup is None:
+                continue
+            tokens = [
+                (lookup.manufacturer or "").lower(),
+                (lookup.enum_name or "").lower(),
+                (lookup.friendly_name or "").lower(),
+            ]
+            if any("mathys" in token for token in tokens if token):
+                return "mathys"
+            if any(
+                token
+                and ("corail" in token or "actis" in token or "johnson" in token)
+                for token in tokens
+            ):
+                return "johnson"
+    return "auto"
+
+
 def _build_command(
     nifti_path: Path,
     seedplan_path: Path,
     args: argparse.Namespace,
+    auto_pre_rotate: bool = False,
+    auto_post_rotate: bool = False,
 ) -> list[str]:
     command: list[str] = [sys.executable, str(LOAD_SCRIPT)]
     command.extend(["--nifti", str(nifti_path)])
@@ -163,9 +213,9 @@ def _build_command(
         command.extend(["--stl-folder", folder])
     if args.pre_transform_lps_to_ras:
         command.append("--pre-transform-lps-to-ras")
-    if args.pre_rotate_z_180:
+    if args.pre_rotate_z_180 or auto_pre_rotate:
         command.append("--pre-rotate-z-180")
-    if args.post_rotate_z_180:
+    if args.post_rotate_z_180 or auto_post_rotate:
         command.append("--post-rotate-z-180")
     command.append("--no-splash")
     command.append("--compute-stem-scalars")
@@ -216,7 +266,20 @@ def main() -> int:
         if not nifti_path:
             failures += 1
             continue
-        command = _build_command(nifti_path, seedplan_path, args)
+        rotation_mode = _detect_rotation_mode(seedplan_path, case_id)
+        auto_pre = rotation_mode == "johnson"
+        auto_post = rotation_mode in ("johnson", "mathys")
+        if rotation_mode != "auto":
+            forced = []
+            if auto_pre:
+                forced.append("pre-rotate Z 180°")
+            if auto_post:
+                forced.append("post-rotate Z 180°")
+            forced_str = " and ".join(forced) if forced else "no extra rotations"
+            print(
+                f"Detected {rotation_mode.capitalize()} stem for case '{case_id}'; applying {forced_str} automatically"
+            )
+        command = _build_command(nifti_path, seedplan_path, args, auto_pre_rotate=auto_pre, auto_post_rotate=auto_post)
         print("\nCase %s" % case_id)
         print("Seedplan:", seedplan_path)
         print("NIfTI:   ", nifti_path)

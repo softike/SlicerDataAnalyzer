@@ -92,6 +92,12 @@ def parse_args() -> argparse.Namespace:
         help="Additional argument(s) forwarded to the Slicer launcher (repeatable)",
     )
     parser.add_argument(
+        "--rotation-mode",
+        choices=["auto", "mathys", "johnson", "none"],
+        default="auto",
+        help="Override automatic manufacturer-based rotation handling",
+    )
+    parser.add_argument(
         "--export-stem-screenshots",
         action="store_true",
         help=(
@@ -113,6 +119,7 @@ def build_slicer_script(
     pre_rotate_z_180: bool,
     post_rotate_z_180: bool,
     compute_stem_scalars: bool,
+    rotation_mode: str,
     export_stem_screenshots: bool,
 ) -> str:
     stl_folders_literal = "[{}]".format(
@@ -126,7 +133,6 @@ def build_slicer_script(
         import slicer
         import vtk
         import qt
-        from slicer.util import loadVolume, setSliceViewerLayers, loadModel
 
         REPO_ROOT = r"$REPO_ROOT"
         if REPO_ROOT and REPO_ROOT not in sys.path:
@@ -147,6 +153,7 @@ def build_slicer_script(
         POST_ROTATE_Z_180 = $POST_ROTATE_Z_180
         COMPUTE_STEM_SCALARS = $COMPUTE_STEM_SCALARS
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
+        AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
         SCREENSHOT_DIR = os.path.join(os.path.dirname(SEEDPLAN_PATH), "Slicer-exports")
         EZPLAN_LUT_NAME = "EZplan HU Zones"
         EZPLAN_LUT_CATEGORY = "Implant Scalars"
@@ -196,16 +203,30 @@ def build_slicer_script(
             vtk.vtkMatrix4x4.Multiply4x4(operand, target, temp)
             target.DeepCopy(temp)
 
-        def _needs_mathys_flip(info):
+        def _lower_markers(info):
             markers = (
                 info.get("manufacturer"),
                 info.get("stem_enum_name"),
                 info.get("stem_friendly_name"),
             )
-            for marker in markers:
-                if marker and "mathys" in marker.lower():
+            return [marker.lower() for marker in markers if marker]
+
+        def _needs_mathys_flip(info):
+            for marker in _lower_markers(info):
+                if "mathys" in marker:
                     return True
             return False
+
+        def _resolve_rotation_mode(info):
+            mode = (AUTO_ROTATION_MODE or "").strip().lower()
+            if mode and mode != "auto":
+                return mode
+            markers = _lower_markers(info)
+            if any("mathys" in marker for marker in markers):
+                return "mathys"
+            if any("actis" in marker or "corail" in marker for marker in markers):
+                return "johnson"
+            return "none"
 
         def _ensure_ezplan_lut():
             existing = slicer.mrmlScene.GetFirstNodeByName(EZPLAN_LUT_NAME)
@@ -579,6 +600,16 @@ def build_slicer_script(
         matrix = vtk.vtkMatrix4x4()
         vtk.vtkMatrix4x4.Multiply4x4(matrix_global, matrix_local, matrix)
 
+        rotation_mode = _resolve_rotation_mode(stem_info)
+        auto_pre = rotation_mode == "johnson"
+        auto_post = rotation_mode in ("johnson", "mathys")
+        if auto_pre and not PRE_ROTATE_Z_180:
+            print("Auto: applying pre-rotate Z 180° for Johnson stem")
+            PRE_ROTATE_Z_180 = True
+        if auto_post and not POST_ROTATE_Z_180:
+            print("Auto: applying post-rotate Z 180° for %s stem" % rotation_mode.capitalize())
+            POST_ROTATE_Z_180 = True
+
         if PRE_TRANSFORM_LPS_TO_RAS:
             flip = vtk.vtkMatrix4x4()
             flip.Identity()
@@ -738,6 +769,7 @@ def build_slicer_script(
         POST_ROTATE_Z_180="True" if post_rotate_z_180 else "False",
         COMPUTE_STEM_SCALARS="True" if compute_stem_scalars else "False",
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
+        AUTO_ROTATION_MODE=rotation_mode,
     )
 
 
@@ -778,6 +810,7 @@ def main() -> int:
         args.pre_rotate_z_180,
         args.post_rotate_z_180,
         args.compute_stem_scalars,
+        args.rotation_mode,
         args.export_stem_screenshots,
     )
     temp_script = write_temp_script(slicer_script)
