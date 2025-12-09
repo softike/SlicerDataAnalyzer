@@ -112,7 +112,19 @@ def find_matching_stl(folders: Sequence[str], tokens: Sequence[str]) -> Tuple[Pa
 
     exact_matches: List[Path] = []
     partial_matches: List[Path] = []
-    normalized_tokens = [token.lower() for token in tokens]
+
+    def _token_variants(token: str) -> List[str]:
+        base = token.lower()
+        variants = {base}
+        variants.add(base.replace(" ", "_"))
+        variants.add(base.replace(" ", ""))
+        alnum_only = "".join(ch for ch in base if ch.isalnum())
+        variants.add(alnum_only)
+        return [variant for variant in variants if variant]
+
+    normalized_tokens: List[str] = []
+    for token in tokens:
+        normalized_tokens.extend(_token_variants(token))
 
     for folder in folders:
         root = Path(folder).expanduser()
@@ -231,19 +243,18 @@ def main(argv: Sequence[str] | None = None) -> None:
     tokens = [rcc_id, uid_member.name, str(uid_member.value)]
     stl_path, additional_matches = find_matching_stl(args.folders, tokens)
 
-    if args.verbose:
-        print(
-            f"Resolved implant:\n"
-            f"  Manufacturer: {manufacturer_name}\n"
-            f"  UID: {uid_member.name} ({uid_member.value})\n"
-            f"  RCC ID: {rcc_id}\n"
-            f"  STL path: {stl_path}\n",
-            file=sys.stderr,
-        )
-        if additional_matches:
-            print("Additional matches:", file=sys.stderr)
-            for candidate in additional_matches:
-                print(f"  - {candidate}", file=sys.stderr)
+    print(
+        f"Resolved implant:\n"
+        f"  Provided UID: {args.uid}\n"
+        f"  Manufacturer: {manufacturer_name}\n"
+        f"  S3UID: {uid_member.name} ({uid_member.value})\n"
+        f"  RCC ID: {rcc_id}\n"
+        f"  STL path: {stl_path}\n"
+    )
+    if args.verbose and additional_matches:
+        print("Additional matches:", file=sys.stderr)
+        for candidate in additional_matches:
+            print(f"  - {candidate}", file=sys.stderr)
 
     show_stl(stl_path)
 
