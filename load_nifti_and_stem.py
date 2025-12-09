@@ -60,6 +60,21 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--pre-transform-lps-to-ras",
+        action="store_true",
+        help="Apply a pre-multiplication that converts LPS coordinates to RAS before seedplan transforms",
+    )
+    parser.add_argument(
+        "--pre-rotate-z-180",
+        action="store_true",
+        help="Rotate the stem 180 degrees around the Z axis before applying the seedplan transform",
+    )
+    parser.add_argument(
+        "--post-rotate-z-180",
+        action="store_true",
+        help="Rotate the stem 180 degrees around the Z axis after applying the seedplan transform",
+    )
+    parser.add_argument(
         "--no-splash",
         action="store_true",
         help="Suppress the Slicer splash screen when launching",
@@ -81,6 +96,9 @@ def build_slicer_script(
     stem_length: float,
     stem_radius: float,
     stl_folders: list[str],
+    pre_transform_lps_to_ras: bool,
+    pre_rotate_z_180: bool,
+    post_rotate_z_180: bool,
 ) -> str:
     stl_folders_literal = "[{}]".format(
         ", ".join(f"r\"{folder}\"" for folder in stl_folders)
@@ -108,6 +126,9 @@ def build_slicer_script(
         STEM_LENGTH = $STEM_LENGTH
         STEM_RADIUS = $STEM_RADIUS
         STL_ROOTS = $STL_ROOTS
+        PRE_TRANSFORM_LPS_TO_RAS = $PRE_TRANSFORM_LPS_TO_RAS
+        PRE_ROTATE_Z_180 = $PRE_ROTATE_Z_180
+        POST_ROTATE_Z_180 = $POST_ROTATE_Z_180
 
         if not os.path.exists(VOLUME_PATH):
             raise FileNotFoundError(VOLUME_PATH)
@@ -137,6 +158,16 @@ def build_slicer_script(
             transformer.SetInputData(polydata)
             transformer.Update()
             return transformer.GetOutput()
+
+        def _right_multiply(target, operand):
+            temp = vtk.vtkMatrix4x4()
+            vtk.vtkMatrix4x4.Multiply4x4(target, operand, temp)
+            target.DeepCopy(temp)
+
+        def _left_multiply(target, operand):
+            temp = vtk.vtkMatrix4x4()
+            vtk.vtkMatrix4x4.Multiply4x4(operand, target, temp)
+            target.DeepCopy(temp)
 
         def _needs_mathys_flip(info):
             markers = (
@@ -227,8 +258,26 @@ def build_slicer_script(
         matrix = vtk.vtkMatrix4x4()
         vtk.vtkMatrix4x4.Multiply4x4(matrix_global, matrix_local, matrix)
 
-        # Seedplan matrices are already expressed in Slicer's RAS coordinate system.
+        if PRE_TRANSFORM_LPS_TO_RAS:
+            flip = vtk.vtkMatrix4x4()
+            flip.Identity()
+            flip.SetElement(0, 0, -1)
+            flip.SetElement(1, 1, -1)
+            _right_multiply(matrix, flip)
 
+        if PRE_ROTATE_Z_180:
+            rot = vtk.vtkMatrix4x4()
+            rot.Identity()
+            rot.SetElement(0, 0, -1)
+            rot.SetElement(1, 1, -1)
+            _right_multiply(matrix, rot)
+
+        if POST_ROTATE_Z_180:
+            rot_post = vtk.vtkMatrix4x4()
+            rot_post.Identity()
+            rot_post.SetElement(0, 0, -1)
+            rot_post.SetElement(1, 1, -1)
+            _left_multiply(matrix, rot_post)
         transform_node = slicer.mrmlScene.AddNewNodeByClass(
             "vtkMRMLLinearTransformNode", "StemTransform"
         )
@@ -311,6 +360,9 @@ def build_slicer_script(
         STEM_LENGTH=stem_length,
         STEM_RADIUS=stem_radius,
         STL_ROOTS=stl_folders_literal,
+        PRE_TRANSFORM_LPS_TO_RAS="True" if pre_transform_lps_to_ras else "False",
+        PRE_ROTATE_Z_180="True" if pre_rotate_z_180 else "False",
+        POST_ROTATE_Z_180="True" if post_rotate_z_180 else "False",
     )
 
 
@@ -347,6 +399,9 @@ def main() -> int:
         args.stem_length,
         args.stem_radius,
         args.stl_folders,
+        args.pre_transform_lps_to_ras,
+        args.pre_rotate_z_180,
+        args.post_rotate_z_180,
     )
     temp_script = write_temp_script(slicer_script)
 
