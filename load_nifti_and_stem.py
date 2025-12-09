@@ -343,10 +343,31 @@ def build_slicer_script(
 
         model_node.SetAndObserveTransformNodeID(transform_node.GetID())
 
+        base_name = model_node.GetName() or "Stem"
+        hardened_name = slicer.mrmlScene.GenerateUniqueName(f"{base_name} (Hardened)")
+        hardened_clone = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLModelNode",
+            hardened_name,
+        )
+        clone_poly_data = vtk.vtkPolyData()
+        clone_poly_data.DeepCopy(model_node.GetPolyData())
+        hardened_clone.SetAndObservePolyData(clone_poly_data)
+        hardened_clone.CreateDefaultDisplayNodes()
+        source_display = model_node.GetDisplayNode()
+        clone_display = hardened_clone.GetDisplayNode()
+        if source_display and clone_display:
+            clone_display.Copy(source_display)
+        hardened_clone.SetAndObserveTransformNodeID(transform_node.GetID())
+        hardened_clone.HardenTransform()
+        hardened_clone.SetAndObserveTransformNodeID(None)
+        hardened_clone.SetAttribute("stem.clone", "hardened")
+
         for key, value in stem_info.items():
             if value is None:
                 continue
-            model_node.SetAttribute("stem.%s" % key, str(value))
+            attr_value = str(value)
+            model_node.SetAttribute("stem.%s" % key, attr_value)
+            hardened_clone.SetAttribute("stem.%s" % key, attr_value)
 
         print("Loaded volume: {}".format(volume_node.GetName()))
         print("Added implant stem UID: {}".format(stem_info.get("uid")))
