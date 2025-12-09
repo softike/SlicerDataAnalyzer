@@ -60,6 +60,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--compute-stem-scalars",
+        action="store_true",
+        help="Probe the image volume onto the stem geometry and attach the resulting scalar field",
+    )
+    parser.add_argument(
         "--pre-transform-lps-to-ras",
         action="store_true",
         help="Apply a pre-multiplication that converts LPS coordinates to RAS before seedplan transforms",
@@ -99,6 +104,7 @@ def build_slicer_script(
     pre_transform_lps_to_ras: bool,
     pre_rotate_z_180: bool,
     post_rotate_z_180: bool,
+    compute_stem_scalars: bool,
 ) -> str:
     stl_folders_literal = "[{}]".format(
         ", ".join(f"r\"{folder}\"" for folder in stl_folders)
@@ -129,6 +135,15 @@ def build_slicer_script(
         PRE_TRANSFORM_LPS_TO_RAS = $PRE_TRANSFORM_LPS_TO_RAS
         PRE_ROTATE_Z_180 = $PRE_ROTATE_Z_180
         POST_ROTATE_Z_180 = $POST_ROTATE_Z_180
+        COMPUTE_STEM_SCALARS = $COMPUTE_STEM_SCALARS
+        EZPLAN_LUT_NAME = "EZplan HU Zones"
+        EZPLAN_LUT_CATEGORY = "Implant Scalars"
+        EZPLAN_ZONE_DEFS = [
+            (-200.0, 100.0, (1.0, 0.5, 0.0), "Loosening"),
+            (100.0, 400.0, (1.0, 1.0, 0.0), "MicroMove"),
+            (400.0, 1000.0, (0.0, 1.0, 0.0), "Stable"),
+            (1000.0, 1500.0, (1.0, 0.0, 0.0), "Cortical"),
+        ]
 
         if not os.path.exists(VOLUME_PATH):
             raise FileNotFoundError(VOLUME_PATH)
@@ -179,6 +194,182 @@ def build_slicer_script(
                 if marker and "mathys" in marker.lower():
                     return True
             return False
+
+        def _ensure_ezplan_lut():
+            existing = slicer.mrmlScene.GetFirstNodeByName(EZPLAN_LUT_NAME)
+            if existing and existing.IsA("vtkMRMLColorNode"):
+                return existing
+            color_node = slicer.vtkMRMLProceduralColorNode()
+            color_node.SetName(EZPLAN_LUT_NAME)
+            color_node.SetAttribute("Category", EZPLAN_LUT_CATEGORY)
+            color_tf = vtk.vtkColorTransferFunction()
+            for zone_min, zone_max, (r, g, b), label in EZPLAN_ZONE_DEFS:
+                color_tf.AddRGBPoint(zone_min, r, g, b)
+                color_tf.AddRGBPoint(zone_max, r, g, b)
+            color_node.SetAndObserveColorTransferFunction(color_tf)
+            color_node.SetAttribute("lut.source", "load_nifti_and_stem")
+            slicer.mrmlScene.AddNode(color_node)
+            print("Registered color node '%s' for stem scalar visualization" % EZPLAN_LUT_NAME)
+            return color_node
+
+        def _apply_scalar_display(model_node, array_name, color_node):
+            if not model_node or not color_node:
+                return
+            if not model_node.GetDisplayNode():
+                model_node.CreateDefaultDisplayNodes()
+            display = model_node.GetDisplayNode()
+            if not display:
+                return
+            display.SetScalarVisibility(True)
+            display.SetAndObserveColorNodeID(color_node.GetID())
+            zone_min = EZPLAN_ZONE_DEFS[0][0]
+            zone_max = EZPLAN_ZONE_DEFS[-1][1]
+            display.SetScalarRange(zone_min, zone_max)
+            poly_data = model_node.GetPolyData()
+            if poly_data:
+                point_data = poly_data.GetPointData()
+                if point_data:
+                    array = point_data.GetArray(array_name)
+                    if array:
+                        point_data.SetActiveScalars(array_name)
+                        poly_data.Modified()
+
+        def _copy_scalar_array(source_node, target_node, array_name):
+            if source_node is target_node:
+                return
+            if not source_node or not target_node:
+                return
+            source_poly = source_node.GetPolyData()
+            target_poly = target_node.GetPolyData()
+            if not source_poly or not target_poly:
+                return
+            source_array = source_poly.GetPointData().GetArray(array_name)
+            if source_array is None:
+                return
+            new_array = vtk.vtkDoubleArray()
+            new_array.DeepCopy(source_array)
+            point_data = target_poly.GetPointData()
+            existing = point_data.GetArray(array_name)
+            if existing:
+                point_data.RemoveArray(array_name)
+            point_data.AddArray(new_array)
+            point_data.SetActiveScalars(array_name)
+            target_poly.Modified()
+
+        def _probe_volume_onto_model(volume_node, model_node, array_name=None):
+            image_data = volume_node.GetImageData()
+            if not image_data:
+                raise RuntimeError("Volume node has no image data to sample")
+            source_poly_data = model_node.GetPolyData()
+            if not source_poly_data:
+                raise RuntimeError("Model node has no polydata to sample")
+
+            sampling_poly = vtk.vtkPolyData()
+            parent_transform = model_node.GetParentTransformNode()
+            if parent_transform:
+                clone_node = slicer.mrmlScene.AddNewNodeByClass(
+                    "vtkMRMLModelNode",
+                    "StemSamplingClone",
+                )
+                clone_poly = vtk.vtkPolyData()
+                clone_poly.DeepCopy(source_poly_data)
+                clone_node.SetAndObservePolyData(clone_poly)
+                clone_node.SetAndObserveTransformNodeID(parent_transform.GetID())
+                clone_node.HardenTransform()
+                clone_node.SetAndObserveTransformNodeID(None)
+                sampling_poly.DeepCopy(clone_node.GetPolyData())
+                slicer.mrmlScene.RemoveNode(clone_node)
+            else:
+                sampling_poly.DeepCopy(source_poly_data)
+
+            source_array = image_data.GetPointData().GetScalars()
+            source_name = None
+            if source_array is not None:
+                source_name = source_array.GetName()
+                source_range = source_array.GetRange()
+                if source_range:
+                    print(
+                        "Volume scalar '%s' range: %.2f .. %.2f"
+                        % (
+                            source_name or "ImageScalars",
+                            source_range[0],
+                            source_range[1],
+                        )
+                    )
+            if not array_name:
+                array_name = source_name or "ImageScalars"
+            print("Sampling model '%s' using scalar array '%s'" % (model_node.GetName(), array_name))
+
+            sampling_poly_ijk = vtk.vtkPolyData()
+            ras_to_ijk_matrix = vtk.vtkMatrix4x4()
+            volume_node.GetRASToIJKMatrix(ras_to_ijk_matrix)
+            ras_to_ijk_transform = vtk.vtkTransform()
+            ras_to_ijk_transform.SetMatrix(ras_to_ijk_matrix)
+            ras_to_ijk_filter = vtk.vtkTransformPolyDataFilter()
+            ras_to_ijk_filter.SetTransform(ras_to_ijk_transform)
+            ras_to_ijk_filter.SetInputData(sampling_poly)
+            ras_to_ijk_filter.Update()
+            sampling_poly_ijk.DeepCopy(ras_to_ijk_filter.GetOutput())
+
+            probe = vtk.vtkProbeFilter()
+            probe.SetInputData(sampling_poly_ijk)
+            probe.SetSourceData(image_data)
+            probe.Update()
+
+            sampled = probe.GetOutput()
+            sampled_point_data = sampled.GetPointData()
+            scalar_array = sampled_point_data.GetScalars()
+            if scalar_array is None:
+                raise RuntimeError("Probe filter did not produce a scalar array")
+
+            scalar_array.SetName(array_name)
+            copied_array = vtk.vtkDoubleArray()
+            copied_array.DeepCopy(scalar_array)
+            target_point_data = source_poly_data.GetPointData()
+            existing = target_point_data.GetArray(array_name)
+            if existing:
+                target_point_data.RemoveArray(array_name)
+            target_point_data.AddArray(copied_array)
+            target_point_data.SetActiveScalars(array_name)
+            source_poly_data.Modified()
+            sampled_range = copied_array.GetRange()
+            if sampled_range:
+                print(
+                    "Model '%s' scalar '%s' range: %.2f .. %.2f"
+                    % (model_node.GetName(), array_name, sampled_range[0], sampled_range[1])
+                )
+            return source_poly_data
+
+        def _print_scalar_percentages(model_node, array_name="ImageScalars"):
+            poly_data = model_node.GetPolyData()
+            if not poly_data:
+                print("No polydata available on model '%s'" % model_node.GetName())
+                return
+            array = poly_data.GetPointData().GetArray(array_name)
+            if array is None:
+                print("No scalar field named '%s' on model '%s'" % (array_name, model_node.GetName()))
+                return
+            num_points = poly_data.GetNumberOfPoints()
+            if num_points == 0:
+                print("Model '%s' has no points to summarize" % model_node.GetName())
+                return
+            zones = {
+                "Loosening": (-200.0, 100.0),
+                "MicroMove": (100.0, 400.0),
+                "Stable": (400.0, 1000.0),
+                "Cortical": (1000.0, 1500.0),
+            }
+            zone_counts = {name: 0 for name in zones}
+            for idx in range(num_points):
+                value = array.GetTuple1(idx)
+                for zone_name, (low, high) in zones.items():
+                    if low <= value < high:
+                        zone_counts[zone_name] += 1
+                        break
+            print("Zone distribution for '%s' (array '%s'):" % (model_node.GetName(), array_name))
+            for zone_name, count in zone_counts.items():
+                pct = count / num_points * 100.0
+                print("  %-10s %6d pts (%5.2f%%)" % (zone_name + ":", count, pct))
 
         def _extract_stem_info(xml_path):
             tree = ET.parse(xml_path)
@@ -369,6 +560,23 @@ def build_slicer_script(
             model_node.SetAttribute("stem.%s" % key, attr_value)
             hardened_clone.SetAttribute("stem.%s" % key, attr_value)
 
+        if COMPUTE_STEM_SCALARS:
+            target_node = hardened_clone or model_node
+            try:
+                _probe_volume_onto_model(volume_node, target_node, array_name="VolumeScalars")
+            except Exception as exc:
+                print("Warning: unable to sample scalars onto '%s' (%s)" % (target_node.GetName(), exc))
+            else:
+                _print_scalar_percentages(target_node, array_name="VolumeScalars")
+                lut_node = _ensure_ezplan_lut()
+                _apply_scalar_display(target_node, array_name="VolumeScalars", color_node=lut_node)
+                if target_node is not model_node:
+                    _copy_scalar_array(target_node, model_node, "VolumeScalars")
+                    _apply_scalar_display(model_node, array_name="VolumeScalars", color_node=lut_node)
+                print("Stored sampled scalars on '{}' and applied '{}' LUT".format(
+                    target_node.GetName(), EZPLAN_LUT_NAME
+                ))
+
         print("Loaded volume: {}".format(volume_node.GetName()))
         print("Added implant stem UID: {}".format(stem_info.get("uid")))
         """
@@ -384,6 +592,7 @@ def build_slicer_script(
         PRE_TRANSFORM_LPS_TO_RAS="True" if pre_transform_lps_to_ras else "False",
         PRE_ROTATE_Z_180="True" if pre_rotate_z_180 else "False",
         POST_ROTATE_Z_180="True" if post_rotate_z_180 else "False",
+        COMPUTE_STEM_SCALARS="True" if compute_stem_scalars else "False",
     )
 
 
@@ -423,6 +632,7 @@ def main() -> int:
         args.pre_transform_lps_to_ras,
         args.pre_rotate_z_180,
         args.post_rotate_z_180,
+        args.compute_stem_scalars,
     )
     temp_script = write_temp_script(slicer_script)
 
