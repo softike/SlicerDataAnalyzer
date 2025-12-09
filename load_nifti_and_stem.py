@@ -91,6 +91,14 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Additional argument(s) forwarded to the Slicer launcher (repeatable)",
     )
+    parser.add_argument(
+        "--export-stem-screenshots",
+        action="store_true",
+        help=(
+            "Capture four PNG screenshots (AP front/back, sagittal left/right) of the stem with its LUT "
+            "applied and store them next to the NIfTI volume"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -105,6 +113,7 @@ def build_slicer_script(
     pre_rotate_z_180: bool,
     post_rotate_z_180: bool,
     compute_stem_scalars: bool,
+    export_stem_screenshots: bool,
 ) -> str:
     stl_folders_literal = "[{}]".format(
         ", ".join(f"r\"{folder}\"" for folder in stl_folders)
@@ -116,6 +125,7 @@ def build_slicer_script(
         import xml.etree.ElementTree as ET
         import slicer
         import vtk
+        import qt
         from slicer.util import loadVolume, setSliceViewerLayers, loadModel
 
         REPO_ROOT = r"$REPO_ROOT"
@@ -136,6 +146,8 @@ def build_slicer_script(
         PRE_ROTATE_Z_180 = $PRE_ROTATE_Z_180
         POST_ROTATE_Z_180 = $POST_ROTATE_Z_180
         COMPUTE_STEM_SCALARS = $COMPUTE_STEM_SCALARS
+        EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
+        SCREENSHOT_DIR = os.path.join(os.path.dirname(SEEDPLAN_PATH), "Slicer-exports")
         EZPLAN_LUT_NAME = "EZplan HU Zones"
         EZPLAN_LUT_CATEGORY = "Implant Scalars"
         EZPLAN_ZONE_DEFS = [
@@ -255,6 +267,116 @@ def build_slicer_script(
             point_data.AddArray(new_array)
             point_data.SetActiveScalars(array_name)
             target_poly.Modified()
+
+        def _screenshot_prefix():
+            if not os.path.isdir(SCREENSHOT_DIR):
+                os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+                print("Created screenshot directory: %s" % SCREENSHOT_DIR)
+            else:
+                print("Using existing screenshot directory (clearing old contents): %s" % SCREENSHOT_DIR)
+                for entry in os.listdir(SCREENSHOT_DIR):
+                    path = os.path.join(SCREENSHOT_DIR, entry)
+                    try:
+                        if os.path.isfile(path):
+                            os.remove(path)
+                        elif os.path.isdir(path):
+                            import shutil
+                            shutil.rmtree(path)
+                    except Exception as exc:
+                        print("Warning: unable to remove '%s' (%s)" % (path, exc))
+            base = os.path.basename(VOLUME_PATH)
+            lower = base.lower()
+            if lower.endswith(".nii.gz"):
+                base = base[:-7]
+            else:
+                base = os.path.splitext(base)[0]
+            return os.path.join(SCREENSHOT_DIR, base + "_stem")
+
+        def _configure_view_background(view_node):
+            if not view_node:
+                return
+            if hasattr(view_node, "SetUseGradientBackground"):
+                view_node.SetUseGradientBackground(False)
+            view_node.SetBackgroundColor(1.0, 1.0, 1.0)
+            if hasattr(view_node, "SetBackgroundColor2"):
+                view_node.SetBackgroundColor2(1.0, 1.0, 1.0)
+            if hasattr(view_node, "SetOrientationMarkerType"):
+                try:
+                    view_node.SetOrientationMarkerType(view_node.OrientationMarkerTypeNone)
+                except AttributeError:
+                    pass
+            if hasattr(view_node, "SetBoxVisible"):
+                view_node.SetBoxVisible(False)
+
+        def _capture_stem_screenshots(model_node):
+            poly = model_node.GetPolyData()
+            if poly is None:
+                print("Model has no polydata; skipping screenshots")
+                return
+            layout_manager = slicer.app.layoutManager()
+            widget = layout_manager.threeDWidget(0)
+            if widget is None:
+                print("No 3D widget available; skipping screenshots")
+                return
+            view = widget.threeDView()
+            view_node = view.mrmlViewNode()
+            _configure_view_background(view_node)
+            cameras_logic = slicer.modules.cameras.logic()
+            camera_node = None
+            if hasattr(cameras_logic, "GetCameraNode"):
+                camera_node = cameras_logic.GetCameraNode(view_node)
+            if camera_node is None and hasattr(cameras_logic, "GetViewActiveCameraNode"):
+                camera_node = cameras_logic.GetViewActiveCameraNode(view_node)
+            if camera_node is None:
+                try:
+                    camera_node = slicer.modules.cameras.logic().GetActiveCameraNode()
+                except AttributeError:
+                    camera_node = None
+            if camera_node is None:
+                print("Unable to locate camera node; creating temporary camera")
+                camera_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLCameraNode", "ScreenshotCamera")
+                if camera_node:
+                    camera_node.SetAndObserveViewNodeID(view_node.GetID())
+                else:
+                    print("Failed to create camera node; skipping screenshots")
+                    return
+            camera = camera_node.GetCamera()
+            if camera is None:
+                print("Camera node missing vtkCamera; skipping screenshots")
+                return
+            camera.ParallelProjectionOn()
+            bounds = [0.0] * 6
+            poly.GetBounds(bounds)
+            center = [
+                0.5 * (bounds[0] + bounds[1]),
+                0.5 * (bounds[2] + bounds[3]),
+                0.5 * (bounds[4] + bounds[5]),
+            ]
+            max_extent = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+            if max_extent <= 0:
+                max_extent = 100.0
+            distance = max_extent * 2.5
+            half_extent = max_extent * 0.5
+            orientations = [
+                ("AP_front", (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+                ("AP_back", (0.0, -1.0, 0.0), (0.0, 0.0, 1.0)),
+                ("SAG_left", (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+                ("SAG_right", (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+            ]
+            prefix = _screenshot_prefix()
+            for label, axis, up in orientations:
+                position = [center[i] + axis[i] * distance for i in range(3)]
+                camera.SetFocalPoint(*center)
+                camera.SetPosition(*position)
+                camera.SetViewUp(*up)
+                camera.SetParallelScale(max(half_extent, 1.0))
+                camera.Modified()
+                view.renderWindow().Render()
+                qt.QApplication.processEvents()
+                file_path = "{}_{}.png".format(prefix, label)
+                pixmap = view.grab()
+                pixmap.save(file_path)
+                print("Saved screenshot: %s" % file_path)
 
         def _probe_volume_onto_model(volume_node, model_node, array_name=None):
             image_data = volume_node.GetImageData()
@@ -576,6 +698,20 @@ def build_slicer_script(
                 print("Stored sampled scalars on '{}' and applied '{}' LUT".format(
                     target_node.GetName(), EZPLAN_LUT_NAME
                 ))
+                if EXPORT_STEM_SCREENSHOTS:
+                    original_display = model_node.GetDisplayNode()
+                    original_visibility = None
+                    if original_display:
+                        original_visibility = original_display.GetVisibility()
+                        original_display.SetVisibility(False)
+                    clone_display = target_node.GetDisplayNode()
+                    if clone_display:
+                        clone_display.SetVisibility(True)
+                    try:
+                        _capture_stem_screenshots(target_node)
+                    finally:
+                        if original_display and original_visibility is not None:
+                            original_display.SetVisibility(original_visibility)
 
         print("Loaded volume: {}".format(volume_node.GetName()))
         print("Added implant stem UID: {}".format(stem_info.get("uid")))
@@ -593,6 +729,7 @@ def build_slicer_script(
         PRE_ROTATE_Z_180="True" if pre_rotate_z_180 else "False",
         POST_ROTATE_Z_180="True" if post_rotate_z_180 else "False",
         COMPUTE_STEM_SCALARS="True" if compute_stem_scalars else "False",
+        EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
     )
 
 
@@ -633,6 +770,7 @@ def main() -> int:
         args.pre_rotate_z_180,
         args.post_rotate_z_180,
         args.compute_stem_scalars,
+        args.export_stem_screenshots,
     )
     temp_script = write_temp_script(slicer_script)
 
