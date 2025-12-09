@@ -289,6 +289,16 @@ Add `--exit-after-run` if you need the launched Slicer GUI to close itself autom
 
 Whenever stem scalars are computed, the script also writes the original (non-hardened) stem geometry—with the sampled scalar array attached—to `Slicer-exports/<volume>_stem_original.vtp`, so you can reload the untouched implant in future sessions without re-running the sampling step.
 
+In the same `Slicer-exports/` directory you now also get a machine-friendly `*_stem_metrics.xml`. Each XML captures the case/user identifiers (H001/H002/H003), the detected stem metadata, scalar range, and the EZplan zone distribution (counts + percentages). This makes it trivial to audit which implant model was used and how its fixation zones scored without re-opening Slicer.
+
+Once a batch run has produced those XML files, aggregate everything into a workbook with:
+
+```shell
+python export_stem_metrics_excel.py --root /mnt/localstore1 --output stem_metrics.xlsx
+```
+
+The exporter auto-discovers every `*_stem_metrics.xml` beneath the provided root, populates a `Cases` sheet (one row per case with all stem metadata and zone stats), and a `Users` sheet that summarizes zone totals per planner folder (H001/H002/H003). Install `openpyxl` via `pip install -r requirements_excel.txt` if the script asks for it.
+
 ### Batch stem screenshots
 
 Use `batch_stem_screenshots.py` to iterate over every `seedplan.xml` in a planning root, locate the matching per-case NIfTI under an image root, and call `load_nifti_and_stem.py` headlessly for each case:

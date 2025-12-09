@@ -141,6 +141,8 @@ def build_slicer_script(
         import slicer
         import vtk
         import qt
+        from datetime import datetime
+        from pathlib import Path
 
         REPO_ROOT = r"$REPO_ROOT"
         if REPO_ROOT and REPO_ROOT not in sys.path:
@@ -173,6 +175,18 @@ def build_slicer_script(
             (1000.0, 1500.0, (1.0, 0.0, 0.0), "Cortical"),
         ]
         OUTPUT_DIR_CLEARED = False
+
+        def _derive_case_and_user_ids():
+            try:
+                seedplan = Path(SEEDPLAN_PATH).resolve()
+            except Exception:
+                return "", ""
+            case_dir = seedplan.parent.parent if seedplan.parent else None
+            case_id = case_dir.name if case_dir else ""
+            user_id = case_dir.parent.name if case_dir and case_dir.parent else ""
+            return case_id, user_id
+
+        CASE_ID, USER_ID = _derive_case_and_user_ids()
 
         if not os.path.exists(VOLUME_PATH):
             raise FileNotFoundError(VOLUME_PATH)
@@ -419,7 +433,7 @@ def build_slicer_script(
             poly = model_node.GetPolyData()
             if poly is None:
                 print("Model has no polydata; skipping stem export")
-                return
+                return None
             prefix = _stem_output_prefix(clear_dir=True)
             file_path = prefix + "_original.vtp"
             writer = vtk.vtkXMLPolyDataWriter()
@@ -430,11 +444,12 @@ def build_slicer_script(
                 success = writer.Write()
             except Exception as exc:
                 print("Warning: unable to write original stem export (%s)" % exc)
-                return
+                return None
             if success == 0:
                 print("Warning: vtkXMLPolyDataWriter reported failure for %s" % file_path)
-            else:
-                print("Saved original (non-hardened) stem with scalars: %s" % file_path)
+                return None
+            print("Saved original (non-hardened) stem with scalars: %s" % file_path)
+            return file_path
 
         def _probe_volume_onto_model(volume_node, model_node, array_name=None):
             image_data = volume_node.GetImageData()
@@ -520,19 +535,19 @@ def build_slicer_script(
                 )
             return source_poly_data
 
-        def _print_scalar_percentages(model_node, array_name="ImageScalars"):
+        def _summarize_scalar_percentages(model_node, array_name="ImageScalars"):
             poly_data = model_node.GetPolyData()
             if not poly_data:
                 print("No polydata available on model '%s'" % model_node.GetName())
-                return
+                return None
             array = poly_data.GetPointData().GetArray(array_name)
             if array is None:
                 print("No scalar field named '%s' on model '%s'" % (array_name, model_node.GetName()))
-                return
+                return None
             num_points = poly_data.GetNumberOfPoints()
             if num_points == 0:
                 print("Model '%s' has no points to summarize" % model_node.GetName())
-                return
+                return None
             zones = {
                 "Loosening": (-200.0, 100.0),
                 "MicroMove": (100.0, 400.0),
@@ -546,10 +561,101 @@ def build_slicer_script(
                     if low <= value < high:
                         zone_counts[zone_name] += 1
                         break
+            array_range = array.GetRange() or (0.0, 0.0)
+            summary = {
+                "array_name": array_name,
+                "num_points": num_points,
+                "array_range": (float(array_range[0]), float(array_range[1])),
+                "zones": [
+                    {
+                        "name": zone_name,
+                        "low": float(bounds[0]),
+                        "high": float(bounds[1]),
+                        "count": zone_counts[zone_name],
+                        "percent": (zone_counts[zone_name] / num_points * 100.0) if num_points else 0.0,
+                    }
+                    for zone_name, bounds in zones.items()
+                ],
+            }
+            return summary
+
+        def _print_scalar_percentages(model_node, array_name="ImageScalars"):
+            summary = _summarize_scalar_percentages(model_node, array_name)
+            if not summary:
+                return None
             print("Zone distribution for '%s' (array '%s'):" % (model_node.GetName(), array_name))
-            for zone_name, count in zone_counts.items():
-                pct = count / num_points * 100.0
-                print("  %-10s %6d pts (%5.2f%%)" % (zone_name + ":", count, pct))
+            for zone in summary["zones"]:
+                print("  %-10s %6d pts (%5.2f%%)" % (zone["name"] + ":", zone["count"], zone["percent"]))
+            return summary
+
+        def _write_case_metrics_xml(
+            stem_info,
+            summary,
+            array_name,
+            rotation_mode,
+            original_vtp_path=None,
+        ):
+            if not summary:
+                print("No scalar summary available; skipping metrics XML export")
+                return None
+            prefix = _stem_output_prefix()
+            file_path = prefix + "_metrics.xml"
+            attributes = {
+                "caseId": CASE_ID or "",
+                "userId": USER_ID or "",
+                "array": array_name,
+                "totalPoints": str(summary["num_points"]),
+                "scalarMin": f"{summary['array_range'][0]:.6f}",
+                "scalarMax": f"{summary['array_range'][1]:.6f}",
+                "volumePath": VOLUME_PATH,
+                "seedplanPath": SEEDPLAN_PATH,
+                "screenshotDir": SCREENSHOT_DIR,
+                "generatedAt": datetime.utcnow().isoformat() + "Z",
+                "generator": "load_nifti_and_stem.py",
+            }
+            if original_vtp_path:
+                attributes["stemOriginalVtp"] = original_vtp_path
+            root = ET.Element("stemMetrics", attrib=attributes)
+            stem_elem = ET.SubElement(root, "stem")
+            stem_fields = {
+                "uid": "uid",
+                "manufacturer": "manufacturer",
+                "stem_enum_name": "enumName",
+                "stem_friendly_name": "friendlyName",
+                "rcc_id": "rccId",
+                "requested_side": "requestedSide",
+                "configured_side": "configuredSide",
+                "state": "state",
+                "source": "seedplanSource",
+            }
+            for info_key, attr_name in stem_fields.items():
+                value = stem_info.get(info_key)
+                if value is None:
+                    continue
+                stem_elem.set(attr_name, str(value))
+            if rotation_mode:
+                stem_elem.set("rotationMode", rotation_mode)
+            zones_elem = ET.SubElement(root, "zones")
+            for zone in summary["zones"]:
+                ET.SubElement(
+                    zones_elem,
+                    "zone",
+                    attrib={
+                        "name": zone["name"],
+                        "low": f"{zone['low']:.3f}",
+                        "high": f"{zone['high']:.3f}",
+                        "count": str(zone["count"]),
+                        "percent": f"{zone['percent']:.4f}",
+                    },
+                )
+            tree = ET.ElementTree(root)
+            try:
+                tree.write(file_path, encoding="utf-8", xml_declaration=True)
+            except Exception as exc:
+                print("Warning: unable to write stem metrics XML (%s)" % exc)
+                return None
+            print("Saved stem metrics XML: %s" % file_path)
+            return file_path
 
         def _extract_stem_info(xml_path):
             tree = ET.parse(xml_path)
@@ -754,7 +860,7 @@ def build_slicer_script(
             model_node.SetAttribute("stem.%s" % key, attr_value)
             hardened_clone.SetAttribute("stem.%s" % key, attr_value)
 
-        exported_original_stem = False
+        stem_export_path = None
 
         if COMPUTE_STEM_SCALARS:
             target_node = hardened_clone or model_node
@@ -772,8 +878,15 @@ def build_slicer_script(
                 print("Stored sampled scalars on '{}' and applied '{}' LUT".format(
                     target_node.GetName(), EZPLAN_LUT_NAME
                 ))
-                _export_original_stem(model_node)
-                exported_original_stem = True
+                summary_for_xml = _summarize_scalar_percentages(model_node, array_name="VolumeScalars")
+                stem_export_path = _export_original_stem(model_node)
+                _write_case_metrics_xml(
+                    stem_info,
+                    summary_for_xml,
+                    "VolumeScalars",
+                    rotation_mode=rotation_mode,
+                    original_vtp_path=stem_export_path,
+                )
                 if EXPORT_STEM_SCREENSHOTS:
                     original_display = model_node.GetDisplayNode()
                     original_visibility = None
@@ -789,8 +902,8 @@ def build_slicer_script(
                         if original_display and original_visibility is not None:
                             original_display.SetVisibility(original_visibility)
 
-        if not exported_original_stem:
-            _export_original_stem(model_node)
+        if not stem_export_path:
+            stem_export_path = _export_original_stem(model_node)
 
         print("Loaded volume: {}".format(volume_node.GetName()))
         print("Added implant stem UID: {}".format(stem_info.get("uid")))
