@@ -255,3 +255,12 @@ This detailed format is ideal for:
 - ICC calculations for specific measurements  
 - Component-wise correlation analysis
 - Precision assessment of translation vs rotation measurements
+
+
+### 
+
+Load image and stem in Slicer from seedplan.xml
+
+``` shell
+python ./load_nifti_and_stem.py --nifti /home/developer/Projects/Code/AZDiffRadio/outputs/classif_2/001-M-30/Dataset/series_by_id/1.2.840.114356.270937472228232525423838658850315419768/nifti/1.2.840.114356.270937472228232525423838658850315419768.nii.gz --seedplan /mnt/localstore1/H001/001-M-30/Mediplan3D/seedplan.xml --stl-folder /mnt/localstore1/Implants4EZplan --no-splash
+```

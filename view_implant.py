@@ -29,14 +29,34 @@ def ensure_vtk():
     return vtk
 
 
+def _match_rcc_id(module, candidate: str):
+    """Return S3UID enum member if candidate matches an RCC ID in the module."""
+
+    mapping = getattr(module, "RCC_ID_NAME", None)
+    if not mapping:
+        return None
+
+    candidate_normalized = candidate.strip().lower()
+    for enum_member, rcc_value in mapping.items():
+        if str(rcc_value).strip().lower() == candidate_normalized:
+            return enum_member
+    return None
+
+
 def resolve_uid(uid_token: str, manufacturer: str | None):
     """Return the implant module, its label, and the resolved enum member."""
 
     normalized_name = uid_token.strip()
-    try:
-        numeric_value = int(normalized_name, 0)
-    except ValueError:
-        numeric_value = None
+    numeric_value = None
+    if "_" not in normalized_name:
+        sanitized_numeric = normalized_name.replace("_", "")
+        try:
+            numeric_value = int(normalized_name, 0)
+        except ValueError:
+            try:
+                numeric_value = int(sanitized_numeric, 0)
+            except ValueError:
+                numeric_value = None
 
     if numeric_value is None:
         lookup_name = normalized_name.upper()
@@ -69,6 +89,9 @@ def resolve_uid(uid_token: str, manufacturer: str | None):
 
         if uid_member is None:
             uid_member = getattr(enum_cls, lookup_name, None)
+
+        if uid_member is None and numeric_value is None:
+            uid_member = _match_rcc_id(module, normalized_name)
 
         if uid_member is not None:
             return module, manufacturer_name, uid_member
