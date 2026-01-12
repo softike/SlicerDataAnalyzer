@@ -1,0 +1,110 @@
+const constexpr SboShape3UID companyRangeStartsAt = 100000L;
+const constexpr SboShape3UID companyRangeEndsAt   = 130000L;
+const constexpr char* companyName                 = "MDCA";
+
+case Product::QUADRA: return companyRangeStartsAt + 0L;
+case Product::VERSAFITCUPCCTRIO: return companyRangeStartsAt + 500L;
+case Product::AMISTEM: return companyRangeStartsAt + 750L;
+case Product::MINIMAX: return companyRangeStartsAt + 1250L;
+
+ enum class S3UID: SboShape3UID{
+      STEM_STD_0 = ProductRangeStartsAt + 50L,
+      STEM_STD_1,
+      STEM_STD_2,
+      STEM_STD_3,
+      STEM_STD_4,
+      STEM_STD_5,
+      STEM_STD_6,
+      STEM_STD_7,
+      STEM_STD_8,
+      STEM_STD_9,
+      STEM_STD_10,
+
+      STEM_LAT_0, //offset 11
+      STEM_LAT_1,
+      STEM_LAT_2,
+      STEM_LAT_3,
+      STEM_LAT_4,
+      STEM_LAT_5,
+      STEM_LAT_6,
+      STEM_LAT_7,
+      STEM_LAT_8,
+
+      STEM_STD_SN_0, //offset 20
+      STEM_STD_SN_1,
+      STEM_STD_SN_2,
+      STEM_STD_SN_3,
+      STEM_STD_SN_4,
+      STEM_STD_SN_5,
+      STEM_STD_SN_6,
+      STEM_STD_SN_7,
+      STEM_STD_SN_8,
+      STEM_STD_SN_9,
+      STEM_STD_SN_10,
+
+      STEM_LAT_SN_0, //offset 31
+      STEM_LAT_SN_1,
+      STEM_LAT_SN_2,
+      STEM_LAT_SN_3,
+      STEM_LAT_SN_4,
+      STEM_LAT_SN_5,
+      STEM_LAT_SN_6,
+      STEM_LAT_SN_7,
+      STEM_LAT_SN_8,
+
+      CUTPLANE,
+      HEAD_M4,
+      HEAD_P0,
+      HEAD_P4,
+      HEAD_P8,
+      HEAD_P12,
+      RANGE_CCD_STD,
+      RANGE_CCD_LAT,
+      RANGE_CCD_STD_SN,
+      RANGE_CCD_LAT_SN,
+
+  };
+
+    next(S3UID::STEM_STD_0, "01_18_399",RCCIdName);
+  next(S3UID::STEM_STD_1, "01_18_400",RCCIdName);
+  next(S3UID::STEM_STD_2, "01_18_401",RCCIdName);
+  next(S3UID::STEM_STD_3, "01_18_402",RCCIdName);
+  next(S3UID::STEM_STD_4, "01_18_403",RCCIdName);
+  next(S3UID::STEM_STD_5, "01_18_404",RCCIdName);
+  next(S3UID::STEM_STD_6, "01_18_405",RCCIdName);
+  next(S3UID::STEM_STD_7, "01_18_406",RCCIdName);
+  next(S3UID::STEM_STD_8, "01_18_407",RCCIdName);
+  next(S3UID::STEM_STD_9, "01_18_408",RCCIdName);
+  next(S3UID::STEM_STD_10,"01_18_409",RCCIdName);
+
+  next(S3UID::STEM_LAT_0,"01_18_410",RCCIdName);
+  next(S3UID::STEM_LAT_1,"01_18_411",RCCIdName);
+  next(S3UID::STEM_LAT_2,"01_18_412",RCCIdName);
+  next(S3UID::STEM_LAT_3,"01_18_413",RCCIdName);
+  next(S3UID::STEM_LAT_4,"01_18_414",RCCIdName);
+  next(S3UID::STEM_LAT_5,"01_18_415",RCCIdName);
+  next(S3UID::STEM_LAT_6,"01_18_416",RCCIdName);
+  next(S3UID::STEM_LAT_7,"01_18_417",RCCIdName);
+  next(S3UID::STEM_LAT_8,"01_18_418",RCCIdName);
+
+  next(S3UID::STEM_STD_SN_0, "01_18_459",RCCIdName);
+  next(S3UID::STEM_STD_SN_1, "01_18_460",RCCIdName);
+  next(S3UID::STEM_STD_SN_2, "01_18_461",RCCIdName);
+  next(S3UID::STEM_STD_SN_3, "01_18_462",RCCIdName);
+  next(S3UID::STEM_STD_SN_4, "01_18_463",RCCIdName);
+  next(S3UID::STEM_STD_SN_5, "01_18_464",RCCIdName);
+  next(S3UID::STEM_STD_SN_6, "01_18_465",RCCIdName);
+  next(S3UID::STEM_STD_SN_7, "01_18_466",RCCIdName);
+  next(S3UID::STEM_STD_SN_8, "01_18_467",RCCIdName);
+  next(S3UID::STEM_STD_SN_9, "01_18_468",RCCIdName);
+  next(S3UID::STEM_STD_SN_10,"01_18_469",RCCIdName);
+
+  next(S3UID::STEM_LAT_SN_0,"01_18_470",RCCIdName);
+  next(S3UID::STEM_LAT_SN_1,"01_18_471",RCCIdName);
+  next(S3UID::STEM_LAT_SN_2,"01_18_472",RCCIdName);
+  next(S3UID::STEM_LAT_SN_3,"01_18_473",RCCIdName);
+  next(S3UID::STEM_LAT_SN_4,"01_18_474",RCCIdName);
+  next(S3UID::STEM_LAT_SN_5,"01_18_475",RCCIdName);
+  next(S3UID::STEM_LAT_SN_6,"01_18_476",RCCIdName);
+  next(S3UID::STEM_LAT_SN_7,"01_18_477",RCCIdName);
+  next(S3UID::STEM_LAT_SN_8,"01_18_478",RCCIdName);

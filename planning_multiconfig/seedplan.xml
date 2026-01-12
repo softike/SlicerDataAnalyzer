@@ -1,0 +1,931 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<mediCASE Version="3.0" app_build="493" app_version="2.3">
+ <module name="MedicalStudy" sstamp="PreopStamp">
+  <patientInfo>
+   <patientName>004-F-71</patientName>
+   <patientSide>Left</patientSide>
+  </patientInfo>
+  <institutionInfo>
+   <surgeonName>JH</surgeonName>
+  </institutionInfo>
+ </module>
+ <module name="Config" sstamp="PreopStamp">
+  <anatomicalConfig>
+   <s3Shapes>
+    <s3Shape name="S3BCP_R" uid="24">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+     <vector3 name="p0" value="-125.299 42.3847 -652.01"/>
+     <vector3 name="p1" value="-41.6303 44.3088 -618.905"/>
+    </s3Shape>
+    <s3Shape name="S3BCP_L" uid="25">
+     <matrix4 name="mat" value="0.998988 -0.0449848 0 0 0.0449848 0.998988 0 0 0 0 1 0 -1.61224 3.21273 0 1 "/>
+     <vector3 name="p0" value="32.7015 49.3991 -635.793"/>
+     <vector3 name="p1" value="118.014 35.461 -660.844"/>
+    </s3Shape>
+    <s3Shape name="S3FemoralSphere_R" uid="27">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 -85.8476 -14.0504 -210.48 1 "/>
+     <scalar name="diameter" value="44"/>
+    </s3Shape>
+    <s3Shape name="S3FemoralSphere_L" uid="29">
+     <matrix4 name="mat" value="1 -1.10362e-06 2.94298e-07 0 1.25077e-06 1.00001 1.1772e-06 0 0 0 1.00001 0 80.511 6.63694 -223.432 1 "/>
+     <scalar name="diameter" value="42"/>
+    </s3Shape>
+    <s3Shape name="S3AppFrame" uid="40">
+     <matrix4 name="mat" value="0.999277 0.0180901 -0.0334464 0 -0.0189968 0.999455 -0.0269933 0 0.0329398 0.0276091 0.999076 0 -5.06157 -46.1354 -237.409 1 "/>
+    </s3Shape>
+    <s3Shape name="S3FemurFrame_R" uid="41">
+     <matrix4 name="mat" value="0.930581 -0.327434 0.163727 0 0.338704 0.939785 -0.0456439 0 -0.138923 0.0979304 0.985449 0 -126.052 -2.13707 -263.53 1 "/>
+    </s3Shape>
+    <s3Shape name="S3FemurFrame_L" uid="42">
+     <matrix4 name="mat" value="0.932109 0.313416 -0.181503 0 -0.333459 0.93823 -0.0923593 0 0.141344 0.146613 0.979044 0 112.871 12.2624 -278.822 1 "/>
+    </s3Shape>
+    <s3Shape name="S3FemurPelvis" uid="43">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+    </s3Shape>
+    <s3Shape name="S3Femur_R" uid="44">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+    </s3Shape>
+    <s3Shape name="S3Femur_L" uid="45">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+    </s3Shape>
+    <s3Shape name="S3Knee_R" uid="47">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+    </s3Shape>
+    <s3Shape name="S3Knee_L" uid="48">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+    </s3Shape>
+    <s3Shape name="S3Ankle_R" uid="49">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+    </s3Shape>
+    <s3Shape name="S3Ankle_L" uid="50">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+    </s3Shape>
+    <s3Shape name="S3LLKnee_R" uid="51">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 -83.4645 13.5594 -628.325 1 "/>
+    </s3Shape>
+    <s3Shape name="S3LLKnee_L" uid="52">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 71.7374 12.7615 -642.806 1 "/>
+    </s3Shape>
+    <s3Shape name="S3LLAnkle_R" uid="53">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 -65.5468 23.1561 -1007.07 1 "/>
+    </s3Shape>
+    <s3Shape name="S3LLAnkle_L" uid="54">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 59.4355 20.8198 -1010.51 1 "/>
+    </s3Shape>
+    <s3Shape name="S3PelvicBalance" uid="55">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+     <sequenceOfVector3 name="ctrlPts">
+      <vector3 name="" value="-132.392 -48.4403 -186.889"/>
+      <vector3 name="" value="128.994 -43.7083 -195.638"/>
+      <vector3 name="" value="-129.032 3.36237 -273.167"/>
+      <vector3 name="" value="112.724 22.3732 -287.718"/>
+      <vector3 name="" value="-89.3949 -47.6626 -334.642"/>
+      <vector3 name="" value="-82.0379 -47.5283 -114.765"/>
+      <vector3 name="" value="77.53 -44.6407 -340.229"/>
+      <vector3 name="" value="84.887 -44.5065 -120.352"/>
+     </sequenceOfVector3>
+    </s3Shape>
+    <s3Shape name="S3TopLesserTroch_R" uid="31">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 -99.178 5.70998 -274.964 1 "/>
+    </s3Shape>
+    <s3Shape name="S3GreaterTroch_R" uid="33">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 -134.339 8.17855 -214.451 1 "/>
+    </s3Shape>
+    <s3Shape name="S3TopLesserTroch_L" uid="35">
+     <matrix4 name="mat" value="1 -2.17929e-07 0 0 8.3819e-08 1 0 0 1.06165e-14 2.68221e-07 1 0 82.8698 20.0256 -285.921 1 "/>
+    </s3Shape>
+    <s3Shape name="S3GreaterTroch_L" uid="37">
+     <matrix4 name="mat" value="1.00001 -1.63914e-06 -2.04894e-07 0 8.24349e-14 1.00001 8.19572e-07 0 2.04894e-07 -1.6487e-13 1.00001 0 126.811 15.2862 -228.934 1 "/>
+    </s3Shape>
+    <s3Shape name="S3SIS_R" uid="38">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 -122.562 -45.803 -142.409 1 "/>
+    </s3Shape>
+    <s3Shape name="S3SIS_L" uid="39">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 116.438 -41.4764 -150.409 1 "/>
+    </s3Shape>
+    <s3Shape name="S3RPoint_L" uid="61">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 85.1409 14.7128 -267.456 1 "/>
+    </s3Shape>
+    <s3Shape name="S3FemoralHeadTip_L" uid="580">
+     <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 67.7326 8.64728 -206.889 1 "/>
+    </s3Shape>
+   </s3Shapes>
+  </anatomicalConfig>
+  <hipImplantConfig uid="0">
+   <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+    <s3Shapes>
+     <s3Shape part="stem" uid="160111">
+      <matrix4 name="mat" value="0.990771 0.0179555 -0.134495 0 -0.0382159 0.988029 -0.149587 0 0.13019 0.153337 0.979549 0 111.234 13.162 -266.858 1 "/>
+      <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+     </s3Shape>
+     <s3Shape part="head" uid="160168"/>
+     <s3Shape part="cutPlane" uid="160166"/>
+    </s3Shapes>
+   </femImplantConfig>
+   <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+    <s3Shapes>
+     <s3Shape part="cup" uid="62005">
+      <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+     </s3Shape>
+     <s3Shape part="spacer" uid="62012"/>
+     <s3Shape part="liner" uid="62018"/>
+    </s3Shapes>
+   </aceImplantConfig>
+  </hipImplantConfig>
+  <hipImplantConfigHistoryList>
+   <hipImplantConfig uid="36">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 8 (A-20°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160111">
+       <matrix4 name="mat" value="0.990771 0.0179555 -0.134495 0 -0.0382159 0.988029 -0.149587 0 0.13019 0.153337 0.979549 0 111.234 13.162 -266.858 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="35">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 8 (A-15°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160111">
+       <matrix4 name="mat" value="0.985196 0.0920161 -0.144781 0 -0.112236 0.984031 -0.138302 0 0.129733 0.152495 0.979743 0 111.309 12.9174 -266.832 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="34">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 8 (A-10°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160111">
+       <matrix4 name="mat" value="0.975181 0.159713 -0.153473 0 -0.179792 0.975459 -0.127265 0 0.129371 0.15169 0.979917 0 111.393 12.6976 -266.812 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="33">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 8 (A-5°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160111">
+       <matrix4 name="mat" value="0.959042 0.232433 -0.162033 0 -0.252247 0.960873 -0.114621 0 0.129042 0.150788 0.9801 0 111.502 12.4656 -266.793 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="32">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 8 (A+20°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160111">
+       <matrix4 name="mat" value="0.819306 0.541641 -0.188164 0 -0.558828 0.827776 -0.0504284 0 0.128435 0.146456 0.980841 0 112.202 11.5328 -266.755 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="31">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 8 (A+15°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160111">
+       <matrix4 name="mat" value="0.85732 0.480625 -0.184514 0 -0.498551 0.864476 -0.0646263 0 0.128438 0.147384 0.980702 0 112.029 11.709 -266.757 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="30">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 8 (A+10°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160111">
+       <matrix4 name="mat" value="0.888275 0.422505 -0.18028 0 -0.441023 0.89418 -0.0773798 0 0.1285 0.148231 0.980567 0 111.882 11.8807 -266.762 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="29">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 8 (A+5°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160111">
+       <matrix4 name="mat" value="0.915369 0.362552 -0.175214 0 -0.38158 0.919988 -0.0898263 0 0.128617 0.149071 0.980426 0 111.747 12.0615 -266.77 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="28">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 8 (A)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160111">
+       <matrix4 name="mat" value="0.938484 0.301027 -0.169337 0 -0.320479 0.941784 -0.101911 0 0.128791 0.149901 0.980278 0 111.623 12.2506 -266.78 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="27">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 9 (A-20°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160112">
+       <matrix4 name="mat" value="0.990774 0.0179535 -0.134496 0 -0.0382149 0.988035 -0.149588 0 0.130189 0.153338 0.979563 0 111.665 13.0937 -267.418 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="26">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 9 (A-15°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160112">
+       <matrix4 name="mat" value="0.985849 0.0861026 -0.143991 0 -0.106331 0.984561 -0.139234 0 0.129767 0.152564 0.979742 0 111.731 12.9031 -267.4 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="25">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 9 (A-10°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160112">
+       <matrix4 name="mat" value="0.974093 0.165567 -0.154193 0 -0.18563 0.974498 -0.126279 0 0.129342 0.15162 0.979945 0 111.825 12.6854 -267.381 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="24">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 9 (A-5°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160112">
+       <matrix4 name="mat" value="0.957518 0.238198 -0.162677 0 -0.257986 0.959474 -0.113583 0 0.129018 0.150716 0.980126 0 111.927 12.4908 -267.366 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="23">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 9 (A+20°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160112">
+       <matrix4 name="mat" value="0.822637 0.536657 -0.187898 0 -0.553909 0.831001 -0.0516218 0 0.128432 0.146534 0.980837 0 112.534 11.7419 -267.341 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="22">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 9 (A+15°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160112">
+       <matrix4 name="mat" value="0.854316 0.485806 -0.184857 0 -0.503674 0.861584 -0.0634542 0 0.128435 0.147307 0.98072 0 112.406 11.8628 -267.341 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="21">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 9 (A+10°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160112">
+       <matrix4 name="mat" value="0.888272 0.422502 -0.180279 0 -0.441021 0.894178 -0.0773804 0 0.1285 0.148232 0.980573 0 112.262 12.0175 -267.343 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="20">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 9 (A+5°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160112">
+       <matrix4 name="mat" value="0.916503 0.359785 -0.174963 0 -0.378834 0.921062 -0.0903843 0 0.128624 0.14911 0.980423 0 112.135 12.1749 -267.349 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="19">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 9 (A)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160112">
+       <matrix4 name="mat" value="0.940378 0.295363 -0.168762 0 -0.314848 0.943557 -0.102991 0 0.128809 0.149976 0.980267 0 112.018 12.3404 -267.356 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="18">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 10 (A-20°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160113">
+       <matrix4 name="mat" value="0.990874 0.0149862 -0.134065 0 -0.0352454 0.988071 -0.150023 0 0.130209 0.153373 0.979555 0 112.308 12.9979 -268.254 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="17">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 10 (A-15°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160113">
+       <matrix4 name="mat" value="0.984852 0.0949685 -0.145173 0 -0.115183 0.983751 -0.137836 0 0.129716 0.152462 0.979763 0 112.381 12.835 -268.24 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="16">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 10 (A-10°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160113">
+       <matrix4 name="mat" value="0.973525 0.168492 -0.154548 0 -0.188544 0.973992 -0.125783 0 0.129327 0.151585 0.97995 0 112.461 12.6896 -268.23 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="15">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 10 (A-5°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160113">
+       <matrix4 name="mat" value="0.959034 0.23243 -0.162031 0 -0.252242 0.960867 -0.114622 0 0.129041 0.15079 0.98011 0 112.54 12.5668 -268.223 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="14">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 10 (A+20°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160113">
+       <matrix4 name="mat" value="0.82263 0.536653 -0.187896 0 -0.553903 0.830994 -0.0516225 0 0.128431 0.146535 0.980835 0 113.054 12.0338 -268.217 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="13">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 10 (A+15°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160113">
+       <matrix4 name="mat" value="0.854309 0.485803 -0.184855 0 -0.503668 0.861577 -0.0634547 0 0.128434 0.147308 0.980719 0 112.95 12.116 -268.215 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="12">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 10 (A+10°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160113">
+       <matrix4 name="mat" value="0.885608 0.427862 -0.180696 0 -0.446328 0.891629 -0.0762333 0 0.128491 0.148156 0.980584 0 112.841 12.2134 -268.213 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="11">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 10 (A+5°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160113">
+       <matrix4 name="mat" value="0.915357 0.362547 -0.17521 0 -0.381572 0.919975 -0.089827 0 0.128617 0.149073 0.980428 0 112.73 12.3274 -268.214 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="10">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 10 (A)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160113">
+       <matrix4 name="mat" value="0.938471 0.301023 -0.169334 0 -0.320472 0.94177 -0.101912 0 0.12879 0.149903 0.980279 0 112.635 12.4386 -268.217 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="9">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 11 (A-20°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160114">
+       <matrix4 name="mat" value="0.990643 0.0209203 -0.13492 0 -0.0411795 0.987965 -0.149151 0 0.13017 0.153308 0.979569 0 112.958 12.8861 -269.089 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="8">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 11 (A-15°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160114">
+       <matrix4 name="mat" value="0.985183 0.0920133 -0.144778 0 -0.112231 0.984018 -0.138302 0 0.129733 0.152498 0.979754 0 113.019 12.7952 -269.084 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="7">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 11 (A-10°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160114">
+       <matrix4 name="mat" value="0.975168 0.159709 -0.15347 0 -0.179786 0.975446 -0.127266 0 0.12937 0.151693 0.979926 0 113.085 12.7124 -269.081 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="6">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 11 (A-5°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160114">
+       <matrix4 name="mat" value="0.958269 0.235312 -0.162352 0 -0.25511 0.960162 -0.114103 0 0.129029 0.150755 0.980116 0 113.165 12.6242 -269.079 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="5">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 11 (A+20°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160114">
+       <matrix4 name="mat" value="0.822624 0.536649 -0.187894 0 -0.553897 0.830987 -0.0516231 0 0.128431 0.146536 0.980833 0 113.575 12.3258 -269.094 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="4">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 11 (A+15°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160114">
+       <matrix4 name="mat" value="0.857304 0.480615 -0.18451 0 -0.498537 0.864459 -0.0646279 0 0.128436 0.147387 0.980705 0 113.486 12.374 -269.088 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="3">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 11 (A+10°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160114">
+       <matrix4 name="mat" value="0.889574 0.419809 -0.180063 0 -0.438348 0.89542 -0.077954 0 0.128503 0.148272 0.980563 0 113.397 12.4303 -269.084 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="2">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 11 (A+5°)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160114">
+       <matrix4 name="mat" value="0.91305 0.368063 -0.175703 0 -0.387044 0.917785 -0.08871 0 0.128603 0.148998 0.980439 0 113.326 12.4814 -269.081 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+   <hipImplantConfig uid="1">
+    <prettyName>(L)  DELTA One TT 54 SPACER SPACER +0 ➤ CORAIL KA 135° 11 (A)</prettyName>
+    <femImplantConfig requestedSide="Left" side="SideFree" state="mapped">
+     <s3Shapes>
+      <s3Shape part="stem" uid="160114">
+       <matrix4 name="mat" value="0.937501 0.303848 -0.169616 0 -0.323277 0.940859 -0.101371 0 0.12878 0.149866 0.980284 0 113.245 12.5484 -269.079 1 "/>
+       <matrix4 name="localMat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="head" uid="160168"/>
+      <s3Shape part="cutPlane" uid="160166"/>
+     </s3Shapes>
+    </femImplantConfig>
+    <aceImplantConfig requestedSide="Left" side="SideFree" state="unknown">
+     <s3Shapes>
+      <s3Shape part="cup" uid="62005">
+       <matrix4 name="mat" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 "/>
+      </s3Shape>
+      <s3Shape part="spacer" uid="62012"/>
+      <s3Shape part="liner" uid="62018"/>
+     </s3Shapes>
+    </aceImplantConfig>
+   </hipImplantConfig>
+  </hipImplantConfigHistoryList>
+  <protocolConfig/>
+ </module>
+</mediCASE>

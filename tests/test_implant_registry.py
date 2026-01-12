@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 
+import amedacta_implants
 import johnson_implants_actis
 import johnson_implants_corail
 import mathys_implants
@@ -53,6 +54,21 @@ class ImplantRegistryTests(unittest.TestCase):
         self.assertEqual(
             lookup.rcc_id,
             johnson_implants_actis.get_rcc_id(johnson_implants_actis.S3UID.STEM_STD_3),
+        )
+
+    def test_medacta_amistem_uid_is_resolved(self) -> None:
+        """A Medacta AMISTEM stem UID should resolve to the correct metadata payload."""
+
+        uid = amedacta_implants.S3UID.STEM_STD_3.value
+        lookup = resolve_stem_uid(uid)
+        self.assertIsNotNone(lookup)
+        assert lookup
+        self.assertEqual(lookup.manufacturer, "Medacta (AMISTEM)")
+        self.assertEqual(lookup.enum_name, amedacta_implants.S3UID.STEM_STD_3.name)
+        self.assertEqual(lookup.friendly_name, lookup.enum_name.replace("_", " "))
+        self.assertEqual(
+            lookup.rcc_id,
+            amedacta_implants.get_rcc_id(amedacta_implants.S3UID.STEM_STD_3),
         )
 
     def test_unknown_uid_returns_none(self) -> None:

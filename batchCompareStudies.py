@@ -95,81 +95,108 @@ def _decompose_matrix_components(matrix_value):
 
 
 def extract_stem_info_from_xml(xml_path):
-    """Collect implant stem metadata and pose from a single seedplan XML file."""
+    """Collect implant stem metadata from every hipImplantConfig block in a seedplan."""
 
-    info = {
-        "xml_path": xml_path,
-        "uid": None,
-        "matrix_raw": None,
-        "rotation": {},
-        "translation": {},
-        "requested_side": None,
-        "configured_side": None,
-        "state": None,
-        "hip_config_uid": None,
-        "source": None,
-        "manufacturer": None,
-        "stem_enum_name": None,
-        "stem_friendly_name": None,
-        "rcc_id": None,
-        "error": None,
-    }
+    def _blank_entry():
+        return {
+            "xml_path": xml_path,
+            "uid": None,
+            "matrix_raw": None,
+            "rotation": {},
+            "translation": {},
+            "requested_side": None,
+            "configured_side": None,
+            "state": None,
+            "hip_config_uid": None,
+            "hip_config_index": None,
+            "hip_config_name": None,
+            "source": None,
+            "manufacturer": None,
+            "stem_enum_name": None,
+            "stem_friendly_name": None,
+            "rcc_id": None,
+            "error": None,
+        }
 
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
     except Exception as exc:
-        info["error"] = f"parse_error: {exc}"
-        return info
+        error_entry = _blank_entry()
+        error_entry["error"] = f"parse_error: {exc}"
+        return [error_entry]
 
+    entries = []
     hip_configs = root.findall(".//hipImplantConfig")
     history_configs = root.findall(".//hipImplantConfigHistoryList/hipImplantConfig")
+    config_index = 0
 
     for source_label, configs in (("active", hip_configs), ("history", history_configs)):
         for hip_config in configs:
+            entry = _blank_entry()
+            entry["hip_config_uid"] = hip_config.attrib.get("uid")
+            entry["hip_config_index"] = config_index
+            entry["source"] = source_label
+            pretty_name = hip_config.findtext("prettyName") or hip_config.attrib.get("prettyName")
+            if not pretty_name:
+                pretty_name = hip_config.attrib.get("name")
+            if pretty_name:
+                entry["hip_config_name"] = pretty_name.strip()
+            elif entry["hip_config_uid"]:
+                entry["hip_config_name"] = f"{source_label} config {entry['hip_config_uid']}"
+            else:
+                entry["hip_config_name"] = f"{source_label} config {config_index}"
+            config_index += 1
+
             fem_config = hip_config.find("./femImplantConfig")
             if fem_config is None:
+                entry["error"] = "fem_implant_config_missing"
+                entries.append(entry)
                 continue
+
+            entry["requested_side"] = fem_config.attrib.get("requestedSide")
+            entry["configured_side"] = fem_config.attrib.get("side")
+            entry["state"] = fem_config.attrib.get("state")
 
             stem_shape = fem_config.find(".//s3Shape[@part='stem']")
             if stem_shape is None:
+                entry["error"] = "stem_shape_missing"
+                entries.append(entry)
                 continue
-
-            info["hip_config_uid"] = hip_config.attrib.get("uid")
-            info["requested_side"] = fem_config.attrib.get("requestedSide")
-            info["configured_side"] = fem_config.attrib.get("side")
-            info["state"] = fem_config.attrib.get("state")
-            info["source"] = source_label
 
             uid_attr = stem_shape.attrib.get("uid")
             if uid_attr:
                 try:
-                    info["uid"] = int(uid_attr)
+                    entry["uid"] = int(uid_attr)
                 except ValueError:
-                    info["error"] = f"invalid_uid: {uid_attr}"
+                    entry["error"] = f"invalid_uid: {uid_attr}"
                 else:
-                    lookup = resolve_stem_uid(info["uid"])
+                    lookup = resolve_stem_uid(entry["uid"])
                     if lookup:
-                        info["manufacturer"] = lookup.manufacturer
-                        info["stem_enum_name"] = lookup.enum_name
-                        info["stem_friendly_name"] = lookup.friendly_name
-                        info["rcc_id"] = lookup.rcc_id
+                        entry["manufacturer"] = lookup.manufacturer
+                        entry["stem_enum_name"] = lookup.enum_name
+                        entry["stem_friendly_name"] = lookup.friendly_name
+                        entry["rcc_id"] = lookup.rcc_id
 
             matrix_elem = stem_shape.find("matrix4[@name='mat']")
             if matrix_elem is None:
                 matrix_elem = stem_shape.find("matrix4")
             if matrix_elem is not None:
-                info["matrix_raw"] = matrix_elem.attrib.get("value")
-                components = _decompose_matrix_components(info["matrix_raw"])
-                info["rotation"] = components.get("rotation", {})
-                info["translation"] = components.get("translation", {})
+                entry["matrix_raw"] = matrix_elem.attrib.get("value")
+                components = _decompose_matrix_components(entry["matrix_raw"])
+                entry["rotation"] = components.get("rotation", {})
+                entry["translation"] = components.get("translation", {})
             else:
-                info["error"] = info["error"] or "stem_matrix_missing"
+                entry["error"] = entry["error"] or "stem_matrix_missing"
 
-            return info
+            entries.append(entry)
 
-    info["error"] = info["error"] or "stem_not_found"
-    return info
+    if not entries:
+        empty_entry = _blank_entry()
+        empty_entry["error"] = "stem_not_found"
+        entries.append(empty_entry)
+
+    return entries
 
 def find_case_folders(base_path):
     """
@@ -339,9 +366,10 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
 
     stem_details = []
     for tester_label, xml_path in zip(TESTER_IDS, [xml_path1, xml_path2, xml_path3]):
-        stem_info = extract_stem_info_from_xml(xml_path)
-        stem_info['tester'] = tester_label
-        stem_details.append(stem_info)
+        stem_entries = extract_stem_info_from_xml(xml_path)
+        for entry in stem_entries:
+            entry['tester'] = tester_label
+            stem_details.append(entry)
     
     return {
         'case_name': case_name,
@@ -1926,6 +1954,8 @@ def export_to_excel(case_results, output_prefix):
                 'Configured_Side': stem_entry.get('configured_side'),
                 'Config_State': stem_entry.get('state'),
                 'Hip_Config_UID': stem_entry.get('hip_config_uid'),
+                'Hip_Config_Index': stem_entry.get('hip_config_index'),
+                'Hip_Config_Name': stem_entry.get('hip_config_name'),
                 'Matrix_Source': stem_entry.get('source'),
                 'Matrix_Value': stem_entry.get('matrix_raw'),
                 'XML_Path': stem_entry.get('xml_path'),
@@ -2207,6 +2237,8 @@ def export_to_excel_detailed(case_results, output_prefix):
                 'Configured_Side': stem_entry.get('configured_side'),
                 'Config_State': stem_entry.get('state'),
                 'Hip_Config_UID': stem_entry.get('hip_config_uid'),
+                'Hip_Config_Index': stem_entry.get('hip_config_index'),
+                'Hip_Config_Name': stem_entry.get('hip_config_name'),
                 'Matrix_Source': stem_entry.get('source'),
                 'Matrix_Value': stem_entry.get('matrix_raw'),
                 'XML_Path': stem_entry.get('xml_path'),

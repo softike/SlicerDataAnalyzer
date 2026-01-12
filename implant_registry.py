@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+import amedacta_implants as mdca_amistem_implants
 import johnson_implants_actis as jj_actis_implants
 import johnson_implants_corail as jj_corail_implants
 import mathys_implants as mys_implants
@@ -34,6 +35,7 @@ def resolve_stem_uid(uid: Optional[int]) -> Optional[StemLookupResult]:
         return None
 
     lookup_table = (
+        ("Medacta (AMISTEM)", mdca_amistem_implants.S3UID, mdca_amistem_implants.get_rcc_id),
         ("Mathys", mys_implants.S3UID, mys_implants.get_rcc_id),
         ("Johnson & Johnson (Corail)", jj_corail_implants.S3UID, jj_corail_implants.get_rcc_id),
         ("Johnson & Johnson (Actis)", jj_actis_implants.S3UID, jj_actis_implants.get_rcc_id),
