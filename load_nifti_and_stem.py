@@ -93,7 +93,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--rotation-mode",
-        choices=["auto", "mathys", "johnson", "none"],
+        choices=["auto", "mathys", "medacta", "johnson", "none"],
         default="auto",
         help="Override automatic manufacturer-based rotation handling",
     )
@@ -165,6 +165,11 @@ def build_slicer_script(
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
         EXIT_AFTER_RUN = $EXIT_AFTER_RUN
+        ROTATION_BEHAVIOR = {
+            "johnson": (True, True),
+            "mathys": (False, True),
+            "medacta": (False, True),
+        }
         SCREENSHOT_DIR = os.path.join(os.path.dirname(SEEDPLAN_PATH), "Slicer-exports")
         EZPLAN_LUT_NAME = "EZplan HU Zones"
         EZPLAN_LUT_CATEGORY = "Implant Scalars"
@@ -248,6 +253,8 @@ def build_slicer_script(
             markers = _lower_markers(info)
             if any("mathys" in marker for marker in markers):
                 return "mathys"
+            if any("medacta" in marker or "amistem" in marker for marker in markers):
+                return "medacta"
             if any("actis" in marker or "corail" in marker for marker in markers):
                 return "johnson"
             return "none"
@@ -740,10 +747,9 @@ def build_slicer_script(
         vtk.vtkMatrix4x4.Multiply4x4(matrix_global, matrix_local, matrix)
 
         rotation_mode = _resolve_rotation_mode(stem_info)
-        auto_pre = rotation_mode == "johnson"
-        auto_post = rotation_mode in ("johnson", "mathys")
+        auto_pre, auto_post = ROTATION_BEHAVIOR.get(rotation_mode, (False, False))
         if auto_pre and not PRE_ROTATE_Z_180:
-            print("Auto: applying pre-rotate Z 180° for Johnson stem")
+            print("Auto: applying pre-rotate Z 180° for %s stem" % rotation_mode.capitalize())
             PRE_ROTATE_Z_180 = True
         if auto_post and not POST_ROTATE_Z_180:
             print("Auto: applying post-rotate Z 180° for %s stem" % rotation_mode.capitalize())

@@ -15,6 +15,11 @@ from implant_registry import resolve_stem_uid
 
 LOAD_SCRIPT = Path(__file__).with_name("load_nifti_and_stem.py")
 VALID_NIFTI_SUFFIXES = (".nii", ".nii.gz")
+ROTATION_BEHAVIOR = {
+    "johnson": (True, True),  # pre, post
+    "mathys": (False, True),
+    "medacta": (False, True),
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -133,30 +138,33 @@ def _collect_seedplans(planning_root: Path, requested_cases: Iterable[str] | Non
 
 
 def _find_unique_nifti(image_root: Path, case_id: str) -> Path | None:
+    case_dir = (image_root / case_id).resolve()
+    if not case_dir.is_dir():
+        print(f"Warning: case folder '{case_dir}' not found under {image_root}")
+        return None
+
     candidates: list[Path] = []
     for suffix in VALID_NIFTI_SUFFIXES:
-        pattern = f"**/{case_id}/**/*{suffix}"
-        candidates.extend(image_root.glob(pattern))
+        candidates.extend(case_dir.rglob(f"*{suffix}"))
+
     if not candidates:
-        print(f"Warning: no NIfTI found for case '{case_id}' under {image_root}")
+        print(f"Warning: no NIfTI found inside {case_dir}")
         return None
-    # Prefer .nii.gz files, then shorter paths to break ties.
-    candidates.sort(key=lambda p: (0 if p.suffix == ".gz" or p.name.endswith(".nii.gz") else 1, len(str(p))))
-    # Deduplicate identical files
-    unique_candidates = []
-    seen = set()
-    for cand in candidates:
-        resolved = cand.resolve()
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        unique_candidates.append(cand)
-    if len(unique_candidates) > 1:
-        print(
-            f"Warning: multiple NIfTI files found for case '{case_id}'. Using '{unique_candidates[0]}', "
-            "skipping the rest."
+
+    # Prefer .nii.gz files, then shorter paths (more specific stacks)
+    candidates.sort(
+        key=lambda p: (
+            0 if p.suffix == ".gz" or p.name.endswith(".nii.gz") else 1,
+            len(str(p)),
         )
-    return unique_candidates[0]
+    )
+
+    if len(candidates) > 1:
+        print(
+            f"Warning: multiple NIfTI files detected in {case_dir}; using '{candidates[0]}' and ignoring the rest."
+        )
+
+    return candidates[0]
 
 
 def _detect_rotation_mode(seedplan_path: Path, case_id: str | None = None) -> str:
@@ -195,6 +203,11 @@ def _detect_rotation_mode(seedplan_path: Path, case_id: str | None = None) -> st
             ]
             if any("mathys" in token for token in tokens if token):
                 return "mathys"
+            if any(
+                token and ("medacta" in token or "amistem" in token)
+                for token in tokens
+            ):
+                return "medacta"
             if any(
                 token
                 and ("corail" in token or "actis" in token or "johnson" in token)
@@ -274,8 +287,7 @@ def main() -> int:
             failures += 1
             continue
         rotation_mode = _detect_rotation_mode(seedplan_path, case_id)
-        auto_pre = rotation_mode == "johnson"
-        auto_post = rotation_mode in ("johnson", "mathys")
+        auto_pre, auto_post = ROTATION_BEHAVIOR.get(rotation_mode, (False, False))
         if rotation_mode != "auto":
             forced = []
             if auto_pre:

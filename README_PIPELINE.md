@@ -6,12 +6,24 @@
 python batchCompareStudies.py --base_path /media/developer/Storage1/HFRStudy-RUN2/images --output batch_report_RUN2 --output-path ./CurrentReports/RUN2_4/  --excel 
 ```
 
-## From Slicer
+## From Slicer for each participants
 
 ```shell
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN2/images/H001 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate
+   --slicer-extra-arg=--qt-disable-translate --exit-after-run
+```
+
+## For test to see how the stem is inserted 
+
+```shell
+python ./load_nifti_and_stem.py --nifti /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/006-M-63/Dataset/1.2.840.113619.2.416.323108426829918732464075286489137100165/stacks/stack_03/nifti/1.2.840.113619.2.416.323108426829918732464075286489137100165_stack_03.nii.gz  --seedplan /media/developer/Storage1/HFRStudy-RUN2/images/H001/006-M-63/Mediplan3D/seedplan.xml --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan  --no-splash --pre-rotate-z-180 --post-rotate-z-180
+```
+
+## Extract all metrics
+
+```shell
+python export_stem_metrics_excel.py --root /media/developer/Storage1/HFRStudy-RUN2/images/ --output stem_metrics_RUN2.xlsx
 ```
