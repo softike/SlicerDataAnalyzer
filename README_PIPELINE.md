@@ -30,4 +30,4 @@ python ./load_nifti_and_stem.py --nifti /media/developer/Storage1/HFRStudy-RUN2/
 python export_stem_metrics_excel.py --root /media/developer/Storage1/HFRStudy-RUN2/images/ --output /home/developer/Projects/Code/SlicerDataAnalyzer/CurrentReports/RUN2_4/stem_metrics_RUN2.xlsx
 ```
 
-The resulting workbook lists every stem configuration (label/source/index) on the `Cases` sheet and summarizes both unique cases and total configurations per planner on the `Users` sheet.
+The resulting workbook lists every stem configuration (label/source/index plus the original `hipImplantConfig` name) on the `Cases` sheet and summarizes both unique cases and total configurations per planner on the `Users` sheet.

@@ -639,6 +639,12 @@ def build_slicer_script(
                 attributes["stemConfigSource"] = config_source
             if config_index is not None:
                 attributes["stemConfigIndex"] = str(config_index)
+            hip_config_name = stem_info.get("hip_config_name")
+            if hip_config_name:
+                attributes["hipConfigName"] = hip_config_name
+            hip_pretty_name = stem_info.get("hip_config_pretty_name")
+            if hip_pretty_name:
+                attributes["hipConfigPrettyName"] = hip_pretty_name
             root = ET.Element("stemMetrics", attrib=attributes)
             stem_elem = ET.SubElement(root, "stem")
             stem_fields = {
@@ -716,10 +722,16 @@ def build_slicer_script(
                     info["state"] = fem_config.attrib.get("state")
                     info["source"] = source_label
                     info["config_index"] = len(entries)
-                    raw_label = hip_config.attrib.get("name") or fem_config.attrib.get("name")
+                    hip_label = hip_config.attrib.get("name")
+                    fallback_label = fem_config.attrib.get("name")
+                    raw_label = hip_label or fallback_label
                     friendly, sanitized = _derive_config_labels(source_label, len(entries) + 1, raw_label)
                     info["config_label"] = friendly
                     info["config_folder"] = sanitized
+                    info["hip_config_name"] = hip_label or fallback_label or friendly
+                    pretty_name = hip_config.findtext("./prettyName") or hip_config.attrib.get("prettyName")
+                    if pretty_name:
+                        info["hip_config_pretty_name"] = pretty_name.strip()
                     uid_attr = stem_shape.attrib.get("uid")
                     if uid_attr:
                         try:
