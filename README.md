@@ -298,6 +298,8 @@ python export_stem_metrics_excel.py --root /mnt/localstore1 --output stem_metric
 
 The exporter auto-discovers every `*_stem_metrics.xml` beneath the provided root, populates a `Cases` sheet (one row per case with all stem metadata and zone stats), and a `Users` sheet that summarizes zone totals per planner folder (H001/H002/H003). Install `openpyxl` via `pip install -r requirements_excel.txt` if the script asks for it.
 
+Each metrics XML now corresponds to a specific stem configuration, so the `Cases` worksheet records the configuration label/source/index along with the screenshot folder path. The `Users` sheet differentiates between the number of unique cases and the total configuration count per planner, making it easy to spot planners who experimented with multiple implants for the same patient.
+
 ### Batch stem screenshots
 
 Use `batch_stem_analysis.py` to iterate over every `seedplan.xml` in a planning root, locate the matching per-case NIfTI under an image root, and call `load_nifti_and_stem.py` headlessly for each case:

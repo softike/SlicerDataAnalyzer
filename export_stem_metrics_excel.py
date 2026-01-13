@@ -97,6 +97,9 @@ def _parse_metric_file(path: Path) -> dict[str, Any]:
         "path": path,
         "user_id": root.get("userId", ""),
         "case_id": root.get("caseId", ""),
+        "config_label": root.get("stemConfigLabel", ""),
+        "config_source": root.get("stemConfigSource", ""),
+        "config_index": _to_int(root.get("stemConfigIndex"), default=-1),
         "array": root.get("array", ""),
         "total_points": _to_int(root.get("totalPoints")),
         "scalar_min": _to_float(root.get("scalarMin")),
@@ -128,6 +131,9 @@ def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[st
     headers = [
         "User",
         "Case",
+        "Config Label",
+        "Config Source",
+        "Config Index",
         "Stem UID",
         "Stem Manufacturer",
         "Stem Enum",
@@ -143,6 +149,7 @@ def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[st
         "Total Points",
         "Volume Name",
         "Volume Path",
+        "Screenshot Folder",
         "Original Stem VTP",
         "Metrics XML",
         "Generated At",
@@ -155,9 +162,15 @@ def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[st
     for entry in rows:
         stem = entry["stem"]
         volume_name = Path(entry["volume_path"]).name if entry["volume_path"] else ""
+        config_index_value = entry.get("config_index")
+        if config_index_value is None or config_index_value < 0:
+            config_index_value = ""
         row = [
             entry["user_id"],
             entry["case_id"],
+            entry.get("config_label", ""),
+            entry.get("config_source", ""),
+            config_index_value,
             stem.get("uid", ""),
             stem.get("manufacturer", ""),
             stem.get("enumName", ""),
@@ -173,6 +186,7 @@ def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[st
             entry["total_points"],
             volume_name,
             entry["volume_path"],
+            entry.get("screenshot_dir", ""),
             entry["original_vtp"],
             str(entry["path"]),
             entry["generated_at"],
@@ -188,22 +202,29 @@ def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[st
 
 def _populate_summary_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[str]) -> None:
     sheet.title = "Users"
-    headers = ["User", "Cases", "Total Points"]
+    headers = ["User", "Cases", "Configurations", "Total Points"]
     for zone_name in zone_names:
         headers.append(f"{zone_name} Count")
         headers.append(f"{zone_name} Percent (%)")
     sheet.append(headers)
 
-    aggregates: dict[str, dict[str, Any]] = defaultdict(lambda: {
-        "cases": 0,
-        "total_points": 0,
-        "zones": {name: 0 for name in zone_names},
-    })
+    def _new_bucket():
+        return {
+            "configurations": 0,
+            "case_ids": set(),
+            "total_points": 0,
+            "zones": {name: 0 for name in zone_names},
+        }
+
+    aggregates: dict[str, dict[str, Any]] = defaultdict(_new_bucket)
 
     for entry in rows:
         user = entry["user_id"] or "<unknown>"
         bucket = aggregates[user]
-        bucket["cases"] += 1
+        bucket["configurations"] += 1
+        case_id = entry.get("case_id")
+        if case_id:
+            bucket["case_ids"].add(case_id)
         bucket["total_points"] += entry["total_points"]
         for zone_name in zone_names:
             zone = entry["zones"].get(zone_name)
@@ -212,7 +233,10 @@ def _populate_summary_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[
 
     for user in sorted(aggregates.keys()):
         bucket = aggregates[user]
-        row = [user, bucket["cases"], bucket["total_points"]]
+        case_count = len(bucket["case_ids"])
+        if case_count == 0:
+            case_count = bucket["configurations"]
+        row = [user, case_count, bucket["configurations"], bucket["total_points"]]
         for zone_name in zone_names:
             count = bucket["zones"][zone_name]
             total_points = bucket["total_points"]
