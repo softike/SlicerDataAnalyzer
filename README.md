@@ -19,7 +19,7 @@ Use `view_implant.py` to resolve a Mathys or Johnson implant S3UID to its RCC id
 1. Install VTK once per environment:
 
    ```shell
-   pip install vtk
+   pip install vtk scipy  
    ```
 
 2. Launch the viewer (example scans two folders for a Mathys implant and prints verbose details):

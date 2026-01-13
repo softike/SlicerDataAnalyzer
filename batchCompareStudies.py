@@ -23,6 +23,7 @@ Usage:
     python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_comparison_report --excel
     python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_comparison_report --excel-detailed
     python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_comparison_report --pdf --excel --translation-only
+    python batchCompareStudies.py --base_path /mnt/localstore3 --output batch_comparison_report --output-path /tmp/reports
 """
 
 import os
@@ -1220,7 +1221,9 @@ def main():
     parser.add_argument("--base_path", required=True, 
                        help="Base path containing H001, H002, H003 directories")
     parser.add_argument("--output", "-o", default="batch_comparison_report",
-                       help="Output filename prefix (without extension)")
+                       help="Output filename prefix (without extension). Combined with --output-path when provided.")
+    parser.add_argument("--output-path", default=None,
+                       help="Directory to store all generated files. Defaults to current working directory.")
     parser.add_argument("--pdf", action="store_true", 
                        help="Also export results to PDF format")
     parser.add_argument("--excel", action="store_true",
@@ -1235,6 +1238,18 @@ def main():
                        help="Filter data by patient side: Left, Right, Both, or Auto (detect from XML) - default: Both")
     
     args = parser.parse_args()
+
+    # Resolve output prefix and ensure destination directory exists when requested
+    output_prefix = args.output
+    if args.output_path:
+        output_base = os.path.abspath(os.path.expanduser(args.output_path))
+        os.makedirs(output_base, exist_ok=True)
+        if not os.path.isabs(output_prefix):
+            output_prefix = os.path.join(output_base, output_prefix)
+
+    output_parent_dir = os.path.dirname(output_prefix)
+    if output_parent_dir:
+        os.makedirs(output_parent_dir, exist_ok=True)
     
     # Validate base path
     if not os.path.exists(args.base_path):
@@ -1242,7 +1257,7 @@ def main():
         sys.exit(1)
     
     # Create output directory for individual case plots
-    output_dir = f"{args.output}_plots"
+    output_dir = f"{output_prefix}_plots"
     os.makedirs(output_dir, exist_ok=True)
     
     # Find all case sets
@@ -1290,19 +1305,19 @@ def main():
     print("Generating inter-rater analysis...")
     inter_rater_results = generate_inter_rater_analysis(case_results, output_dir)
     
-    html_filename = generate_consolidated_html_report(case_results, args.output, args.pdf, inter_rater_results)
+    html_filename = generate_consolidated_html_report(case_results, output_prefix, args.pdf, inter_rater_results)
     
     # Export to Excel if requested
     if args.excel:
         print("Exporting raw data to Excel...")
-        excel_filename = export_to_excel(case_results, args.output)
+        excel_filename = export_to_excel(case_results, output_prefix)
         if excel_filename:
             print(f"Excel export saved as: {excel_filename}")
     
     # Export to detailed Excel if requested  
     if args.excel_detailed:
         print("Exporting detailed component-wise data to Excel...")
-        detailed_excel_filename = export_to_excel_detailed(case_results, args.output)
+        detailed_excel_filename = export_to_excel_detailed(case_results, output_prefix)
         if detailed_excel_filename:
             print(f"Detailed Excel export saved as: {detailed_excel_filename}")
     
