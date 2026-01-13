@@ -288,6 +288,8 @@ Whenever stem scalars are computed, the script also writes the original (non-har
 
 In the same `Slicer-exports/` directory you now also get a machine-friendly `*_stem_metrics.xml`. Each XML captures the case/user identifiers (H001/H002/H003), the detected stem metadata, scalar range, and the EZplan zone distribution (counts + percentages). This makes it trivial to audit which implant model was used and how its fixation zones scored without re-opening Slicer.
 
+If the seedplan contains multiple femoral stem configurations (for example, an active implant plus several history entries), `load_nifti_and_stem.py` now loops through each configuration automatically during a single launch. Every configuration gets its own subfolder under `Slicer-exports/` (named after the `hipImplantConfig` label when present, otherwise `active_01`, `history_02`, etc.), and each folder contains that configuration’s screenshots, VTP export, and `*_stem_metrics.xml`. `batch_stem_analysis.py` inherits this behavior automatically because it always forwards `--compute-stem-scalars`.
+
 Once a batch run has produced those XML files, aggregate everything into a workbook with:
 
 ```shell

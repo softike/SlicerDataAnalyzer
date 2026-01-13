@@ -320,7 +320,7 @@ def build_slicer_script(
             point_data.SetActiveScalars(array_name)
             target_poly.Modified()
 
-        def _stem_output_prefix(clear_dir=False):
+        def _stem_output_prefix(clear_dir=False, suffix=None):
             global OUTPUT_DIR_CLEARED
             if not os.path.isdir(SCREENSHOT_DIR):
                 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
@@ -338,13 +338,19 @@ def build_slicer_script(
                     except Exception as exc:
                         print("Warning: unable to remove '%s' (%s)" % (path, exc))
                 OUTPUT_DIR_CLEARED = True
+            target_dir = SCREENSHOT_DIR
+            if suffix:
+                target_dir = os.path.join(SCREENSHOT_DIR, suffix)
+                if not os.path.isdir(target_dir):
+                    os.makedirs(target_dir, exist_ok=True)
+                    print("Created per-configuration export directory: %s" % target_dir)
             base = os.path.basename(VOLUME_PATH)
             lower = base.lower()
             if lower.endswith(".nii.gz"):
                 base = base[:-7]
             else:
                 base = os.path.splitext(base)[0]
-            return os.path.join(SCREENSHOT_DIR, base + "_stem")
+            return os.path.join(target_dir, base + "_stem")
 
         def _configure_view_background(view_node):
             if not view_node:
@@ -362,7 +368,7 @@ def build_slicer_script(
             if hasattr(view_node, "SetBoxVisible"):
                 view_node.SetBoxVisible(False)
 
-        def _capture_stem_screenshots(model_node):
+        def _capture_stem_screenshots(model_node, suffix=None, clear_exports=False):
             poly = model_node.GetPolyData()
             if poly is None:
                 print("Model has no polydata; skipping screenshots")
@@ -421,7 +427,7 @@ def build_slicer_script(
                 ("SAG_left", (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
                 ("SAG_right", (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
             ]
-            prefix = _stem_output_prefix(clear_dir=True)
+            prefix = _stem_output_prefix(clear_dir=clear_exports, suffix=suffix)
             for label, axis, up in orientations:
                 position = [center[i] + axis[i] * distance for i in range(3)]
                 camera.SetFocalPoint(*center)
@@ -436,12 +442,12 @@ def build_slicer_script(
                 pixmap.save(file_path)
                 print("Saved screenshot: %s" % file_path)
 
-        def _export_original_stem(model_node):
+        def _export_original_stem(model_node, suffix=None, clear_exports=False):
             poly = model_node.GetPolyData()
             if poly is None:
                 print("Model has no polydata; skipping stem export")
                 return None
-            prefix = _stem_output_prefix(clear_dir=True)
+            prefix = _stem_output_prefix(clear_dir=clear_exports, suffix=suffix)
             file_path = prefix + "_original.vtp"
             writer = vtk.vtkXMLPolyDataWriter()
             writer.SetFileName(file_path)
@@ -601,11 +607,16 @@ def build_slicer_script(
             array_name,
             rotation_mode,
             original_vtp_path=None,
+            suffix=None,
+            config_label=None,
+            config_source=None,
+            config_index=None,
+            clear_exports=False,
         ):
             if not summary:
                 print("No scalar summary available; skipping metrics XML export")
                 return None
-            prefix = _stem_output_prefix()
+            prefix = _stem_output_prefix(clear_dir=clear_exports, suffix=suffix)
             file_path = prefix + "_metrics.xml"
             attributes = {
                 "caseId": CASE_ID or "",
@@ -622,6 +633,12 @@ def build_slicer_script(
             }
             if original_vtp_path:
                 attributes["stemOriginalVtp"] = original_vtp_path
+            if config_label:
+                attributes["stemConfigLabel"] = config_label
+            if config_source:
+                attributes["stemConfigSource"] = config_source
+            if config_index is not None:
+                attributes["stemConfigIndex"] = str(config_index)
             root = ET.Element("stemMetrics", attrib=attributes)
             stem_elem = ET.SubElement(root, "stem")
             stem_fields = {
@@ -664,11 +681,27 @@ def build_slicer_script(
             print("Saved stem metrics XML: %s" % file_path)
             return file_path
 
-        def _extract_stem_info(xml_path):
+        def _derive_config_labels(source_label, ordinal, *candidates):
+            for candidate in candidates:
+                if candidate and candidate.strip():
+                    friendly = candidate.strip()
+                    break
+            else:
+                friendly = f"{source_label}_{ordinal:02d}"
+            sanitized = "".join(
+                ch if ch.isalnum() or ch in ("-", "_") else "_"
+                for ch in friendly
+            ).strip("_")
+            if not sanitized:
+                sanitized = f"{source_label}_{ordinal:02d}"
+            return friendly, sanitized
+
+        def _extract_stem_infos(xml_path):
             tree = ET.parse(xml_path)
             root = tree.getroot()
             hip_configs = root.findall(".//hipImplantConfig")
             history_configs = root.findall(".//hipImplantConfigHistoryList/hipImplantConfig")
+            entries = []
             for source_label, configs in (("active", hip_configs), ("history", history_configs)):
                 for hip_config in configs:
                     fem_config = hip_config.find("./femImplantConfig")
@@ -682,6 +715,11 @@ def build_slicer_script(
                     info["configured_side"] = fem_config.attrib.get("side")
                     info["state"] = fem_config.attrib.get("state")
                     info["source"] = source_label
+                    info["config_index"] = len(entries)
+                    raw_label = hip_config.attrib.get("name") or fem_config.attrib.get("name")
+                    friendly, sanitized = _derive_config_labels(source_label, len(entries) + 1, raw_label)
+                    info["config_label"] = friendly
+                    info["config_folder"] = sanitized
                     uid_attr = stem_shape.attrib.get("uid")
                     if uid_attr:
                         try:
@@ -705,23 +743,252 @@ def build_slicer_script(
                     local_elem = stem_shape.find("matrix4[@name='localMat']")
                     if local_elem is not None:
                         info["local_matrix_raw"] = local_elem.attrib.get("value")
-                    return info
-            raise RuntimeError("Unable to locate femoral stem definition in seedplan")
+                    entries.append(info)
+            if not entries:
+                raise RuntimeError("Unable to locate femoral stem definition in seedplan")
+            return entries
 
-        stem_info = _extract_stem_info(SEEDPLAN_PATH)
-        matrix_raw = stem_info.get("matrix_raw")
-        if not matrix_raw:
-            raise RuntimeError("Stem matrix missing in {}".format(SEEDPLAN_PATH))
-        matrix_vals = _parse_matrix(matrix_raw)
-        local_matrix_raw = stem_info.get("local_matrix_raw")
-        if local_matrix_raw:
+        def _process_stem_configuration(
+            stem_info,
+            *,
+            volume_node,
+            base_pre_rotate=False,
+            base_post_rotate=False,
+            clear_exports=False,
+        ):
+            config_index = stem_info.get("config_index", 0)
+            config_label = stem_info.get("config_label") or f"Configuration {config_index + 1}"
+            config_source = stem_info.get("source")
+            suffix = stem_info.get("config_folder") or f"config_{config_index + 1:02d}"
+            print("\\n=== Stem configuration %s (%s) ===" % (config_label, config_source or "unknown"))
+
+            matrix_raw = stem_info.get("matrix_raw")
+            if not matrix_raw:
+                print("Warning: configuration '%s' has no stem matrix; skipping" % config_label)
+                return
             try:
-                local_matrix_vals = _parse_matrix(local_matrix_raw)
+                matrix_vals = _parse_matrix(matrix_raw)
             except ValueError as exc:
-                print("Warning: invalid local matrix ({}); using identity".format(exc))
+                print("Warning: invalid stem matrix for '%s' (%s); skipping" % (config_label, exc))
+                return
+
+            local_matrix_raw = stem_info.get("local_matrix_raw")
+            if local_matrix_raw:
+                try:
+                    local_matrix_vals = _parse_matrix(local_matrix_raw)
+                except ValueError as exc:
+                    print("Warning: invalid local matrix for '%s' (%s); using identity" % (config_label, exc))
+                    local_matrix_vals = IDENTITY_4X4
+            else:
                 local_matrix_vals = IDENTITY_4X4
-        else:
-            local_matrix_vals = IDENTITY_4X4
+
+            matrix_global = vtk.vtkMatrix4x4()
+            for row in range(4):
+                for col in range(4):
+                    matrix_global.SetElement(row, col, matrix_vals[col * 4 + row])
+
+            matrix_local = vtk.vtkMatrix4x4()
+            for row in range(4):
+                for col in range(4):
+                    matrix_local.SetElement(row, col, local_matrix_vals[col * 4 + row])
+
+            matrix = vtk.vtkMatrix4x4()
+            vtk.vtkMatrix4x4.Multiply4x4(matrix_global, matrix_local, matrix)
+
+            rotation_mode = _resolve_rotation_mode(stem_info)
+            pre_rotate = bool(base_pre_rotate)
+            post_rotate = bool(base_post_rotate)
+            auto_pre, auto_post = ROTATION_BEHAVIOR.get(rotation_mode, (False, False))
+            mode_label = (rotation_mode or "none").capitalize()
+            if auto_pre and not pre_rotate:
+                print("Auto: applying pre-rotate Z 180° for %s stem" % mode_label)
+                pre_rotate = True
+            if auto_post and not post_rotate:
+                print("Auto: applying post-rotate Z 180° for %s stem" % mode_label)
+                post_rotate = True
+
+            if PRE_TRANSFORM_LPS_TO_RAS:
+                flip = vtk.vtkMatrix4x4()
+                flip.Identity()
+                flip.SetElement(0, 0, -1)
+                flip.SetElement(1, 1, -1)
+                _right_multiply(matrix, flip)
+
+            if pre_rotate:
+                rot = vtk.vtkMatrix4x4()
+                rot.Identity()
+                rot.SetElement(0, 0, -1)
+                rot.SetElement(1, 1, -1)
+                _right_multiply(matrix, rot)
+
+            if post_rotate:
+                rot_post = vtk.vtkMatrix4x4()
+                rot_post.Identity()
+                rot_post.SetElement(0, 0, -1)
+                rot_post.SetElement(1, 1, -1)
+                _left_multiply(matrix, rot_post)
+
+            transform_name = slicer.mrmlScene.GenerateUniqueName(f"StemTransform_{config_index + 1:02d}")
+            transform_node = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLLinearTransformNode",
+                transform_name,
+            )
+            transform_node.SetMatrixTransformToParent(matrix)
+
+            model_node = None
+            search_folders = []
+            if STL_ROOTS:
+                for root_path in STL_ROOTS:
+                    if not root_path:
+                        continue
+                    if not os.path.isdir(root_path):
+                        print("Warning: STL root '%s' not found" % root_path)
+                        continue
+                    for dirpath, _, _ in os.walk(root_path):
+                        search_folders.append(dirpath)
+
+            if search_folders:
+                try:
+                    import view_implant
+                except Exception as exc:
+                    print("Warning: could not import view_implant (%s); falling back to cylinder" % exc)
+                else:
+                    tokens = [
+                        stem_info.get("rcc_id"),
+                        stem_info.get("stem_enum_name"),
+                        str(stem_info.get("uid")) if stem_info.get("uid") is not None else None,
+                    ]
+                    tokens = [token for token in tokens if token]
+                    if tokens:
+                        try:
+                            stl_path, _ = view_implant.find_matching_stl(search_folders, tokens)
+                        except Exception as exc:
+                            print("Warning: %s; using procedural cylinder" % exc)
+                        else:
+                            model_node = loadModel(str(stl_path))
+                            if model_node is None:
+                                print("Warning: loadModel failed for %s; using cylinder" % stl_path)
+                            elif _needs_mathys_flip(stem_info):
+                                flipped = _flip_polydata_lps_to_ras(model_node.GetPolyData())
+                                if flipped:
+                                    model_node.SetAndObservePolyData(flipped)
+                                    model_node.SetAttribute("stem.geometryCoordinateSystem", "RAS (Mathys)")
+                                else:
+                                    print("Warning: failed to flip Mathys STL to RAS; proceeding with original data")
+
+            if model_node is None:
+                cylinder = vtk.vtkCylinderSource()
+                cylinder.SetRadius(STEM_RADIUS)
+                cylinder.SetHeight(STEM_LENGTH)
+                cylinder.SetResolution(64)
+                cylinder.SetCenter(0, 0, STEM_LENGTH * 0.5)
+                cylinder.CappingOn()
+                cylinder.Update()
+
+                model_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode", "ImplantStem")
+                model_node.SetAndObservePolyData(cylinder.GetOutput())
+                model_node.CreateDefaultDisplayNodes()
+                display = model_node.GetDisplayNode()
+                display.SetColor(0.85, 0.33, 0.1)
+                display.SetOpacity(0.7)
+
+            model_node.SetAndObserveTransformNodeID(transform_node.GetID())
+
+            base_name = model_node.GetName() or "Stem"
+            hardened_name = slicer.mrmlScene.GenerateUniqueName(f"{base_name} (Hardened)")
+            hardened_clone = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLModelNode",
+                hardened_name,
+            )
+            clone_poly_data = vtk.vtkPolyData()
+            clone_poly_data.DeepCopy(model_node.GetPolyData())
+            hardened_clone.SetAndObservePolyData(clone_poly_data)
+            hardened_clone.CreateDefaultDisplayNodes()
+            source_display = model_node.GetDisplayNode()
+            clone_display = hardened_clone.GetDisplayNode()
+            if source_display and clone_display:
+                clone_display.Copy(source_display)
+            hardened_clone.SetAndObserveTransformNodeID(transform_node.GetID())
+            hardened_clone.HardenTransform()
+            hardened_clone.SetAndObserveTransformNodeID(None)
+            hardened_clone.SetAttribute("stem.clone", "hardened")
+
+            for key, value in stem_info.items():
+                if value is None:
+                    continue
+                attr_value = str(value)
+                model_node.SetAttribute("stem.%s" % key, attr_value)
+                hardened_clone.SetAttribute("stem.%s" % key, attr_value)
+
+            stem_export_path = None
+            export_prefix_cleared = clear_exports
+
+            if COMPUTE_STEM_SCALARS:
+                target_node = hardened_clone or model_node
+                try:
+                    _probe_volume_onto_model(volume_node, target_node, array_name="VolumeScalars")
+                except Exception as exc:
+                    print("Warning: unable to sample scalars onto '%s' (%s)" % (target_node.GetName(), exc))
+                else:
+                    _print_scalar_percentages(target_node, array_name="VolumeScalars")
+                    lut_node = _ensure_ezplan_lut()
+                    _apply_scalar_display(target_node, array_name="VolumeScalars", color_node=lut_node)
+                    if target_node is not model_node:
+                        _copy_scalar_array(target_node, model_node, "VolumeScalars")
+                        _apply_scalar_display(model_node, array_name="VolumeScalars", color_node=lut_node)
+                    print("Stored sampled scalars on '{}' and applied '{}' LUT".format(
+                        target_node.GetName(), EZPLAN_LUT_NAME
+                    ))
+                    summary_for_xml = _summarize_scalar_percentages(model_node, array_name="VolumeScalars")
+                    stem_export_path = _export_original_stem(
+                        model_node,
+                        suffix=suffix,
+                        clear_exports=export_prefix_cleared,
+                    )
+                    export_prefix_cleared = False
+                    _write_case_metrics_xml(
+                        stem_info,
+                        summary_for_xml,
+                        "VolumeScalars",
+                        rotation_mode=rotation_mode,
+                        original_vtp_path=stem_export_path,
+                        suffix=suffix,
+                        config_label=config_label,
+                        config_source=config_source,
+                        config_index=config_index,
+                    )
+                    if EXPORT_STEM_SCREENSHOTS:
+                        original_display = model_node.GetDisplayNode()
+                        original_visibility = None
+                        if original_display:
+                            original_visibility = original_display.GetVisibility()
+                            original_display.SetVisibility(False)
+                        clone_display = target_node.GetDisplayNode()
+                        if clone_display:
+                            clone_display.SetVisibility(True)
+                        try:
+                            _capture_stem_screenshots(
+                                target_node,
+                                suffix=suffix,
+                                clear_exports=export_prefix_cleared,
+                            )
+                        finally:
+                            export_prefix_cleared = False
+                            if original_display and original_visibility is not None:
+                                original_display.SetVisibility(original_visibility)
+
+            if not stem_export_path:
+                stem_export_path = _export_original_stem(
+                    model_node,
+                    suffix=suffix,
+                    clear_exports=export_prefix_cleared,
+                )
+                export_prefix_cleared = False
+
+            print("Loaded volume '%s'" % (volume_node.GetName() or VOLUME_PATH))
+            print("Added implant stem UID %s for configuration '%s'" % (stem_info.get("uid"), config_label))
+
+        stem_infos = _extract_stem_infos(SEEDPLAN_PATH)
 
         volume_node = loadVolume(VOLUME_PATH)
         if volume_node is None:
@@ -733,186 +1000,17 @@ def build_slicer_script(
         else:
             print("Info: layout manager unavailable (likely headless mode); skipping slice reset")
 
-        matrix_global = vtk.vtkMatrix4x4()
-        for row in range(4):
-            for col in range(4):
-                matrix_global.SetElement(row, col, matrix_vals[col * 4 + row])
+        base_pre_rotate = PRE_ROTATE_Z_180
+        base_post_rotate = POST_ROTATE_Z_180
 
-        matrix_local = vtk.vtkMatrix4x4()
-        for row in range(4):
-            for col in range(4):
-                matrix_local.SetElement(row, col, local_matrix_vals[col * 4 + row])
-
-        matrix = vtk.vtkMatrix4x4()
-        vtk.vtkMatrix4x4.Multiply4x4(matrix_global, matrix_local, matrix)
-
-        rotation_mode = _resolve_rotation_mode(stem_info)
-        auto_pre, auto_post = ROTATION_BEHAVIOR.get(rotation_mode, (False, False))
-        if auto_pre and not PRE_ROTATE_Z_180:
-            print("Auto: applying pre-rotate Z 180° for %s stem" % rotation_mode.capitalize())
-            PRE_ROTATE_Z_180 = True
-        if auto_post and not POST_ROTATE_Z_180:
-            print("Auto: applying post-rotate Z 180° for %s stem" % rotation_mode.capitalize())
-            POST_ROTATE_Z_180 = True
-
-        if PRE_TRANSFORM_LPS_TO_RAS:
-            flip = vtk.vtkMatrix4x4()
-            flip.Identity()
-            flip.SetElement(0, 0, -1)
-            flip.SetElement(1, 1, -1)
-            _right_multiply(matrix, flip)
-
-        if PRE_ROTATE_Z_180:
-            rot = vtk.vtkMatrix4x4()
-            rot.Identity()
-            rot.SetElement(0, 0, -1)
-            rot.SetElement(1, 1, -1)
-            _right_multiply(matrix, rot)
-
-        if POST_ROTATE_Z_180:
-            rot_post = vtk.vtkMatrix4x4()
-            rot_post.Identity()
-            rot_post.SetElement(0, 0, -1)
-            rot_post.SetElement(1, 1, -1)
-            _left_multiply(matrix, rot_post)
-        transform_node = slicer.mrmlScene.AddNewNodeByClass(
-            "vtkMRMLLinearTransformNode", "StemTransform"
-        )
-        transform_node.SetMatrixTransformToParent(matrix)
-
-        model_node = None
-
-        search_folders = []
-        if STL_ROOTS:
-            for root in STL_ROOTS:
-                if not root:
-                    continue
-                if not os.path.isdir(root):
-                    print("Warning: STL root '%s' not found" % root)
-                    continue
-                for dirpath, dirnames, filenames in os.walk(root):
-                    search_folders.append(dirpath)
-
-        if search_folders:
-            try:
-                import view_implant
-            except Exception as exc:
-                print("Warning: could not import view_implant (%s); falling back to cylinder" % exc)
-            else:
-                tokens = [
-                    stem_info.get("rcc_id"),
-                    stem_info.get("stem_enum_name"),
-                    str(stem_info.get("uid")) if stem_info.get("uid") is not None else None,
-                ]
-                tokens = [token for token in tokens if token]
-                if tokens:
-                    try:
-                        stl_path, _ = view_implant.find_matching_stl(search_folders, tokens)
-                    except Exception as exc:
-                        print("Warning: %s; using procedural cylinder" % exc)
-                    else:
-                        model_node = loadModel(str(stl_path))
-                        if model_node is None:
-                            print("Warning: loadModel failed for %s; using cylinder" % stl_path)
-                        elif _needs_mathys_flip(stem_info):
-                            flipped = _flip_polydata_lps_to_ras(model_node.GetPolyData())
-                            if flipped:
-                                model_node.SetAndObservePolyData(flipped)
-                                model_node.SetAttribute("stem.geometryCoordinateSystem", "RAS (Mathys)")
-                            else:
-                                print("Warning: failed to flip Mathys STL to RAS; proceeding with original data")
-
-        if model_node is None:
-            cylinder = vtk.vtkCylinderSource()
-            cylinder.SetRadius(STEM_RADIUS)
-            cylinder.SetHeight(STEM_LENGTH)
-            cylinder.SetResolution(64)
-            cylinder.SetCenter(0, 0, STEM_LENGTH * 0.5)
-            cylinder.CappingOn()
-            cylinder.Update()
-
-            model_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode", "ImplantStem")
-            model_node.SetAndObservePolyData(cylinder.GetOutput())
-            model_node.CreateDefaultDisplayNodes()
-            display = model_node.GetDisplayNode()
-            display.SetColor(0.85, 0.33, 0.1)
-            display.SetOpacity(0.7)
-
-        model_node.SetAndObserveTransformNodeID(transform_node.GetID())
-
-        base_name = model_node.GetName() or "Stem"
-        hardened_name = slicer.mrmlScene.GenerateUniqueName(f"{base_name} (Hardened)")
-        hardened_clone = slicer.mrmlScene.AddNewNodeByClass(
-            "vtkMRMLModelNode",
-            hardened_name,
-        )
-        clone_poly_data = vtk.vtkPolyData()
-        clone_poly_data.DeepCopy(model_node.GetPolyData())
-        hardened_clone.SetAndObservePolyData(clone_poly_data)
-        hardened_clone.CreateDefaultDisplayNodes()
-        source_display = model_node.GetDisplayNode()
-        clone_display = hardened_clone.GetDisplayNode()
-        if source_display and clone_display:
-            clone_display.Copy(source_display)
-        hardened_clone.SetAndObserveTransformNodeID(transform_node.GetID())
-        hardened_clone.HardenTransform()
-        hardened_clone.SetAndObserveTransformNodeID(None)
-        hardened_clone.SetAttribute("stem.clone", "hardened")
-
-        for key, value in stem_info.items():
-            if value is None:
-                continue
-            attr_value = str(value)
-            model_node.SetAttribute("stem.%s" % key, attr_value)
-            hardened_clone.SetAttribute("stem.%s" % key, attr_value)
-
-        stem_export_path = None
-
-        if COMPUTE_STEM_SCALARS:
-            target_node = hardened_clone or model_node
-            try:
-                _probe_volume_onto_model(volume_node, target_node, array_name="VolumeScalars")
-            except Exception as exc:
-                print("Warning: unable to sample scalars onto '%s' (%s)" % (target_node.GetName(), exc))
-            else:
-                _print_scalar_percentages(target_node, array_name="VolumeScalars")
-                lut_node = _ensure_ezplan_lut()
-                _apply_scalar_display(target_node, array_name="VolumeScalars", color_node=lut_node)
-                if target_node is not model_node:
-                    _copy_scalar_array(target_node, model_node, "VolumeScalars")
-                    _apply_scalar_display(model_node, array_name="VolumeScalars", color_node=lut_node)
-                print("Stored sampled scalars on '{}' and applied '{}' LUT".format(
-                    target_node.GetName(), EZPLAN_LUT_NAME
-                ))
-                summary_for_xml = _summarize_scalar_percentages(model_node, array_name="VolumeScalars")
-                stem_export_path = _export_original_stem(model_node)
-                _write_case_metrics_xml(
-                    stem_info,
-                    summary_for_xml,
-                    "VolumeScalars",
-                    rotation_mode=rotation_mode,
-                    original_vtp_path=stem_export_path,
-                )
-                if EXPORT_STEM_SCREENSHOTS:
-                    original_display = model_node.GetDisplayNode()
-                    original_visibility = None
-                    if original_display:
-                        original_visibility = original_display.GetVisibility()
-                        original_display.SetVisibility(False)
-                    clone_display = target_node.GetDisplayNode()
-                    if clone_display:
-                        clone_display.SetVisibility(True)
-                    try:
-                        _capture_stem_screenshots(target_node)
-                    finally:
-                        if original_display and original_visibility is not None:
-                            original_display.SetVisibility(original_visibility)
-
-        if not stem_export_path:
-            stem_export_path = _export_original_stem(model_node)
-
-        print("Loaded volume: {}".format(volume_node.GetName()))
-        print("Added implant stem UID: {}".format(stem_info.get("uid")))
+        for idx, stem_info in enumerate(stem_infos):
+            _process_stem_configuration(
+                stem_info,
+                volume_node=volume_node,
+                base_pre_rotate=base_pre_rotate,
+                base_post_rotate=base_post_rotate,
+                clear_exports=(idx == 0),
+            )
 
         if EXIT_AFTER_RUN:
             print("Exit-after-run requested; closing Slicer session...")
