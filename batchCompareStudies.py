@@ -95,6 +95,24 @@ def _decompose_matrix_components(matrix_value):
     return components
 
 
+def _normalize_side_label(side_value):
+    """Convert side strings like 'Left', 'SideFree', 'R' into canonical Left/Right labels."""
+
+    if not side_value:
+        return None
+
+    cleaned = side_value.strip().lower()
+    if not cleaned:
+        return None
+
+    if cleaned in {"left", "l", "sideleft"}:
+        return "Left"
+    if cleaned in {"right", "r", "sideright"}:
+        return "Right"
+
+    return None
+
+
 def extract_stem_info_from_xml(xml_path):
     """Collect implant stem metadata from every hipImplantConfig block in a seedplan."""
 
@@ -1902,12 +1920,26 @@ def export_to_excel(case_results, output_prefix):
     # Prepare data for Excel export
     all_data_rows = []
     stem_sheet_rows = []
+    config_anteversion_rows = []
+    tester_index_map = {tester: idx for idx, tester in enumerate(TESTER_IDS)}
     
     for result in case_results:
         if result['status'] != 'success':
             continue
         
         case_name = result['case_name']
+
+        # Precompute anteversion lookup per tester/side for this case
+        case_angles = result.get('anteversion_angles') or {}
+        tester_angle_lookup = {}
+        for tester_label, tester_idx in tester_index_map.items():
+            tester_angle_lookup[tester_label] = {}
+            for side in ('Left', 'Right'):
+                side_values = case_angles.get(side)
+                angle_value = None
+                if isinstance(side_values, (list, tuple)) and tester_idx < len(side_values):
+                    angle_value = side_values[tester_idx]
+                tester_angle_lookup[tester_label][side] = angle_value
         
         # Extract raw data from each case
         if 'raw_data' in result:
@@ -1957,6 +1989,11 @@ def export_to_excel(case_results, output_prefix):
         for stem_entry in result.get('stem_info', []):
             rotation = stem_entry.get('rotation') or {}
             translation = stem_entry.get('translation') or {}
+            tester_label = stem_entry.get('tester')
+            normalized_side = _normalize_side_label(stem_entry.get('configured_side')) or _normalize_side_label(stem_entry.get('requested_side'))
+            angle_value = None
+            if tester_label in tester_angle_lookup and normalized_side:
+                angle_value = tester_angle_lookup[tester_label].get(normalized_side)
             row = {
                 'Case': case_name,
                 'Tester': stem_entry.get('tester'),
@@ -1983,6 +2020,29 @@ def export_to_excel(case_results, output_prefix):
                 row[f'Trans_{key}'] = translation.get(key)
 
             stem_sheet_rows.append(row)
+
+            config_row = {
+                'Case': case_name,
+                'Tester': tester_label,
+                'Hip_Config_Index': stem_entry.get('hip_config_index'),
+                'Hip_Config_UID': stem_entry.get('hip_config_uid'),
+                'Hip_Config_Name': stem_entry.get('hip_config_name'),
+                'Config_Source': stem_entry.get('source'),
+                'Config_State': stem_entry.get('state'),
+                'Requested_Side': stem_entry.get('requested_side'),
+                'Configured_Side': stem_entry.get('configured_side'),
+                'Side_Normalized': normalized_side,
+                'Anteversion_Angle_Deg': angle_value,
+                'Stem_UID': stem_entry.get('uid'),
+                'Stem_Model': stem_entry.get('stem_enum_name'),
+                'Stem_Label': stem_entry.get('stem_friendly_name'),
+                'Manufacturer': stem_entry.get('manufacturer'),
+                'RCC_ID': stem_entry.get('rcc_id'),
+                'Matrix_Value': stem_entry.get('matrix_raw'),
+                'XML_Path': stem_entry.get('xml_path'),
+                'Notes': stem_entry.get('error'),
+            }
+            config_anteversion_rows.append(config_row)
     
     if not all_data_rows:
         print("Warning: No data available for Excel export.")
@@ -2035,20 +2095,62 @@ def export_to_excel(case_results, output_prefix):
             if result['status'] == 'success' and 'anteversion_angles' in result:
                 case_name = result['case_name']
                 angles = result['anteversion_angles']
-                
-                anteversion_rows.append({
+                row = {
                     'Case': case_name,
-                    'Right_H001': angles.get('Right', [None, None, None])[0],
-                    'Right_H002': angles.get('Right', [None, None, None])[1],
-                    'Right_H003': angles.get('Right', [None, None, None])[2],
-                    'Left_H001': angles.get('Left', [None, None, None])[0],
-                    'Left_H002': angles.get('Left', [None, None, None])[1],
-                    'Left_H003': angles.get('Left', [None, None, None])[2]
-                })
-        
-        if anteversion_rows:
-            anteversion_df = pd.DataFrame(anteversion_rows)
-            anteversion_df.to_excel(writer, sheet_name='Femoral_Anteversion_Angles', index=False)
+                    'Right_H001': None,
+                    'Right_H002': None,
+                    'Right_H003': None,
+                    'Left_H001': None,
+                    'Left_H002': None,
+                    'Left_H003': None,
+                }
+                right_angles = angles.get('Right', [None, None, None])
+                left_angles = angles.get('Left', [None, None, None])
+                for idx, tester_label in enumerate(TESTER_IDS):
+                    if idx < len(right_angles):
+                        row[f'Right_{tester_label}'] = right_angles[idx]
+                    if idx < len(left_angles):
+                        row[f'Left_{tester_label}'] = left_angles[idx]
+                anteversion_rows.append(row)
+
+        anteversion_columns = [
+            'Case',
+            'Right_H001', 'Right_H002', 'Right_H003',
+            'Left_H001', 'Left_H002', 'Left_H003',
+        ]
+        config_columns = [
+            'Case', 'Tester', 'Hip_Config_Index', 'Hip_Config_UID', 'Hip_Config_Name',
+            'Config_Source', 'Config_State', 'Requested_Side', 'Configured_Side',
+            'Side_Normalized', 'Anteversion_Angle_Deg', 'Stem_UID', 'Stem_Model',
+            'Stem_Label', 'Manufacturer', 'RCC_ID', 'Matrix_Value', 'XML_Path', 'Notes'
+        ]
+
+        if anteversion_rows or config_anteversion_rows:
+            anteversion_df = pd.DataFrame(anteversion_rows, columns=anteversion_columns)
+            sheet_name = 'Femoral_Anteversion_Angles'
+            anteversion_df.to_excel(writer, sheet_name=sheet_name, index=False)
+            summary_height = len(anteversion_df) + 1  # include header row
+
+            if config_anteversion_rows:
+                config_df = pd.DataFrame(config_anteversion_rows, columns=config_columns)
+                label_row_df = pd.DataFrame([
+                    {'Case': 'Per-Configuration View (hipImplantConfig history)'}
+                ])
+                label_row_index = summary_height + 1
+                label_row_df.to_excel(
+                    writer,
+                    sheet_name=sheet_name,
+                    index=False,
+                    header=False,
+                    startrow=label_row_index,
+                )
+                config_start_row = label_row_index + 1
+                config_df.to_excel(
+                    writer,
+                    sheet_name=sheet_name,
+                    index=False,
+                    startrow=config_start_row,
+                )
 
         if stem_sheet_rows:
             stems_df = pd.DataFrame(stem_sheet_rows)

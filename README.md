@@ -256,10 +256,7 @@ This detailed format is ideal for:
 - Component-wise correlation analysis
 - Precision assessment of translation vs rotation measurements
 
-
-### 
-
-Load image and stem in Slicer from seedplan.xml 
+### Load image and stem in Slicer from seedplan.xml 
 
 Here is a Mathys case
 
@@ -301,10 +298,10 @@ The exporter auto-discovers every `*_stem_metrics.xml` beneath the provided root
 
 ### Batch stem screenshots
 
-Use `batch_stem_screenshots.py` to iterate over every `seedplan.xml` in a planning root, locate the matching per-case NIfTI under an image root, and call `load_nifti_and_stem.py` headlessly for each case:
+Use `batch_stem_analysis.py` to iterate over every `seedplan.xml` in a planning root, locate the matching per-case NIfTI under an image root, and call `load_nifti_and_stem.py` headlessly for each case:
 
 ```shell
-python batch_stem_screenshots.py \
+python batch_stem_analysis.py \
    --image-root /home/developer/Projects/Code/AZDiffRadio/outputs/classif_2 \
    --planning-root /mnt/localstore1/H001 \
    --stl-folder /mnt/localstore1/Implants4EZplan \
