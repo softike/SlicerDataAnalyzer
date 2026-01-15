@@ -644,7 +644,9 @@ def build_slicer_script(
                 attributes["hipConfigName"] = hip_config_name
             hip_pretty_name = stem_info.get("hip_config_pretty_name")
             if hip_pretty_name:
-                attributes["hipConfigPrettyName"] = hip_pretty_name
+                hip_pretty_clean = hip_pretty_name.strip()
+                if hip_pretty_clean:
+                    attributes["hipConfigPrettyName"] = hip_pretty_clean
             root = ET.Element("stemMetrics", attrib=attributes)
             stem_elem = ET.SubElement(root, "stem")
             stem_fields = {
@@ -730,8 +732,10 @@ def build_slicer_script(
                     info["config_folder"] = sanitized
                     info["hip_config_name"] = hip_label or fallback_label or friendly
                     pretty_name = hip_config.findtext("./prettyName") or hip_config.attrib.get("prettyName")
-                    if pretty_name:
-                        info["hip_config_pretty_name"] = pretty_name.strip()
+                    if pretty_name is not None:
+                        pretty_name_clean = pretty_name.strip()
+                        if pretty_name_clean:
+                            info["hip_config_pretty_name"] = pretty_name_clean
                     uid_attr = stem_shape.attrib.get("uid")
                     if uid_attr:
                         try:
@@ -1001,6 +1005,19 @@ def build_slicer_script(
             print("Added implant stem UID %s for configuration '%s'" % (stem_info.get("uid"), config_label))
 
         stem_infos = _extract_stem_infos(SEEDPLAN_PATH)
+        filtered_stem_infos = [
+            info
+            for info in stem_infos
+            if (info.get("hip_config_pretty_name") or "").strip()
+        ]
+        if not filtered_stem_infos:
+            raise RuntimeError("No hipImplantConfig entries expose <prettyName>; nothing to export")
+        skipped_configs = len(stem_infos) - len(filtered_stem_infos)
+        if skipped_configs:
+            print("Skipping %d configuration(s) without hip config pretty names" % skipped_configs)
+        stem_infos = filtered_stem_infos
+
+        _stem_output_prefix(clear_dir=True)
 
         volume_node = loadVolume(VOLUME_PATH)
         if volume_node is None:
