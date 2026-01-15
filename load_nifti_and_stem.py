@@ -1011,7 +1011,11 @@ def build_slicer_script(
             if (info.get("hip_config_pretty_name") or "").strip()
         ]
         if not filtered_stem_infos:
-            raise RuntimeError("No hipImplantConfig entries expose <prettyName>; nothing to export")
+            _stem_output_prefix(clear_dir=True)
+            print(
+                "Warning: no hipImplantConfig entries expose <prettyName>; skipping exports for this case."
+            )
+            raise SystemExit(0)
         skipped_configs = len(stem_infos) - len(filtered_stem_infos)
         if skipped_configs:
             print("Skipping %d configuration(s) without hip config pretty names" % skipped_configs)
