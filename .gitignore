@@ -6,3 +6,5 @@ planning_data_*
 *.zip
 *.xlsx
 .~lock.*
+*.tar.gz
+*.ods
