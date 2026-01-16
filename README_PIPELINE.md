@@ -30,7 +30,7 @@ python batch_stem_analysis.py \
 
 > Tip: when a `seedplan.xml` contains multiple femoral stem configurations (active plus histories), the batch driver now processes every configuration automatically. Each configuration gets its own subfolder under the case’s `Slicer-exports/` directory with screenshots, VTP, and metrics XML, so you can review every contact analysis without relaunching Slicer.
 
-## For test to see how the stem is inserted, do it for each participants
+## For test to see how the stem is inserted, do it for each participants, H001 is for Corail, H002 ..., H003 for the Amistem.
 
 ```shell
 python ./load_nifti_and_stem.py --nifti /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/006-M-63/Dataset/1.2.840.113619.2.416.323108426829918732464075286489137100165/stacks/stack_03/nifti/1.2.840.113619.2.416.323108426829918732464075286489137100165_stack_03.nii.gz  --seedplan /media/developer/Storage1/HFRStudy-RUN2/images/H001/006-M-63/Mediplan3D/seedplan.xml --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan  --no-splash --pre-rotate-z-180 --post-rotate-z-180

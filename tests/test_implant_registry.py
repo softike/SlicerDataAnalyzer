@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import unittest
 
-import amedacta_implants
-import johnson_implants_actis
-import johnson_implants_corail
+import amedacta_complete as amedacta_implants
+import johnson_actis_complete as johnson_actis_implants
+import johnson_corail_complete as johnson_corail_implants
 import mathys_implants
 from implant_registry import resolve_stem_uid
 
@@ -29,31 +29,31 @@ class ImplantRegistryTests(unittest.TestCase):
     def test_johnson_corail_uid_is_resolved(self) -> None:
         """A Johnson & Johnson CORAIL stem UID should resolve to the correct metadata payload."""
 
-        uid = johnson_implants_corail.S3UID.STEM_KHO_A_135_2.value
+        uid = johnson_corail_implants.S3UID.STEM_KHO_A_135_2.value
         lookup = resolve_stem_uid(uid)
         self.assertIsNotNone(lookup)
         assert lookup
         self.assertEqual(lookup.manufacturer, "Johnson & Johnson (Corail)")
-        self.assertEqual(lookup.enum_name, johnson_implants_corail.S3UID.STEM_KHO_A_135_2.name)
+        self.assertEqual(lookup.enum_name, johnson_corail_implants.S3UID.STEM_KHO_A_135_2.name)
         self.assertEqual(lookup.friendly_name, lookup.enum_name.replace("_", " "))
         self.assertEqual(
             lookup.rcc_id,
-            johnson_implants_corail.get_rcc_id(johnson_implants_corail.S3UID.STEM_KHO_A_135_2),
+            johnson_corail_implants.get_rcc_id(johnson_corail_implants.S3UID.STEM_KHO_A_135_2),
         )
 
     def test_johnson_actis_uid_is_resolved(self) -> None:
         """A Johnson & Johnson ACTIS stem UID should resolve to the correct metadata payload."""
 
-        uid = johnson_implants_actis.S3UID.STEM_STD_3.value
+        uid = johnson_actis_implants.S3UID.STEM_STD_3.value
         lookup = resolve_stem_uid(uid)
         self.assertIsNotNone(lookup)
         assert lookup
         self.assertEqual(lookup.manufacturer, "Johnson & Johnson (Actis)")
-        self.assertEqual(lookup.enum_name, johnson_implants_actis.S3UID.STEM_STD_3.name)
+        self.assertEqual(lookup.enum_name, johnson_actis_implants.S3UID.STEM_STD_3.name)
         self.assertEqual(lookup.friendly_name, lookup.enum_name.replace("_", " "))
         self.assertEqual(
             lookup.rcc_id,
-            johnson_implants_actis.get_rcc_id(johnson_implants_actis.S3UID.STEM_STD_3),
+            johnson_actis_implants.get_rcc_id(johnson_actis_implants.S3UID.STEM_STD_3),
         )
 
     def test_medacta_amistem_uid_is_resolved(self) -> None:

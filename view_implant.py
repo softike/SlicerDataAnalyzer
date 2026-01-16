@@ -10,9 +10,9 @@ from typing import Iterable, List, Sequence, Tuple
 
 AVAILABLE_MANUFACTURERS = {
     "mathys": "mathys_implants",
-    "johnson": "johnson_implants_corail",  # backward compatibility alias
-    "johnson-corail": "johnson_implants_corail",
-    "johnson-actis": "johnson_implants_actis",
+    "johnson": "johnson_corail_complete",  # alias for the enhanced CORAIL module
+    "johnson-corail": "johnson_corail_complete",
+    "johnson-actis": "johnson_actis_complete",
 }
 
 

@@ -34,7 +34,7 @@ Use `view_implant.py` to resolve a Mathys or Johnson implant S3UID to its RCC id
    python view_implant.py 130506 D:\implants\mathys E:\archives --verbose
    ```
 
-   Omit `--manufacturer` to try every known implant module (`mathys_implants`, `johnson_implants_corail`, `johnson_implants_actis`). The script first searches for an STL whose filename matches the RCC identifier, then falls back to substrings of the S3UID name.
+   Omit `--manufacturer` to try every known implant module (`mathys_implants`, `johnson_corail_complete`, `johnson_actis_complete`). The script first searches for an STL whose filename matches the RCC identifier, then falls back to substrings of the S3UID name.
 
 3. An interactive VTK window opens so you can inspect the geometry. Close the window to exit the script.
 

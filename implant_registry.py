@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-import amedacta_implants as mdca_amistem_implants
-import johnson_implants_actis as jj_actis_implants
-import johnson_implants_corail as jj_corail_implants
+import amedacta_complete as mdca_amistem_implants
+import johnson_actis_complete as jj_actis_implants
+import johnson_corail_complete as jj_corail_implants
 import mathys_implants as mys_implants
 
 
