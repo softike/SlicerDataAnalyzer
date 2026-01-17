@@ -53,6 +53,7 @@ The resulting workbook lists every stem configuration (label/source/index plus t
 
 ## View cut planes
 
+```shell
 python view_implant.py STEM_STD_6 /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
   --manufacturer johnson-actis \
   --plane-size 80 \
@@ -73,6 +74,46 @@ python view_implant.py STEM_STD_2 /media/developer/Storage1/HFRStudy-RUN2/Implan
   --plane-size 80 \
   --verbose
 
+# show other annotation
+python view_implant.py STEM_KHO_A_135_4 /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+  --manufacturer johnson-corail \
+  --show-head --show-offset --offset-head HEAD_P4 \
+  --show-all-offsets --stem-opacity 0.35
+
+# show res_01, res_02 or tpr_01
+
+
+# show jonction
+
+python view_implant.py STEM_KHO_A_135_4 /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+  --manufacturer johnson-corail \
+  --show-tip-point --show-bottom-point --show-axis-junction --show-shaft-axis \
+  --show-cut-plane-intersection --show-cut-plane-contour --show-anatomical-plane \
+  --show-axes-reference \
+  --plane-size 70 --stem-opacity 0.35
+
+python view_implant.py STEM_KHO_A_135_4 /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+  --manufacturer johnson-corail \
+  --show-axis-junction --show-neck-axis --plane-size 70 --stem-opacity 0.35
+
+# Mathys example (auto Z-flip and CCD verification)
+python view_implant.py STEM_STD_2 /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+  --manufacturer mathys \
+  --show-tip-point --show-bottom-point \
+  --show-axis-junction --show-neck-axis --verify-ccd-angle --plane-size 70 --stem-opacity 0.35
+
+python view_implant.py STEM_STD_2 /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+  --manufacturer medacta \
+  --show-tip-point --show-bottom-point --show-axis-junction --show-neck-axis \
+  --show-cut-plane-intersection --show-cut-plane-contour --show-anatomical-plane \
+  --show-axes-reference \
+  --plane-size 70 --stem-opacity 0.35
+
+> Rotation tip: `view_implant.py` now reuses the batch auto-rotation heuristics. Leave `--rotation-mode` at its default `auto` for Mathys/Medacta/Johnson stems, or force a behavior with `--rotation-mode mathys|medacta|johnson|none`. Manual overrides such as `--pre-rotate-z-180` / `--post-rotate-z-180` stack on top of the auto detection when a brand needs a specific flip. Use `--show-tip-point` / `--show-bottom-point` to highlight the superior/inferior extremes detected from the STL principal axis; the viewer automatically draws the stem axis from the bottom extremity to the neck/stem junction whenever those analytics are requested.
+> Add `--show-cut-plane-intersection` to compute and visualize the upper and lower cut/stem contacts that lie on both the rotated cut plane and the anatomical plane defined by the neck, head, and STL-derived tip—the viewer now explicitly intersects the cut contour with that anatomical plane, and only falls back to the contour extremes when the plane cannot be formed. Pair it with `--show-cut-plane-contour` to display the entire cut/stem intersection contour so you can confirm the contacts are centered, add `--show-anatomical-plane` to render that head/neck/tip plane directly in the scene, and include `--show-axes-reference` whenever you need a visible XYZ orientation cue.
+
 python view_implant.py --implants mathys_optimys_complete.S3UID.STEM_STD_1 --show-overlays
 
 python view_implant.py --implants amedacta_complete.S3UID.STEM_STD_3 --show-overlays
+
+```
