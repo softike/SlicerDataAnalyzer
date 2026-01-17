@@ -7,7 +7,7 @@ import math
 import sys
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple, cast
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, cast
 
 AVAILABLE_MANUFACTURERS = {
     "medacta": "amedacta_complete",
@@ -20,6 +20,7 @@ AVAILABLE_MANUFACTURERS = {
 Vector3 = Tuple[float, float, float]
 OverlayFactory = Callable[[Any], Any]
 Color3 = Tuple[float, float, float]
+Matrix3 = Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float]]
 
 OFFSET_COLORS: Tuple[Color3, ...] = (
     (1.0, 0.85, 0.1),
@@ -30,6 +31,36 @@ OFFSET_COLORS: Tuple[Color3, ...] = (
 )
 
 UP_VECTOR: Vector3 = (0.0, 0.0, 1.0)
+IDENTITY_MATRIX3: Matrix3 = (
+    (1.0, 0.0, 0.0),
+    (0.0, 1.0, 0.0),
+    (0.0, 0.0, 1.0),
+)
+MATHYS_ALIGNMENT_MATRIX: Matrix3 = (
+    (-1.0, 0.0, 0.0),
+    (0.0, 0.0, -1.0),
+    (0.0, -1.0, 0.0),
+)
+MEDACTA_ALIGNMENT_MATRIX: Matrix3 = (
+    (0.0, -1.0, 0.0),
+    (1.0, 0.0, 0.0),
+    (0.0, 0.0, 1.0),
+)
+JOHNSON_ALIGNMENT_MATRIX: Matrix3 = (
+    (-1.0, 0.0, 0.0),
+    (0.0, -1.0, 0.0),
+    (0.0, 0.0, 1.0),
+)
+ALIGNMENT_MATRICES: Dict[str, Matrix3] = {
+    "mathys": MATHYS_ALIGNMENT_MATRIX,
+    "medacta": MEDACTA_ALIGNMENT_MATRIX,
+    "johnson": JOHNSON_ALIGNMENT_MATRIX,
+}
+ALIGNMENT_DESCRIPTIONS: Dict[str, str] = {
+    "mathys": "X=-X, Y=-Z, Z=-Y",
+    "medacta": "X=-Y, Y=+X, Z=Z",
+    "johnson": "X=-X, Y=-Y, Z=Z",
+}
 ROTATION_BEHAVIOR = {
     "johnson": (True, True),
     "mathys": (False, True),
@@ -89,6 +120,24 @@ def _rotate_polydata_half_turns(polydata: Any, half_turns: int, vtk_module: Any)
     return transformer.GetOutput()
 
 
+def _apply_alignment_polydata(polydata: Any, matrix_values: Optional[Matrix3], vtk_module: Any):
+    if polydata is None or matrix_values is None:
+        return polydata
+    matrix = vtk_module.vtkMatrix4x4()
+    matrix.Zero()
+    for row in range(3):
+        for col in range(3):
+            matrix.SetElement(row, col, matrix_values[row][col])
+    matrix.SetElement(3, 3, 1.0)
+    transform = vtk_module.vtkTransform()
+    transform.SetMatrix(matrix)
+    transformer = vtk_module.vtkTransformPolyDataFilter()
+    transformer.SetTransform(transform)
+    transformer.SetInputData(polydata)
+    transformer.Update()
+    return transformer.GetOutput()
+
+
 def _vec_add(a: Vector3, b: Vector3) -> Vector3:
     return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
 
@@ -126,6 +175,16 @@ def _cross(a: Vector3, b: Vector3) -> Vector3:
         a[2] * b[0] - a[0] * b[2],
         a[0] * b[1] - a[1] * b[0],
     )
+
+
+def _apply_alignment(vec: Vector3, matrix: Matrix3) -> Vector3:
+    return _matrix_vec_mul(matrix, vec)
+
+
+def _apply_alignment_optional(vec: Optional[Vector3], matrix: Matrix3) -> Optional[Vector3]:
+    if vec is None:
+        return None
+    return _apply_alignment(vec, matrix)
 
 
 def _dedupe_points(points: Sequence[Vector3], tolerance: float = 1e-3) -> List[Vector3]:
@@ -313,6 +372,52 @@ def _build_axes_actor(length: float = 60.0) -> OverlayFactory:
         axes.SetCylinderRadius(0.02)
         axes.SetConeRadius(0.1)
         axes.SetSphereRadius(0.15)
+        return axes
+
+    return _builder
+
+
+def _build_axes_frame_actor(
+    matrix: Matrix3,
+    length: float = 60.0,
+    axis_colors: Optional[Tuple[Color3, Color3, Color3]] = None,
+    opacity: float = 1.0,
+) -> OverlayFactory:
+    def _builder(vtk: Any):
+        axes = vtk.vtkAxesActor()
+        axes.SetTotalLength(length, length, length)
+        axes.SetShaftTypeToCylinder()
+        axes.SetCylinderRadius(0.015)
+        axes.SetConeRadius(0.08)
+        axes.SetSphereRadius(0.12)
+
+        vtk_matrix = vtk.vtkMatrix4x4()
+        vtk_matrix.Identity()
+        for row in range(3):
+            for col in range(3):
+                vtk_matrix.SetElement(row, col, matrix[row][col])
+        transform = vtk.vtkTransform()
+        transform.SetMatrix(vtk_matrix)
+        axes.SetUserTransform(transform)
+
+        if axis_colors:
+            axes.GetXAxisShaftProperty().SetColor(*axis_colors[0])
+            axes.GetXAxisTipProperty().SetColor(*axis_colors[0])
+            axes.GetYAxisShaftProperty().SetColor(*axis_colors[1])
+            axes.GetYAxisTipProperty().SetColor(*axis_colors[1])
+            axes.GetZAxisShaftProperty().SetColor(*axis_colors[2])
+            axes.GetZAxisTipProperty().SetColor(*axis_colors[2])
+
+        for prop in (
+            axes.GetXAxisShaftProperty(),
+            axes.GetXAxisTipProperty(),
+            axes.GetYAxisShaftProperty(),
+            axes.GetYAxisTipProperty(),
+            axes.GetZAxisShaftProperty(),
+            axes.GetZAxisTipProperty(),
+        ):
+            prop.SetOpacity(opacity)
+
         return axes
 
     return _builder
@@ -566,6 +671,33 @@ def _matrix_vec_mul(matrix: Tuple[Tuple[float, float, float], ...], vec: Vector3
         matrix[0][0] * vec[0] + matrix[0][1] * vec[1] + matrix[0][2] * vec[2],
         matrix[1][0] * vec[0] + matrix[1][1] * vec[1] + matrix[1][2] * vec[2],
         matrix[2][0] * vec[0] + matrix[2][1] * vec[1] + matrix[2][2] * vec[2],
+    )
+
+
+def _matrix_multiply(a: Matrix3, b: Matrix3) -> Matrix3:
+    def dot(row: Tuple[float, float, float], column: Tuple[float, float, float]) -> float:
+        return row[0] * column[0] + row[1] * column[1] + row[2] * column[2]
+
+    columns = (
+        (b[0][0], b[1][0], b[2][0]),
+        (b[0][1], b[1][1], b[2][1]),
+        (b[0][2], b[1][2], b[2][2]),
+    )
+
+    return (
+        (dot(a[0], columns[0]), dot(a[0], columns[1]), dot(a[0], columns[2])),
+        (dot(a[1], columns[0]), dot(a[1], columns[1]), dot(a[1], columns[2])),
+        (dot(a[2], columns[0]), dot(a[2], columns[1]), dot(a[2], columns[2])),
+    )
+
+
+def _half_turn_matrix(half_turns: int) -> Matrix3:
+    if half_turns % 2 == 0:
+        return IDENTITY_MATRIX3
+    return (
+        (-1.0, 0.0, 0.0),
+        (0.0, -1.0, 0.0),
+        (0.0, 0.0, 1.0),
     )
 
 
@@ -955,6 +1087,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Add a global XYZ axes indicator to visualize the coordinate orientation (Z = up).",
     )
     parser.add_argument(
+        "--show-axis-frames",
+        action="store_true",
+        help="Render the implant's initial frame after auto-rotation but before any brand-specific alignment remaps.",
+    )
+    parser.add_argument(
         "--show-axis-junction",
         action="store_true",
         help="Compute the closest junction between the neck axis and the stem axis (bottom→junction).",
@@ -1018,6 +1155,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     post_rotate = bool(args.post_rotate_z_180 or auto_post)
     rotation_half_turns = (1 if pre_rotate else 0) + (1 if post_rotate else 0)
     rotation_applied = rotation_half_turns % 2 == 1
+    alignment_matrix = ALIGNMENT_MATRICES.get(rotation_mode)
+    alignment_description = ALIGNMENT_DESCRIPTIONS.get(rotation_mode)
+    axis_matrix_initial = _half_turn_matrix(rotation_half_turns)
 
     requested_points = {point.upper() for point in (args.show_points or [])}
 
@@ -1057,6 +1197,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     if cut_plane_info:
         origin_vec = _apply_half_turn(cast(Vector3, cut_plane_info["origin"]), rotation_half_turns)
         normal_vec = _apply_half_turn(cast(Vector3, cut_plane_info["normal"]), rotation_half_turns)
+        if alignment_matrix is not None:
+            origin_vec = _apply_alignment(origin_vec, alignment_matrix)
+            normal_vec = _apply_alignment(normal_vec, alignment_matrix)
         normal_vec = _normalize_vec(normal_vec)
         cut_plane_info = {
             "origin": origin_vec,
@@ -1129,10 +1272,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     head_point = _apply_half_turn_optional(head_point, rotation_half_turns)
     reference_point = _apply_half_turn_optional(reference_point, rotation_half_turns)
     offset_point = _apply_half_turn_optional(offset_point, rotation_half_turns)
+    if alignment_matrix is not None:
+        neck_origin = _apply_alignment_optional(neck_origin, alignment_matrix)
+        head_point = _apply_alignment_optional(head_point, alignment_matrix)
+        reference_point = _apply_alignment_optional(reference_point, alignment_matrix)
+        offset_point = _apply_alignment_optional(offset_point, alignment_matrix)
     if all_offset_points:
         all_offset_points = [
             (label, _apply_half_turn(point, rotation_half_turns)) for label, point in all_offset_points
         ]
+        if alignment_matrix is not None:
+            all_offset_points = [
+                (label, _apply_alignment(point, alignment_matrix)) for label, point in all_offset_points
+            ]
 
     vtk_module = None
     polydata = None
@@ -1169,6 +1321,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         reader.Update()
         polydata = reader.GetOutput()
         polydata = _rotate_polydata_half_turns(polydata, rotation_half_turns, vtk_module)
+        if alignment_matrix is not None:
+            polydata = _apply_alignment_polydata(polydata, alignment_matrix, vtk_module)
     principal_axis_data: Optional[Tuple[Vector3, Vector3]] = None
     if needs_stem_axis and polydata is not None:
         principal_axis_data = _compute_polydata_principal_axis(polydata)
@@ -1317,6 +1471,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
     if rotation_applied:
         print("  Applied STL Z rotation: 180°")
+    if alignment_matrix is not None and alignment_description:
+        print(f"  Applied {rotation_mode} axis remap: {alignment_description}")
     if neck_origin:
         neck_label = "Neck origin (RES01)" if "RES01" in requested_points else "Neck origin"
         print(f"  {neck_label} (mm): {_format_vector(neck_origin)}")
@@ -1404,6 +1560,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 angle_rad = math.radians(angle_deg)
                 axis_dir = _normalize_vec((math.cos(angle_rad), 0.0, math.sin(angle_rad)))
                 axis_dir = _apply_half_turn(axis_dir, rotation_half_turns)
+                if alignment_matrix is not None:
+                    axis_dir = _apply_alignment(axis_dir, alignment_matrix)
                 shaft_axis_info = (neck_origin, axis_dir, angle_deg)
                 shaft_angle_deg = angle_deg
             except ValueError:
@@ -1582,6 +1740,17 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
         if args.show_axes_reference:
             overlay_factories.append(_build_axes_actor(max(args.plane_size, 40.0)))
+        if args.show_axis_frames:
+            frame_length = max(args.plane_size * 0.85, 40.0)
+            initial_colors = ((0.95, 0.65, 0.65), (0.65, 0.95, 0.65), (0.65, 0.65, 0.95))
+            overlay_factories.append(
+                _build_axes_frame_actor(
+                    axis_matrix_initial,
+                    frame_length,
+                    initial_colors,
+                    0.7,
+                )
+            )
 
     show_stl(
         stl_path,
