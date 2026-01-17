@@ -51,13 +51,20 @@ JOHNSON_ACTIS_ALIGNMENT_MATRIX: Matrix3 = (
     (0.0, 1.0, 0.0),
     (0.0, 0.0, 1.0),
 )
+JOHNSON_CORAIL_ALIGNMENT_MATRIX: Matrix3 = (
+    (-1.0, 0.0, 0.0),
+    (0.0, -1.0, 0.0),
+    (0.0, 0.0, 1.0),
+)
 ALIGNMENT_MATRICES: Dict[str, Matrix3] = {
     "mathys": MATHYS_ALIGNMENT_MATRIX,
     "medacta": MEDACTA_ALIGNMENT_MATRIX,
+    "johnson-corail": JOHNSON_CORAIL_ALIGNMENT_MATRIX,
 }
 ALIGNMENT_DESCRIPTIONS: Dict[str, str] = {
     "mathys": "X=-X, Y=-Z, Z=-Y",
     "medacta": "X=-Y, Y=+X, Z=Z",
+    "johnson-corail": "X=-X, Y=-Y, Z=Z",
 }
 
 ROTATION_BEHAVIOR = {
@@ -92,6 +99,24 @@ def _infer_rotation_mode(
     if _matches(("johnson", "corail", "actis")):
         return "johnson"
     return "none"
+
+
+def _resolve_alignment_key(
+    rotation_mode: str,
+    manufacturer_name: str | None,
+    module: Any,
+) -> Optional[str]:
+    markers = [manufacturer_name or "", getattr(module, "__name__", "")]
+    lower_markers = [marker.lower() for marker in markers if marker]
+
+    def _contains(token: str) -> bool:
+        return any(token in marker for marker in lower_markers)
+
+    if rotation_mode in ("mathys", "medacta"):
+        return rotation_mode
+    if rotation_mode == "johnson" and _contains("corail"):
+        return "johnson-corail"
+    return None
 
 
 def _apply_half_turn(vec: Vector3, half_turns: int) -> Vector3:
@@ -927,6 +952,35 @@ def find_matching_stl(folders: Sequence[str], tokens: Sequence[str]) -> Tuple[Pa
     )
 
 
+def _apply_default_view_orientation(renderer: Any, actor: Any):
+    camera = renderer.GetActiveCamera()
+    if camera is None:
+        return
+
+    renderer.ResetCamera()
+    bounds = actor.GetBounds()
+    if not bounds:
+        return
+
+    center = (
+        (bounds[0] + bounds[1]) * 0.5,
+        (bounds[2] + bounds[3]) * 0.5,
+        (bounds[4] + bounds[5]) * 0.5,
+    )
+    distance = camera.GetDistance()
+    if not math.isfinite(distance) or distance <= 0.0:
+        span_x = bounds[1] - bounds[0]
+        span_y = bounds[3] - bounds[2]
+        span_z = bounds[5] - bounds[4]
+        diagonal = math.sqrt(max(span_x * span_x + span_y * span_y + span_z * span_z, 1.0))
+        distance = diagonal * 1.5
+
+    camera.SetFocalPoint(*center)
+    camera.SetPosition(center[0], center[1] - distance, center[2])
+    camera.SetViewUp(0.0, 0.0, 1.0)
+    renderer.ResetCameraClippingRange()
+
+
 def show_stl(
     stl_path: Path,
     overlays: Optional[Sequence[OverlayFactory]] = None,
@@ -971,7 +1025,7 @@ def show_stl(
     interactor = vtk.vtkRenderWindowInteractor()
     interactor.SetRenderWindow(render_window)
 
-    renderer.ResetCamera()
+    _apply_default_view_orientation(renderer, actor)
     render_window.Render()
     interactor.Initialize()
     interactor.Start()
@@ -1159,6 +1213,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     detected_rotation_mode = _infer_rotation_mode(manufacturer_name, module, args.rotation_mode)
     native_orientation = bool(args.native_orientation)
     rotation_mode = detected_rotation_mode
+    alignment_key: Optional[str] = None
     if native_orientation:
         pre_rotate = False
         post_rotate = False
@@ -1167,10 +1222,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         auto_pre, auto_post = ROTATION_BEHAVIOR.get(rotation_mode, (False, False))
         pre_rotate = bool(args.pre_rotate_z_180 or auto_pre)
         post_rotate = bool(args.post_rotate_z_180 or auto_post)
+        alignment_key = _resolve_alignment_key(rotation_mode, manufacturer_name, module)
     rotation_half_turns = (1 if pre_rotate else 0) + (1 if post_rotate else 0)
     rotation_applied = rotation_half_turns % 2 == 1
-    alignment_matrix = None if native_orientation else ALIGNMENT_MATRICES.get(rotation_mode)
-    alignment_description = None if native_orientation else ALIGNMENT_DESCRIPTIONS.get(rotation_mode)
+    if native_orientation:
+        alignment_matrix = None
+        alignment_description = None
+    else:
+        alignment_matrix = ALIGNMENT_MATRICES.get(alignment_key)
+        alignment_description = ALIGNMENT_DESCRIPTIONS.get(alignment_key)
     axis_matrix_initial = _half_turn_matrix(rotation_half_turns)
 
     requested_points = {point.upper() for point in (args.show_points or [])}
@@ -1492,7 +1552,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     if rotation_applied:
         print("  Applied STL Z rotation: 180°")
     if alignment_matrix is not None and alignment_description:
-        print(f"  Applied {rotation_mode} axis remap: {alignment_description}")
+        label = alignment_key or rotation_mode
+        print(f"  Applied {label} axis remap: {alignment_description}")
     if neck_origin:
         neck_label = "Neck origin (RES01)" if "RES01" in requested_points else "Neck origin"
         print(f"  {neck_label} (mm): {_format_vector(neck_origin)}")
