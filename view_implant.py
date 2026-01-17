@@ -46,21 +46,20 @@ MEDACTA_ALIGNMENT_MATRIX: Matrix3 = (
     (1.0, 0.0, 0.0),
     (0.0, 0.0, 1.0),
 )
-JOHNSON_ALIGNMENT_MATRIX: Matrix3 = (
+JOHNSON_ACTIS_ALIGNMENT_MATRIX: Matrix3 = (
     (-1.0, 0.0, 0.0),
-    (0.0, -1.0, 0.0),
+    (0.0, 1.0, 0.0),
     (0.0, 0.0, 1.0),
 )
 ALIGNMENT_MATRICES: Dict[str, Matrix3] = {
     "mathys": MATHYS_ALIGNMENT_MATRIX,
     "medacta": MEDACTA_ALIGNMENT_MATRIX,
-    "johnson": JOHNSON_ALIGNMENT_MATRIX,
 }
 ALIGNMENT_DESCRIPTIONS: Dict[str, str] = {
     "mathys": "X=-X, Y=-Z, Z=-Y",
     "medacta": "X=-Y, Y=+X, Z=Z",
-    "johnson": "X=-X, Y=-Y, Z=Z",
 }
+
 ROTATION_BEHAVIOR = {
     "johnson": (True, True),
     "mathys": (False, True),
@@ -1121,6 +1120,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Force a 180° rotation around the Z axis after the auto-rotation behavior.",
     )
     parser.add_argument(
+        "--native-orientation",
+        action="store_true",
+        help=(
+            "Display the STL exactly as stored by skipping auto/manufacturer rotations and"
+            " alignment remaps (manual pre/post flips are ignored when this flag is set)."
+        ),
+    )
+    parser.add_argument(
         "--verify-ccd-angle",
         action="store_true",
         help=(
@@ -1149,14 +1156,21 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     module, manufacturer_name, uid_member = resolve_uid(args.uid, args.manufacturer)
 
-    rotation_mode = _infer_rotation_mode(manufacturer_name, module, args.rotation_mode)
-    auto_pre, auto_post = ROTATION_BEHAVIOR.get(rotation_mode, (False, False))
-    pre_rotate = bool(args.pre_rotate_z_180 or auto_pre)
-    post_rotate = bool(args.post_rotate_z_180 or auto_post)
+    detected_rotation_mode = _infer_rotation_mode(manufacturer_name, module, args.rotation_mode)
+    native_orientation = bool(args.native_orientation)
+    rotation_mode = detected_rotation_mode
+    if native_orientation:
+        pre_rotate = False
+        post_rotate = False
+        rotation_mode = "none"
+    else:
+        auto_pre, auto_post = ROTATION_BEHAVIOR.get(rotation_mode, (False, False))
+        pre_rotate = bool(args.pre_rotate_z_180 or auto_pre)
+        post_rotate = bool(args.post_rotate_z_180 or auto_post)
     rotation_half_turns = (1 if pre_rotate else 0) + (1 if post_rotate else 0)
     rotation_applied = rotation_half_turns % 2 == 1
-    alignment_matrix = ALIGNMENT_MATRICES.get(rotation_mode)
-    alignment_description = ALIGNMENT_DESCRIPTIONS.get(rotation_mode)
+    alignment_matrix = None if native_orientation else ALIGNMENT_MATRICES.get(rotation_mode)
+    alignment_description = None if native_orientation else ALIGNMENT_DESCRIPTIONS.get(rotation_mode)
     axis_matrix_initial = _half_turn_matrix(rotation_half_turns)
 
     requested_points = {point.upper() for point in (args.show_points or [])}
@@ -1460,12 +1474,18 @@ def main(argv: Sequence[str] | None = None) -> None:
         f"  STL path: {stl_path}\n"
     )
     log_rotation = (
-        rotation_mode != "none"
+        args.native_orientation
+        or rotation_mode != "none"
         or args.rotation_mode in {"mathys", "medacta", "johnson", "none"}
         or args.pre_rotate_z_180
         or args.post_rotate_z_180
     )
-    if log_rotation:
+    if args.native_orientation:
+        print(
+            "  Rotation mode: native/raw STL orientation "
+            f"(auto detected {detected_rotation_mode}; pre/post overrides ignored)"
+        )
+    elif log_rotation:
         print(
             f"  Rotation mode: {rotation_mode} (pre={pre_rotate}, post={post_rotate})"
         )
