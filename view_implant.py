@@ -69,8 +69,8 @@ ALIGNMENT_DESCRIPTIONS: Dict[str, str] = {
 
 ROTATION_BEHAVIOR = {
     "johnson": (True, True),
-    "mathys": (False, True),
-    "medacta": (False, True),
+    "mathys": (True, False),
+    "medacta": (True, False),
 }
 
 
