@@ -62,24 +62,32 @@ def _build_ezplan_transfer_function() -> vtk.vtkColorTransferFunction:
 def _configure_mapper(
 	poly: vtk.vtkPolyData,
 	array_name: str,
-) -> tuple[vtk.vtkPolyDataMapper, tuple[float, float]]:
+) -> tuple[vtk.vtkPolyDataMapper, tuple[float, float], str]:
 	point_data = poly.GetPointData()
-	array = point_data.GetArray(array_name)
+	selected_array_name = array_name
+	array = point_data.GetArray(selected_array_name)
 	if array is None:
-		available = [point_data.GetArrayName(i) for i in range(point_data.GetNumberOfArrays())]
-		raise RuntimeError(
-			"Scalar array '%s' not found. Available arrays: %s"
-			% (array_name, ", ".join(filter(None, available)) or "<none>")
-		)
+		available = [point_data.GetArrayName(i) for i in range(point_data.GetNumberOfArrays()) if point_data.GetArrayName(i)]
+		if available:
+			selected_array_name = available[0]
+			array = point_data.GetArray(selected_array_name)
+			print(
+				"Scalar array '%s' not found; using '%s' instead." % (array_name, selected_array_name),
+				file=sys.stderr,
+			)
+		else:
+			raise RuntimeError(
+				"Scalar array '%s' not found. Available arrays: <none>" % array_name
+			)
 	array_range = array.GetRange()
 	mapper = vtk.vtkPolyDataMapper()
 	mapper.SetInputData(poly)
 	mapper.SetScalarModeToUsePointFieldData()
-	mapper.SelectColorArray(array_name)
+	mapper.SelectColorArray(selected_array_name)
 	mapper.SetColorModeToMapScalars()
 	mapper.SetScalarRange(EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
 	mapper.ScalarVisibilityOn()
-	return mapper, array_range
+	return mapper, array_range, selected_array_name
 
 
 def _build_actor(mapper: vtk.vtkPolyDataMapper, wireframe: bool) -> vtk.vtkActor:
@@ -123,7 +131,7 @@ def _print_summary(path: str, array_name: str, array_range: tuple[float, float])
 def main() -> int:
 	args = _parse_args()
 	poly = _load_polydata(args.vtp)
-	mapper, array_range = _configure_mapper(poly, args.array)
+	mapper, array_range, active_array = _configure_mapper(poly, args.array)
 	transfer_function = _build_ezplan_transfer_function()
 	_attach_lut(mapper, transfer_function)
 	actor = _build_actor(mapper, args.wireframe)
@@ -144,7 +152,7 @@ def main() -> int:
 	style = vtk.vtkInteractorStyleTrackballCamera()
 	interactor.SetInteractorStyle(style)
 
-	_print_summary(args.vtp, args.array, array_range)
+	_print_summary(args.vtp, active_array, array_range)
 	interactor.Initialize()
 	render_window.Render()
 	interactor.Start()
