@@ -9,6 +9,7 @@ import pytest
 from johnson_actis_complete import (
     S3UID,
     StemGroup,
+    get_cut_plane,
     get_head_point,
     get_neck_origin,
     get_reference_point,
@@ -70,4 +71,16 @@ def test_head_offset_uses_axis_direction():
 def test_all_stems_have_collar():
     assert has_collar(S3UID.STEM_STD_0)
     assert has_collar(S3UID.STEM_HO_0)
+
+
+def test_cut_plane_orientation_matches_cpp_logic():
+    uid = S3UID.STEM_STD_2
+    plane = get_cut_plane(uid)
+    assert plane.origin == pytest.approx(get_neck_origin(uid), rel=1e-6)
+    expected = (
+        math.sin(math.radians(40.0)),
+        0.0,
+        math.cos(math.radians(40.0)),
+    )
+    assert plane.normal == pytest.approx(expected, rel=1e-6)
 

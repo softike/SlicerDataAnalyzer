@@ -3,17 +3,121 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from importlib import import_module
 from pathlib import Path
-from typing import Iterable, List, Sequence, Tuple
+from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
 
 AVAILABLE_MANUFACTURERS = {
-    "mathys": "mathys_implants",
+    "medacta": "amedacta_complete",
+    "mathys": "mathys_optimys_complete",
     "johnson": "johnson_corail_complete",  # alias for the enhanced CORAIL module
     "johnson-corail": "johnson_corail_complete",
     "johnson-actis": "johnson_actis_complete",
 }
+
+Vector3 = Tuple[float, float, float]
+OverlayFactory = Callable[[Any], Any]
+
+
+def _format_vector(vec: Vector3) -> str:
+    return f"({vec[0]:.2f}, {vec[1]:.2f}, {vec[2]:.2f})"
+
+
+def _dot(a: Vector3, b: Vector3) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _vector_length(vec: Vector3) -> float:
+    return math.sqrt(_dot(vec, vec))
+
+
+def _normalize_vec(vec: Vector3) -> Vector3:
+    length = _vector_length(vec)
+    if length == 0:
+        return (0.0, 0.0, 0.0)
+    return (vec[0] / length, vec[1] / length, vec[2] / length)
+
+
+def _cross(a: Vector3, b: Vector3) -> Vector3:
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def _coerce_vector(vec: Sequence[float]) -> Vector3:
+    return (float(vec[0]), float(vec[1]), float(vec[2]))
+
+
+def _build_neck_actor(point: Vector3) -> OverlayFactory:
+    def _builder(vtk: Any):
+        sphere = vtk.vtkSphereSource()
+        sphere.SetCenter(*point)
+        sphere.SetRadius(2.0)
+        sphere.SetThetaResolution(24)
+        sphere.SetPhiResolution(24)
+        sphere.Update()
+
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(sphere.GetOutputPort())
+
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(1.0, 0.2, 0.2)
+        return actor
+
+    return _builder
+
+
+def _build_cut_plane_actor(origin: Vector3, normal: Vector3, size: float) -> OverlayFactory:
+    normal_vec = _normalize_vec(normal)
+    extent = max(size, 1.0)
+
+    reference = (0.0, 0.0, 1.0) if abs(normal_vec[2]) < 0.9 else (0.0, 1.0, 0.0)
+    tangent = _normalize_vec(_cross(normal_vec, reference))
+    if _vector_length(tangent) == 0.0:
+        tangent = (1.0, 0.0, 0.0)
+    bitangent = _normalize_vec(_cross(normal_vec, tangent))
+
+    half = extent / 2.0
+    origin_corner = (
+        origin[0] - tangent[0] * half - bitangent[0] * half,
+        origin[1] - tangent[1] * half - bitangent[1] * half,
+        origin[2] - tangent[2] * half - bitangent[2] * half,
+    )
+    point1 = (
+        origin_corner[0] + tangent[0] * extent,
+        origin_corner[1] + tangent[1] * extent,
+        origin_corner[2] + tangent[2] * extent,
+    )
+    point2 = (
+        origin_corner[0] + bitangent[0] * extent,
+        origin_corner[1] + bitangent[1] * extent,
+        origin_corner[2] + bitangent[2] * extent,
+    )
+
+    def _builder(vtk: Any):
+        plane = vtk.vtkPlaneSource()
+        plane.SetOrigin(*origin_corner)
+        plane.SetPoint1(*point1)
+        plane.SetPoint2(*point2)
+        plane.SetXResolution(1)
+        plane.SetYResolution(1)
+        plane.Update()
+
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(plane.GetOutputPort())
+
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(0.1, 0.6, 1.0)
+        actor.GetProperty().SetOpacity(0.35)
+        return actor
+
+    return _builder
 
 
 def ensure_vtk():
@@ -156,7 +260,7 @@ def find_matching_stl(folders: Sequence[str], tokens: Sequence[str]) -> Tuple[Pa
     )
 
 
-def show_stl(stl_path: Path) -> None:
+def show_stl(stl_path: Path, overlays: Optional[Sequence[OverlayFactory]] = None) -> None:
     """Render an STL model in an interactive VTK window."""
 
     vtk = ensure_vtk()
@@ -174,6 +278,14 @@ def show_stl(stl_path: Path) -> None:
     renderer = vtk.vtkRenderer()
     renderer.SetBackground(0.1, 0.1, 0.1)
     renderer.AddActor(actor)
+
+    if overlays:
+        for factory in overlays:
+            if factory is None:
+                continue
+            overlay_actor = factory(vtk)
+            if overlay_actor is not None:
+                renderer.AddActor(overlay_actor)
 
     render_window = vtk.vtkRenderWindow()
     render_window.SetSize(1024, 768)
@@ -222,6 +334,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print additional debugging information while locating files.",
     )
+    parser.add_argument(
+        "--plane-size",
+        type=float,
+        default=60.0,
+        help="Edge length (in mm) for the rendered cut-plane overlay (default: 60).",
+    )
+    parser.add_argument(
+        "--no-overlays",
+        action="store_true",
+        help="Disable rendering of the neck center and cut-plane helpers.",
+    )
     return parser
 
 
@@ -240,6 +363,33 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"The UID '{args.uid}' does not have an RCC mapping in {manufacturer_name}."
         ) from exc
 
+    neck_origin: Optional[Vector3] = None
+    get_neck_fn = getattr(module, "get_neck_origin", None)
+    if callable(get_neck_fn):
+        try:
+            neck_origin = _coerce_vector(get_neck_fn(uid_member))
+        except ValueError:
+            neck_origin = None
+
+    cut_plane_info: Optional[dict[str, object]] = None
+    get_cut_plane_fn = getattr(module, "get_cut_plane", None)
+    if callable(get_cut_plane_fn):
+        try:
+            plane = get_cut_plane_fn(uid_member)
+        except ValueError:
+            plane = None
+        if plane is not None:
+            origin = getattr(plane, "origin", None)
+            normal = getattr(plane, "normal", None)
+            if origin is not None and normal is not None:
+                origin_vec = _coerce_vector(origin)
+                normal_vec = _normalize_vec(_coerce_vector(normal))
+                cut_plane_info = {
+                    "origin": origin_vec,
+                    "normal": normal_vec,
+                    "offset": -_dot(normal_vec, origin_vec),
+                }
+
     tokens = [rcc_id, uid_member.name, str(uid_member.value)]
     stl_path, additional_matches = find_matching_stl(args.folders, tokens)
 
@@ -251,12 +401,33 @@ def main(argv: Sequence[str] | None = None) -> None:
         f"  RCC ID: {rcc_id}\n"
         f"  STL path: {stl_path}\n"
     )
+    if neck_origin:
+        print(f"  Neck origin (mm): {_format_vector(neck_origin)}")
+    if cut_plane_info:
+        print(
+            f"  Cut plane origin (mm): {_format_vector(cut_plane_info['origin'])}\n"
+            f"  Cut plane normal: {_format_vector(cut_plane_info['normal'])}"
+            f" (d = {cut_plane_info['offset']:.3f})"
+        )
     if args.verbose and additional_matches:
         print("Additional matches:", file=sys.stderr)
         for candidate in additional_matches:
             print(f"  - {candidate}", file=sys.stderr)
 
-    show_stl(stl_path)
+    overlay_factories: List[OverlayFactory] = []
+    if not args.no_overlays:
+        if neck_origin:
+            overlay_factories.append(_build_neck_actor(neck_origin))
+        if cut_plane_info:
+            overlay_factories.append(
+                _build_cut_plane_actor(
+                    cut_plane_info["origin"],
+                    cut_plane_info["normal"],
+                    args.plane_size,
+                )
+            )
+
+    show_stl(stl_path, overlay_factories if overlay_factories else None)
 
 
 if __name__ == "__main__":  # pragma: no cover

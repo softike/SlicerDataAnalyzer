@@ -50,3 +50,29 @@ python export_stem_metrics_excel.py --root /media/developer/Storage1/HFRStudy-RU
 ```
 
 The resulting workbook lists every stem configuration (label/source/index plus the original `hipImplantConfig` name) on the `Cases` sheet and summarizes both unique cases and total configurations per planner on the `Users` sheet.
+
+## View cut planes
+
+python view_implant.py STEM_STD_6 /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+  --manufacturer johnson-actis \
+  --plane-size 80 \
+  --verbose
+
+python view_implant.py STEM_KHO_A_135_4 /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+  --manufacturer johnson-corail \
+  --plane-size 70 \
+  --verbose
+
+python view_implant.py STEM_STD_1 /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+  --manufacturer mathys \
+  --plane-size 80 \
+  --verbose
+
+python view_implant.py STEM_STD_2 /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+  --manufacturer medacta \
+  --plane-size 80 \
+  --verbose
+
+python view_implant.py --implants mathys_optimys_complete.S3UID.STEM_STD_1 --show-overlays
+
+python view_implant.py --implants amedacta_complete.S3UID.STEM_STD_3 --show-overlays

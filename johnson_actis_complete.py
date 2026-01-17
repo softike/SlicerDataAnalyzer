@@ -159,6 +159,12 @@ class StemVariant:
         return f"{stats.description} offset {self.offset}"
 
 
+@dataclass(frozen=True)
+class CutPlane:
+    origin: Vector3
+    normal: Vector3
+
+
 RANGE_STATS = {
     StemGroup.STD: RangeStats(
         StemGroup.STD,
@@ -181,6 +187,22 @@ RANGE_STATS = {
 }
 
 HEAD_UIDS = (S3UID.HEAD_M4, S3UID.HEAD_P0, S3UID.HEAD_P4, S3UID.HEAD_P8)
+
+
+def _rotate_x(vec: Vector3, degrees: float) -> Vector3:
+    rad = math.radians(degrees)
+    c = math.cos(rad)
+    s = math.sin(rad)
+    x, y, z = vec
+    return (x, y * c - z * s, y * s + z * c)
+
+
+def _rotate_y(vec: Vector3, degrees: float) -> Vector3:
+    rad = math.radians(degrees)
+    c = math.cos(rad)
+    s = math.sin(rad)
+    x, y, z = vec
+    return (x * c + z * s, y, -x * s + z * c)
 RANGE_UIDS = tuple(GROUP_RANGE_UID.values())
 
 VARIANT_LABELS = {
@@ -468,6 +490,15 @@ def head_to_stem_offset(head_uid: S3UID, stem_uid: S3UID) -> Vector3:
     return _vec_add(head_point, _vec_scale(neck_axis, offset))
 
 
+def get_cut_plane(uid: S3UID) -> CutPlane:
+    if not is_stem(uid):
+        raise ValueError(f"{uid.name} is not a stem label")
+
+    origin = get_neck_origin(uid)
+    normal = _rotate_y(_rotate_x((0.0, 1.0, 0.0), 90.0), 40.0)
+    return CutPlane(origin=origin, normal=_vec_normalize(normal))
+
+
 __all__ = [
     "COMPANY_NAME",
     "PRODUCT_NAME",
@@ -479,6 +510,7 @@ __all__ = [
     "get_rcc_id",
     "StemGroup",
     "StemVariant",
+    "CutPlane",
     "Vector3",
     "GROUP_UIDS",
     "RANGE_STATS",
@@ -503,4 +535,5 @@ __all__ = [
     "get_shaft_angle",
     "similar_stem_uid",
     "head_to_stem_offset",
+    "get_cut_plane",
 ]

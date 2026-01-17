@@ -9,6 +9,7 @@ import pytest
 from amedacta_complete import (
     S3UID,
     StemGroup,
+    get_cut_plane,
     get_head_point,
     get_neck_origin,
     get_shift_vector,
@@ -66,3 +67,15 @@ def test_lat_head_offset_includes_correction():
     expected_mag = 0.9 + 3.5355
     expected = tuple(axis[i] * expected_mag for i in range(3))
     assert delta == pytest.approx(expected, rel=1e-3)
+
+
+def test_cut_plane_origin_and_normal_align_with_reference():
+    uid = S3UID.STEM_STD_2
+    plane = get_cut_plane(uid)
+    assert plane.origin == pytest.approx(get_neck_origin(uid), rel=1e-6)
+    expected = (
+        0.0,
+        math.cos(math.radians(45.0)),
+        math.sin(math.radians(45.0)),
+    )
+    assert plane.normal == pytest.approx(expected, rel=1e-6)

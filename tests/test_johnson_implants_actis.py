@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import unittest
 
-import johnson_implants_actis as johnson_implants
-from johnson_implants_actis import (
+import legacy_implants.johnson_implants_actis as johnson_implants
+from legacy_implants.johnson_implants_actis import (
 	JJ_RANGE_START_AT,
 	RCC_ID_NAME,
 	S3UID,

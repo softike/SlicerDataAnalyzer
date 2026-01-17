@@ -220,6 +220,12 @@ class StemVariant:
         return f"{stats.description} size {self.size}"
 
 
+@dataclass(frozen=True)
+class CutPlane:
+    origin: "Vector3"
+    normal: "Vector3"
+
+
 def _variant_label(group: StemGroup, size: int) -> str:
     if group is StemGroup.STD:
         return "STD 00" if size == 0 else f"STD {size - 1}"
@@ -644,6 +650,17 @@ def head_to_stem_offset(head_uid: S3UID, stem_uid: S3UID) -> Vector3:
     return _vec_add(head_point, delta)
 
 
+def get_cut_plane(uid: S3UID) -> CutPlane:
+    if not is_stem(uid):
+        raise ValueError("Stem label expected")
+
+    origin = get_neck_origin(uid)
+    angle = math.radians(45.0)
+    normal = _vec(0.0, math.cos(angle), math.sin(angle))
+    normal = _vec_normalize(normal)
+    return CutPlane(origin=origin, normal=normal)
+
+
 __all__ = [
     # Backwards-compatible surface that used to live in amedacta_implants
     "COMPANY_NAME",
@@ -658,6 +675,7 @@ __all__ = [
     # Extended helpers derived from amistem_scheme.h
     "StemGroup",
     "StemVariant",
+    "CutPlane",
     "Vector3",
     "GROUP_UIDS",
     "RANGE_STATS",
@@ -684,4 +702,5 @@ __all__ = [
     "get_shift_vector",
     "similar_stem_uid",
     "head_to_stem_offset",
+    "get_cut_plane",
 ]

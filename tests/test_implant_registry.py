@@ -7,7 +7,7 @@ import unittest
 import amedacta_complete as amedacta_implants
 import johnson_actis_complete as johnson_actis_implants
 import johnson_corail_complete as johnson_corail_implants
-import mathys_implants
+import legacy_implants.mathys_implants as mathys_implants
 from implant_registry import resolve_stem_uid
 
 

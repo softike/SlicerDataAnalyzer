@@ -9,6 +9,7 @@ import pytest
 from mathys_optimys_complete import (
     S3UID,
     StemGroup,
+    get_cut_plane,
     get_head_point,
     get_neck_origin,
     get_reference_point,
@@ -72,4 +73,12 @@ def test_shift_vector_uses_reference_points():
 def test_similar_uid_between_ranges():
     neighbor = similar_stem_uid(S3UID.STEM_STD_5, StemGroup.LAT)
     assert neighbor is S3UID.STEM_LAT_5
+
+
+def test_cut_plane_matches_reference_transform():
+    uid = S3UID.STEM_STD_1
+    plane = get_cut_plane(uid)
+    assert plane.origin == pytest.approx(get_neck_origin(uid), rel=1e-6)
+    expected_normal = _rotate_expected(0.0, 1.0)
+    assert plane.normal == pytest.approx(expected_normal, rel=1e-6)
 

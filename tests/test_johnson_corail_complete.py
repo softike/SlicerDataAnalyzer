@@ -9,6 +9,7 @@ import pytest
 from johnson_corail_complete import (
     S3UID,
     StemGroup,
+    get_cut_plane,
     get_head_point,
     get_neck_origin,
     get_reference_point,
@@ -75,3 +76,23 @@ def test_head_offset_uses_axis_direction():
 def test_has_collar_detection():
     assert has_collar(S3UID.STEM_KA_STD135_0)
     assert not has_collar(S3UID.STEM_KS_STD135_0)
+
+
+def test_cut_plane_orientation_matches_cpp_expectations():
+    uid = S3UID.STEM_KS_STD135_2
+    plane = get_cut_plane(uid)
+    assert plane.origin == pytest.approx(get_neck_origin(uid), rel=1e-6)
+    expected = (
+        -math.sin(math.radians(45.0)),
+        0.0,
+        math.cos(math.radians(45.0)),
+    )
+    assert plane.normal == pytest.approx(expected, rel=1e-6)
+
+
+def test_cut_plane_collar_offset_is_applied():
+    uid = S3UID.STEM_KA_STD135_2
+    plane = get_cut_plane(uid)
+    neck = get_neck_origin(uid)
+    expected_origin = tuple(neck[i] + plane.normal[i] * -0.1 for i in range(3))
+    assert plane.origin == pytest.approx(expected_origin, rel=1e-6)

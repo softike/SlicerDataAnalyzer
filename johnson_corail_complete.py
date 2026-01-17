@@ -312,6 +312,12 @@ class StemVariant:
         return f"{stats.description} offset {self.offset}"
 
 
+@dataclass(frozen=True)
+class CutPlane:
+    origin: Vector3
+    normal: Vector3
+
+
 RANGE_STATS = {
     StemGroup.KHO_A_135: RangeStats(
         StemGroup.KHO_A_135, 0, 9, S3UID.RANGE_CCD_KHO_A_135, "135 KHO collar", 0, len(GROUP_UIDS[StemGroup.KHO_A_135]) - 1
@@ -489,6 +495,22 @@ def _vec_normalize(a: Vector3) -> Vector3:
     if length == 0:
         return (0.0, 0.0, 0.0)
     return _vec_scale(a, 1.0 / length)
+
+
+def _rotate_x(vec: Vector3, degrees: float) -> Vector3:
+    rad = math.radians(degrees)
+    c = math.cos(rad)
+    s = math.sin(rad)
+    x, y, z = vec
+    return (x, y * c - z * s, y * s + z * c)
+
+
+def _rotate_y(vec: Vector3, degrees: float) -> Vector3:
+    rad = math.radians(degrees)
+    c = math.cos(rad)
+    s = math.sin(rad)
+    x, y, z = vec
+    return (x * c + z * s, y, -x * s + z * c)
 
 
 _RES01_KS = (
@@ -829,6 +851,17 @@ def get_head_point(uid: S3UID) -> Vector3:
     return (x, y, z)
 
 
+def get_cut_plane(uid: S3UID) -> CutPlane:
+    if not is_stem(uid):
+        raise ValueError(f"{uid.name} is not a stem label")
+
+    origin = get_neck_origin(uid)
+    normal = _rotate_y(_rotate_x((0.0, 1.0, 0.0), 90.0), -45.0)
+    if has_collar(uid):
+        origin = _vec_add(origin, _vec_scale(normal, -0.1))
+    return CutPlane(origin=origin, normal=_vec_normalize(normal))
+
+
 def get_shift_vector(source_uid: S3UID, target_uid: S3UID) -> Vector3:
     if not (is_stem(source_uid) and is_stem(target_uid)):
         raise ValueError("Both inputs must be stem labels")
@@ -940,6 +973,7 @@ __all__ = [
     "get_rcc_id",
     "StemGroup",
     "StemVariant",
+    "CutPlane",
     "Vector3",
     "GROUP_UIDS",
     "RANGE_STATS",
@@ -960,6 +994,7 @@ __all__ = [
     "get_neck_origin",
     "get_reference_point",
     "get_head_point",
+    "get_cut_plane",
     "get_shift_vector",
     "get_shaft_angle",
     "similar_stem_uid",

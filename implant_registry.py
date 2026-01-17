@@ -8,7 +8,7 @@ from typing import Optional
 import amedacta_complete as mdca_amistem_implants
 import johnson_actis_complete as jj_actis_implants
 import johnson_corail_complete as jj_corail_implants
-import mathys_implants as mys_implants
+import legacy_implants.mathys_implants as mys_implants
 
 
 @dataclass(frozen=True)

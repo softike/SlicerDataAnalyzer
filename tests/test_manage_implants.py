@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import unittest
 
-import manage_implants
-from manage_implants import (
+import legacy_implants.manage_implants as manage_implants
+from legacy_implants.manage_implants import (
     MYS_RANGE_START_AT,
     RCC_ID_NAME,
     S3UID,

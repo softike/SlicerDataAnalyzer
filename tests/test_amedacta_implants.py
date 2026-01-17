@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import unittest
 
-import amedacta_implants
-from amedacta_implants import (
+import legacy_implants.amedacta_implants as amedacta_implants
+from legacy_implants.amedacta_implants import (
     AMISTEM_RANGE_START_AT,
     RCC_ID_NAME,
     S3UID,

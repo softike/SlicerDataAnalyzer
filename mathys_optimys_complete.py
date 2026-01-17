@@ -152,6 +152,12 @@ class StemVariant:
         return f"{stats.description} offset {self.offset}"
 
 
+@dataclass(frozen=True)
+class CutPlane:
+    origin: Vector3
+    normal: Vector3
+
+
 RANGE_STATS = {
     StemGroup.STD: RangeStats(StemGroup.STD, 0, 13, S3UID.RANGE_CCD_STD, "Standard CCD", 0, len(GROUP_UIDS[StemGroup.STD]) - 1),
     StemGroup.LAT: RangeStats(StemGroup.LAT, 14, 27, S3UID.RANGE_CCD_LAT, "Lateralized CCD", 0, len(GROUP_UIDS[StemGroup.LAT]) - 1),
@@ -322,6 +328,15 @@ def get_reference_point(uid: S3UID) -> Vector3:
     return get_head_point(uid)
 
 
+def get_cut_plane(uid: S3UID) -> CutPlane:
+    if not is_stem(uid):
+        raise ValueError(f"{uid.name} is not a stem label")
+
+    origin = get_neck_origin(uid)
+    normal = _rotate_z((0.0, 1.0, 0.0))
+    return CutPlane(origin=origin, normal=normal)
+
+
 def get_shift_vector(source_uid: S3UID, target_uid: S3UID) -> Vector3:
     if not (is_stem(source_uid) and is_stem(target_uid)):
         raise ValueError("Both inputs must be stem labels")
@@ -364,6 +379,7 @@ __all__ = [
     "get_rcc_id",
     "StemGroup",
     "StemVariant",
+    "CutPlane",
     "Vector3",
     "GROUP_UIDS",
     "RANGE_STATS",
@@ -383,6 +399,7 @@ __all__ = [
     "get_ccd_range",
     "get_neck_origin",
     "get_reference_point",
+    "get_cut_plane",
     "get_head_point",
     "get_shift_vector",
     "get_shaft_angle",
