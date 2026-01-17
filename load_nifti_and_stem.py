@@ -65,6 +65,17 @@ def parse_args() -> argparse.Namespace:
         help="Probe the image volume onto the stem geometry and attach the resulting scalar field",
     )
     parser.add_argument(
+        "--show-cut-plane",
+        action="store_true",
+        help="Render the implant cut plane overlay when metadata is available",
+    )
+    parser.add_argument(
+        "--cut-plane-size",
+        type=float,
+        default=60.0,
+        help="Edge length (mm) for the rendered cut plane overlay (default: 60)",
+    )
+    parser.add_argument(
         "--pre-transform-lps-to-ras",
         action="store_true",
         help="Apply a pre-multiplication that converts LPS coordinates to RAS before seedplan transforms",
@@ -134,6 +145,8 @@ def build_slicer_script(
     pre_rotate_z_180: bool,
     post_rotate_z_180: bool,
     compute_stem_scalars: bool,
+    show_cut_plane: bool,
+    cut_plane_size: float,
     config_index: int | None,
     rotation_mode: str,
     export_stem_screenshots: bool,
@@ -171,6 +184,10 @@ def build_slicer_script(
         PRE_ROTATE_Z_180 = $PRE_ROTATE_Z_180
         POST_ROTATE_Z_180 = $POST_ROTATE_Z_180
         COMPUTE_STEM_SCALARS = $COMPUTE_STEM_SCALARS
+        SHOW_CUT_PLANE = $SHOW_CUT_PLANE
+        CUT_PLANE_SIZE = $CUT_PLANE_SIZE
+        CUT_PLANE_COLOR = (0.1, 0.6, 1.0)
+        CUT_PLANE_OPACITY = 0.35
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
         CONFIG_INDEX = $CONFIG_INDEX
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
@@ -241,6 +258,122 @@ def build_slicer_script(
             temp = vtk.vtkMatrix4x4()
             vtk.vtkMatrix4x4.Multiply4x4(operand, target, temp)
             target.DeepCopy(temp)
+
+        def _resolve_implant_module(stem_info):
+            uid = stem_info.get("uid") if stem_info else None
+            if uid is None:
+                return None, None
+            module_names = (
+                "amedacta_complete",
+                "mathys_optimys_complete",
+                "johnson_corail_complete",
+                "johnson_actis_complete",
+            )
+            for module_name in module_names:
+                try:
+                    module = __import__(module_name)
+                except Exception:
+                    continue
+                enum_cls = getattr(module, "S3UID", None)
+                if enum_cls is None:
+                    continue
+                try:
+                    uid_member = enum_cls(int(uid))
+                except (TypeError, ValueError):
+                    continue
+                return module, uid_member
+            return None, None
+
+        def _build_cut_plane_model(stem_info, transform_node, pre_rotate):
+            if not SHOW_CUT_PLANE:
+                return None
+            module, uid_member = _resolve_implant_module(stem_info)
+            if module is None or uid_member is None:
+                return None
+            get_cut_plane = getattr(module, "get_cut_plane", None)
+            if not callable(get_cut_plane):
+                return None
+            try:
+                plane = get_cut_plane(uid_member)
+            except Exception:
+                return None
+            origin = getattr(plane, "origin", None)
+            normal = getattr(plane, "normal", None)
+            if origin is None or normal is None:
+                return None
+            origin_vec = (float(origin[0]), float(origin[1]), float(origin[2]))
+            normal_vec = (float(normal[0]), float(normal[1]), float(normal[2]))
+            normal_len = (normal_vec[0] ** 2 + normal_vec[1] ** 2 + normal_vec[2] ** 2) ** 0.5
+            if normal_len <= 1e-6:
+                return None
+            normal_unit = (normal_vec[0] / normal_len, normal_vec[1] / normal_len, normal_vec[2] / normal_len)
+            reference = (0.0, 0.0, 1.0) if abs(normal_unit[2]) < 0.9 else (0.0, 1.0, 0.0)
+            tangent = (
+                normal_unit[1] * reference[2] - normal_unit[2] * reference[1],
+                normal_unit[2] * reference[0] - normal_unit[0] * reference[2],
+                normal_unit[0] * reference[1] - normal_unit[1] * reference[0],
+            )
+            tangent_len = (tangent[0] ** 2 + tangent[1] ** 2 + tangent[2] ** 2) ** 0.5
+            if tangent_len <= 1e-6:
+                tangent = (1.0, 0.0, 0.0)
+                tangent_len = 1.0
+            tangent = (tangent[0] / tangent_len, tangent[1] / tangent_len, tangent[2] / tangent_len)
+            bitangent = (
+                normal_unit[1] * tangent[2] - normal_unit[2] * tangent[1],
+                normal_unit[2] * tangent[0] - normal_unit[0] * tangent[2],
+                normal_unit[0] * tangent[1] - normal_unit[1] * tangent[0],
+            )
+            extent = max(float(CUT_PLANE_SIZE), 1.0)
+            half = extent * 0.5
+            origin_corner = (
+                origin_vec[0] - tangent[0] * half - bitangent[0] * half,
+                origin_vec[1] - tangent[1] * half - bitangent[1] * half,
+                origin_vec[2] - tangent[2] * half - bitangent[2] * half,
+            )
+            point1 = (
+                origin_corner[0] + tangent[0] * extent,
+                origin_corner[1] + tangent[1] * extent,
+                origin_corner[2] + tangent[2] * extent,
+            )
+            point2 = (
+                origin_corner[0] + bitangent[0] * extent,
+                origin_corner[1] + bitangent[1] * extent,
+                origin_corner[2] + bitangent[2] * extent,
+            )
+            plane_source = vtk.vtkPlaneSource()
+            plane_source.SetOrigin(*origin_corner)
+            plane_source.SetPoint1(*point1)
+            plane_source.SetPoint2(*point2)
+            plane_source.SetXResolution(1)
+            plane_source.SetYResolution(1)
+            plane_source.Update()
+            plane_poly = plane_source.GetOutput()
+            if _needs_mathys_flip(stem_info):
+                flipped = _flip_polydata_lps_to_ras(plane_poly)
+                if flipped:
+                    plane_poly = flipped
+            if pre_rotate:
+                pre_rot = vtk.vtkTransform()
+                pre_rot.Identity()
+                pre_rot.RotateZ(180.0)
+                pre_filter = vtk.vtkTransformPolyDataFilter()
+                pre_filter.SetTransform(pre_rot)
+                pre_filter.SetInputData(plane_poly)
+                pre_filter.Update()
+                plane_poly = pre_filter.GetOutput()
+            plane_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode", "CutPlane")
+            plane_node.SetAndObservePolyData(plane_poly)
+            plane_node.CreateDefaultDisplayNodes()
+            display = plane_node.GetDisplayNode()
+            if display:
+                display.SetColor(*CUT_PLANE_COLOR)
+                display.SetOpacity(CUT_PLANE_OPACITY)
+                display.SetScalarVisibility(False)
+                display.SetBackfaceCulling(False)
+            if transform_node:
+                plane_node.SetAndObserveTransformNodeID(transform_node.GetID())
+            plane_node.SetAttribute("stem.overlay", "cutPlane")
+            return plane_node
 
         def _lower_markers(info):
             markers = (
@@ -929,6 +1062,7 @@ def build_slicer_script(
                 display.SetOpacity(0.7)
 
             model_node.SetAndObserveTransformNodeID(transform_node.GetID())
+            _build_cut_plane_model(stem_info, transform_node, pre_rotate)
 
             base_name = model_node.GetName() or "Stem"
             hardened_name = slicer.mrmlScene.GenerateUniqueName(f"{base_name} (Hardened)")
@@ -1108,6 +1242,8 @@ def build_slicer_script(
         PRE_ROTATE_Z_180="True" if pre_rotate_z_180 else "False",
         POST_ROTATE_Z_180="True" if post_rotate_z_180 else "False",
         COMPUTE_STEM_SCALARS="True" if compute_stem_scalars else "False",
+        SHOW_CUT_PLANE="True" if show_cut_plane else "False",
+        CUT_PLANE_SIZE=f"{max(cut_plane_size, 1.0):.3f}",
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
         CONFIG_INDEX="None" if config_index is None else str(int(config_index)),
         AUTO_ROTATION_MODE=rotation_mode,
@@ -1152,6 +1288,8 @@ def main() -> int:
         args.pre_rotate_z_180,
         args.post_rotate_z_180,
         args.compute_stem_scalars,
+        args.show_cut_plane,
+        args.cut_plane_size,
         args.config_index,
         args.rotation_mode,
         args.export_stem_screenshots,

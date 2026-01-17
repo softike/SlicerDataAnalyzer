@@ -69,6 +69,17 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded flag so every invocation post-rotates the stem 180° around Z.",
     )
     parser.add_argument(
+        "--show-cut-plane",
+        action="store_true",
+        help="Forwarded flag to render the implant cut plane overlay.",
+    )
+    parser.add_argument(
+        "--cut-plane-size",
+        type=float,
+        default=60.0,
+        help="Edge length (mm) for the rendered cut plane overlay (default: 60).",
+    )
+    parser.add_argument(
         "--config-index",
         type=int,
         help="Forwarded index (1-based) to process only the specified hip implant configuration per case.",
@@ -243,6 +254,10 @@ def _build_command(
     command.append("--no-splash")
     command.append("--compute-stem-scalars")
     command.append("--export-stem-screenshots")
+    if args.show_cut_plane:
+        command.append("--show-cut-plane")
+    if args.cut_plane_size is not None:
+        command.extend(["--cut-plane-size", f"{max(args.cut_plane_size, 1.0):.3f}"])
     if args.config_index is not None:
         command.extend(["--config-index", str(int(args.config_index))])
     if args.exit_after_run:
