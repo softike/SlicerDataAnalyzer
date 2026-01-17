@@ -69,6 +69,11 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded flag so every invocation post-rotates the stem 180° around Z.",
     )
     parser.add_argument(
+        "--config-index",
+        type=int,
+        help="Forwarded index (1-based) to process only the specified hip implant configuration per case.",
+    )
+    parser.add_argument(
         "--slicer-extra-arg",
         action="append",
         dest="extra_args",
@@ -238,6 +243,8 @@ def _build_command(
     command.append("--no-splash")
     command.append("--compute-stem-scalars")
     command.append("--export-stem-screenshots")
+    if args.config_index is not None:
+        command.extend(["--config-index", str(int(args.config_index))])
     if args.exit_after_run:
         command.append("--exit-after-run")
     extras_raw = args.extra_args if args.extra_args else [["--no-main-window"]]

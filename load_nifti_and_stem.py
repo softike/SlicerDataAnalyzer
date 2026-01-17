@@ -106,6 +106,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--config-index",
+        type=int,
+        help=(
+            "Only process the hip implant configuration at this 1-based index (default processes all "
+            "entries that expose a pretty name)."
+        ),
+    )
+    parser.add_argument(
         "--exit-after-run",
         action="store_true",
         help=(
@@ -126,6 +134,7 @@ def build_slicer_script(
     pre_rotate_z_180: bool,
     post_rotate_z_180: bool,
     compute_stem_scalars: bool,
+    config_index: int | None,
     rotation_mode: str,
     export_stem_screenshots: bool,
     exit_after_run: bool,
@@ -163,12 +172,13 @@ def build_slicer_script(
         POST_ROTATE_Z_180 = $POST_ROTATE_Z_180
         COMPUTE_STEM_SCALARS = $COMPUTE_STEM_SCALARS
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
+        CONFIG_INDEX = $CONFIG_INDEX
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
         EXIT_AFTER_RUN = $EXIT_AFTER_RUN
         ROTATION_BEHAVIOR = {
             "johnson": (True, True),
             "mathys": (False, True),
-            "medacta": (False, True),
+            "medacta": (True, True),
         }
         SCREENSHOT_DIR = os.path.join(os.path.dirname(SEEDPLAN_PATH), "Slicer-exports")
         EZPLAN_LUT_NAME = "EZplan HU Zones"
@@ -245,6 +255,7 @@ def build_slicer_script(
                 if "mathys" in marker:
                     return True
             return False
+
 
         def _resolve_rotation_mode(info):
             mode = (AUTO_ROTATION_MODE or "").strip().lower()
@@ -777,6 +788,12 @@ def build_slicer_script(
             config_source = stem_info.get("source")
             suffix = stem_info.get("config_folder") or f"config_{config_index + 1:02d}"
             print("\\n=== Stem configuration %s (%s) ===" % (config_label, config_source or "unknown"))
+            manufacturer = stem_info.get("manufacturer")
+            friendly_name = stem_info.get("stem_friendly_name")
+            enum_name = stem_info.get("stem_enum_name")
+            if manufacturer or friendly_name or enum_name:
+                type_label = friendly_name or enum_name or "unknown"
+                print("Stem: %s | %s" % (manufacturer or "unknown", type_label))
 
             matrix_raw = stem_info.get("matrix_raw")
             if not matrix_raw:
@@ -821,6 +838,9 @@ def build_slicer_script(
                 pre_rotate = True
             if auto_post and not post_rotate:
                 print("Auto: applying post-rotate Z 180° for %s stem" % mode_label)
+                post_rotate = True
+            if rotation_mode == "medacta" and not post_rotate:
+                print("Forced: applying post-rotate Z 180° for Medacta/AMISTEM stem")
                 post_rotate = True
 
             if PRE_TRANSFORM_LPS_TO_RAS:
@@ -1036,7 +1056,19 @@ def build_slicer_script(
         base_pre_rotate = PRE_ROTATE_Z_180
         base_post_rotate = POST_ROTATE_Z_180
 
-        for idx, stem_info in enumerate(stem_infos):
+        selected_infos = stem_infos
+        if CONFIG_INDEX is not None:
+            ordinal = int(CONFIG_INDEX) - 1
+            if 0 <= ordinal < len(stem_infos):
+                selected_infos = [stem_infos[ordinal]]
+            else:
+                print(
+                    "Warning: requested config index %d out of range (1-%d); skipping case"
+                    % (int(CONFIG_INDEX), len(stem_infos))
+                )
+                selected_infos = []
+
+        for idx, stem_info in enumerate(selected_infos):
             _process_stem_configuration(
                 stem_info,
                 volume_node=volume_node,
@@ -1077,6 +1109,7 @@ def build_slicer_script(
         POST_ROTATE_Z_180="True" if post_rotate_z_180 else "False",
         COMPUTE_STEM_SCALARS="True" if compute_stem_scalars else "False",
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
+        CONFIG_INDEX="None" if config_index is None else str(int(config_index)),
         AUTO_ROTATION_MODE=rotation_mode,
         EXIT_AFTER_RUN="True" if exit_after_run else "False",
     )
@@ -1119,6 +1152,7 @@ def main() -> int:
         args.pre_rotate_z_180,
         args.post_rotate_z_180,
         args.compute_stem_scalars,
+        args.config_index,
         args.rotation_mode,
         args.export_stem_screenshots,
         args.exit_after_run,
