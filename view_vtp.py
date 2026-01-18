@@ -511,6 +511,25 @@ def _apply_gruen_zones(
 	side: str,
 ) -> str:
 	axis_dir, mean = _compute_principal_axis(poly)
+	point_data = poly.GetPointData()
+	normals = point_data.GetNormals()
+	if normals is None:
+		normals = point_data.GetArray("Normals")
+	if normals is None:
+		normals_filter = vtk.vtkPolyDataNormals()
+		normals_filter.SetInputData(poly)
+		normals_filter.ComputePointNormalsOn()
+		normals_filter.ComputeCellNormalsOff()
+		normals_filter.SplittingOff()
+		normals_filter.ConsistencyOn()
+		normals_filter.AutoOrientNormalsOn()
+		normals_filter.Update()
+		normals_output = normals_filter.GetOutput()
+		computed = normals_output.GetPointData().GetNormals()
+		if computed is not None:
+			point_data.AddArray(computed)
+			point_data.SetNormals(computed)
+			normals = computed
 	points = poly.GetPoints()
 	count = points.GetNumberOfPoints()
 	projections = []
@@ -587,7 +606,6 @@ def _apply_hu_zone_mask(poly: vtk.vtkPolyData, hu_array: str, zones: list[int]) 
 	point_data.SetActiveScalars(masked_name)
 	poly.Modified()
 	return masked_name
-
 
 def _configure_mapper(
 	poly: vtk.vtkPolyData,
