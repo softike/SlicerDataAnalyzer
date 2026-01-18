@@ -69,6 +69,11 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded flag so every invocation post-rotates the stem 180° around Z.",
     )
     parser.add_argument(
+        "--show-neck-point",
+        action="store_true",
+        help="Forwarded flag to render the implant neck point overlay.",
+    )
+    parser.add_argument(
         "--show-cut-plane",
         action="store_true",
         help="Forwarded flag to render the implant cut plane overlay.",
@@ -254,6 +259,8 @@ def _build_command(
     command.append("--no-splash")
     command.append("--compute-stem-scalars")
     command.append("--export-stem-screenshots")
+    if args.show_neck_point:
+        command.append("--show-neck-point")
     if args.show_cut_plane:
         command.append("--show-cut-plane")
     if args.cut_plane_size is not None:

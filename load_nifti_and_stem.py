@@ -65,6 +65,11 @@ def parse_args() -> argparse.Namespace:
         help="Probe the image volume onto the stem geometry and attach the resulting scalar field",
     )
     parser.add_argument(
+        "--show-neck-point",
+        action="store_true",
+        help="Render the implant neck point overlay when metadata is available",
+    )
+    parser.add_argument(
         "--show-cut-plane",
         action="store_true",
         help="Render the implant cut plane overlay when metadata is available",
@@ -145,6 +150,7 @@ def build_slicer_script(
     pre_rotate_z_180: bool,
     post_rotate_z_180: bool,
     compute_stem_scalars: bool,
+    show_neck_point: bool,
     show_cut_plane: bool,
     cut_plane_size: float,
     config_index: int | None,
@@ -184,6 +190,8 @@ def build_slicer_script(
         PRE_ROTATE_Z_180 = $PRE_ROTATE_Z_180
         POST_ROTATE_Z_180 = $POST_ROTATE_Z_180
         COMPUTE_STEM_SCALARS = $COMPUTE_STEM_SCALARS
+        SHOW_NECK_POINT = $SHOW_NECK_POINT
+        NECK_POINT_RADIUS = 2.0
         SHOW_CUT_PLANE = $SHOW_CUT_PLANE
         CUT_PLANE_SIZE = $CUT_PLANE_SIZE
         CUT_PLANE_COLOR = (0.1, 0.6, 1.0)
@@ -283,6 +291,54 @@ def build_slicer_script(
                     continue
                 return module, uid_member
             return None, None
+
+        def _build_neck_point_model(stem_info, transform_node, pre_rotate):
+            if not SHOW_NECK_POINT:
+                return None
+            module, uid_member = _resolve_implant_module(stem_info)
+            if module is None or uid_member is None:
+                return None
+            get_neck_origin = getattr(module, "get_neck_origin", None)
+            if not callable(get_neck_origin):
+                return None
+            try:
+                neck_point = get_neck_origin(uid_member)
+            except Exception:
+                return None
+            if neck_point is None or len(neck_point) < 3:
+                return None
+            sphere = vtk.vtkSphereSource()
+            sphere.SetCenter(float(neck_point[0]), float(neck_point[1]), float(neck_point[2]))
+            sphere.SetRadius(float(NECK_POINT_RADIUS))
+            sphere.SetThetaResolution(24)
+            sphere.SetPhiResolution(24)
+            sphere.Update()
+            neck_poly = sphere.GetOutput()
+            if _needs_mathys_flip(stem_info):
+                flipped = _flip_polydata_lps_to_ras(neck_poly)
+                if flipped:
+                    neck_poly = flipped
+            if pre_rotate:
+                pre_rot = vtk.vtkTransform()
+                pre_rot.Identity()
+                pre_rot.RotateZ(180.0)
+                pre_filter = vtk.vtkTransformPolyDataFilter()
+                pre_filter.SetTransform(pre_rot)
+                pre_filter.SetInputData(neck_poly)
+                pre_filter.Update()
+                neck_poly = pre_filter.GetOutput()
+            neck_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode", "NeckPoint")
+            neck_node.SetAndObservePolyData(neck_poly)
+            neck_node.CreateDefaultDisplayNodes()
+            display = neck_node.GetDisplayNode()
+            if display:
+                display.SetColor(1.0, 0.2, 0.2)
+                display.SetOpacity(1.0)
+                display.SetScalarVisibility(False)
+            if transform_node:
+                neck_node.SetAndObserveTransformNodeID(transform_node.GetID())
+            neck_node.SetAttribute("stem.overlay", "neckPoint")
+            return neck_node
 
         def _build_cut_plane_model(stem_info, transform_node, pre_rotate):
             if not SHOW_CUT_PLANE:
@@ -1062,6 +1118,7 @@ def build_slicer_script(
                 display.SetOpacity(0.7)
 
             model_node.SetAndObserveTransformNodeID(transform_node.GetID())
+            _build_neck_point_model(stem_info, transform_node, pre_rotate)
             _build_cut_plane_model(stem_info, transform_node, pre_rotate)
 
             base_name = model_node.GetName() or "Stem"
@@ -1242,6 +1299,7 @@ def build_slicer_script(
         PRE_ROTATE_Z_180="True" if pre_rotate_z_180 else "False",
         POST_ROTATE_Z_180="True" if post_rotate_z_180 else "False",
         COMPUTE_STEM_SCALARS="True" if compute_stem_scalars else "False",
+        SHOW_NECK_POINT="True" if show_neck_point else "False",
         SHOW_CUT_PLANE="True" if show_cut_plane else "False",
         CUT_PLANE_SIZE=f"{max(cut_plane_size, 1.0):.3f}",
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
@@ -1288,6 +1346,7 @@ def main() -> int:
         args.pre_rotate_z_180,
         args.post_rotate_z_180,
         args.compute_stem_scalars,
+        args.show_neck_point,
         args.show_cut_plane,
         args.cut_plane_size,
         args.config_index,
