@@ -36,6 +36,17 @@ def _parse_args() -> argparse.Namespace:
 		action="store_true",
 		help="Render the mesh in wireframe mode to inspect topology",
 	)
+	parser.add_argument(
+		"--show-axes",
+		action="store_true",
+		help="Display an XYZ axes frame in the scene",
+	)
+	parser.add_argument(
+		"--axes-size",
+		type=float,
+		default=60.0,
+		help="Total length (mm) of the XYZ axes (default: 60)",
+	)
 	return parser.parse_args()
 
 
@@ -120,6 +131,16 @@ def _attach_lut(mapper: vtk.vtkPolyDataMapper, transfer_function: vtk.vtkColorTr
 	mapper.UseLookupTableScalarRangeOn()
 
 
+def _add_axes(renderer: vtk.vtkRenderer, length: float):
+	axes = vtk.vtkAxesActor()
+	axes.SetTotalLength(length, length, length)
+	axes.SetShaftTypeToCylinder()
+	axes.SetCylinderRadius(0.02)
+	axes.SetConeRadius(0.1)
+	axes.SetSphereRadius(0.15)
+	renderer.AddActor(axes)
+
+
 def _print_summary(path: str, array_name: str, array_range: tuple[float, float]):
 	print("Loaded '%s'" % path)
 	print("Using scalar array '%s' (range %.2f .. %.2f)" % (array_name, array_range[0], array_range[1]))
@@ -141,6 +162,8 @@ def main() -> int:
 	renderer.SetBackground(1.0, 1.0, 1.0)
 	renderer.ResetCamera()
 	_add_scalar_bar(renderer, transfer_function)
+	if args.show_axes:
+		_add_axes(renderer, max(args.axes_size, 1.0))
 
 	render_window = vtk.vtkRenderWindow()
 	render_window.SetWindowName("Stem Viewer (EZplan LUT)")

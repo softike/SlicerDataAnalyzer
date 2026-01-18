@@ -95,6 +95,11 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded flag to keep HU values only below the cut plane in a separate scalar array.",
     )
     parser.add_argument(
+        "--export-local-stem",
+        action="store_true",
+        help="Forwarded flag to export the local-frame stem VTP with HU scalars.",
+    )
+    parser.add_argument(
         "--slicer-extra-arg",
         action="append",
         dest="extra_args",
@@ -266,6 +271,8 @@ def _build_command(
     command.append("--export-stem-screenshots")
     if args.scalar_below_cut_plane:
         command.append("--scalar-below-cut-plane")
+    if args.export_local_stem:
+        command.append("--export-local-stem")
     if args.show_neck_point:
         command.append("--show-neck-point")
     if args.show_cut_plane:

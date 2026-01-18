@@ -130,6 +130,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--export-local-stem",
+        action="store_true",
+        help="Export a local-frame VTP (non-hardened) with the sampled HU scalar array",
+    )
+    parser.add_argument(
         "--config-index",
         type=int,
         help=(
@@ -164,6 +169,7 @@ def build_slicer_script(
     cut_plane_size: float,
     config_index: int | None,
     rotation_mode: str,
+    export_local_stem: bool,
     export_stem_screenshots: bool,
     exit_after_run: bool,
 ) -> str:
@@ -208,6 +214,7 @@ def build_slicer_script(
         CUT_PLANE_COLOR = (0.1, 0.6, 1.0)
         CUT_PLANE_OPACITY = 0.35
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
+        EXPORT_LOCAL_STEM = $EXPORT_LOCAL_STEM
         CONFIG_INDEX = $CONFIG_INDEX
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
         EXIT_AFTER_RUN = $EXIT_AFTER_RUN
@@ -772,7 +779,29 @@ def build_slicer_script(
             if success == 0:
                 print("Warning: vtkXMLPolyDataWriter reported failure for %s" % file_path)
                 return None
-            print("Saved original (non-hardened) stem with scalars: %s" % file_path)
+            print("Saved stem export with scalars: %s" % file_path)
+            return file_path
+
+        def _export_local_stem(model_node, suffix=None, clear_exports=False):
+            poly = model_node.GetPolyData()
+            if poly is None:
+                print("Model has no polydata; skipping local stem export")
+                return None
+            prefix = _stem_output_prefix(clear_dir=clear_exports, suffix=suffix)
+            file_path = prefix + "_local.vtp"
+            writer = vtk.vtkXMLPolyDataWriter()
+            writer.SetFileName(file_path)
+            writer.SetInputData(poly)
+            writer.SetDataModeToBinary()
+            try:
+                success = writer.Write()
+            except Exception as exc:
+                print("Warning: unable to write local stem export (%s)" % exc)
+                return None
+            if success == 0:
+                print("Warning: vtkXMLPolyDataWriter reported failure for %s" % file_path)
+                return None
+            print("Saved local stem export with scalars: %s" % file_path)
             return file_path
 
         def _probe_volume_onto_model(volume_node, model_node, array_name=None):
@@ -1293,12 +1322,19 @@ def build_slicer_script(
                         target_node.GetName(), EZPLAN_LUT_NAME
                     ))
                     summary_for_xml = _summarize_scalar_percentages(model_node, array_name=scalar_name)
+                    export_node = target_node or hardened_clone or model_node
                     stem_export_path = _export_original_stem(
-                        model_node,
+                        export_node,
                         suffix=suffix,
                         clear_exports=export_prefix_cleared,
                     )
                     export_prefix_cleared = False
+                    if EXPORT_LOCAL_STEM:
+                        _export_local_stem(
+                            model_node,
+                            suffix=suffix,
+                            clear_exports=False,
+                        )
                     _write_case_metrics_xml(
                         stem_info,
                         summary_for_xml,
@@ -1331,8 +1367,9 @@ def build_slicer_script(
                                 original_display.SetVisibility(original_visibility)
 
             if not stem_export_path:
+                export_node = hardened_clone or model_node
                 stem_export_path = _export_original_stem(
-                    model_node,
+                    export_node,
                     suffix=suffix,
                     clear_exports=export_prefix_cleared,
                 )
@@ -1430,6 +1467,7 @@ def build_slicer_script(
         SHOW_CUT_PLANE="True" if show_cut_plane else "False",
         CUT_PLANE_SIZE=f"{max(cut_plane_size, 1.0):.3f}",
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
+        EXPORT_LOCAL_STEM="True" if export_local_stem else "False",
         CONFIG_INDEX="None" if config_index is None else str(int(config_index)),
         AUTO_ROTATION_MODE=rotation_mode,
         EXIT_AFTER_RUN="True" if exit_after_run else "False",
@@ -1479,6 +1517,7 @@ def main() -> int:
         args.cut_plane_size,
         args.config_index,
         args.rotation_mode,
+        args.export_local_stem,
         args.export_stem_screenshots,
         args.exit_after_run,
     )
