@@ -1,1 +1,22 @@
 yes that 's it. can we apply a partitioning following the Gruen definition and apply it on the stem. it would then be intersting to have it as an option with also the posibility to just show the hu map on zones we  would have specified. the zones go from 1 to 14, zones 1,2 and 3 being on the lateral side of the stem, 5,6 and 7 on the medial side, 4 being at the bottom; 8,9 and 10 being on the anterior side, then 12, 13 and 14 being on the posterior side; 11 being at the bottom. you should work that option on the view_implant script first.
+
+###
+python batch_stem_analysis.py \
+   --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN2/images/H001 \
+   --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+   --slicer-extra-arg=--qt-disable-translate  --case 001-M-30 --config-index 6 --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem
+
+
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/001-M-30/Mediplan3D/Slicer-exports/active_07/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp  --local-frame --show-gruen-zones --show-cut-plane --show-neck-point  --voxel-zones --voxel-size 1.5 --voxel-shell 1.5 --opacity 1 --base-color 0.7,0.7,0.7 --side left --show-axes --show-side-label  --wireframe --gruen-hu-zones 8
+
+###
+python batch_stem_analysis.py \
+   --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN2/images/H001 \
+   --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+   --slicer-extra-arg=--qt-disable-translate  --case 001-M-30 --config-index 43 --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem
+
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/001-M-30/Mediplan3D/Slicer-exports/active_44/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp  --local-frame --show-gruen-zones --show-cut-plane --show-neck-point  --voxel-zones --voxel-size 1.5 --voxel-shell 1.5 --opacity 1 --base-color 0.7,0.7,0.7 --side right --show-axes --show-side-label  --wireframe --gruen-hu-zones 8
+
+

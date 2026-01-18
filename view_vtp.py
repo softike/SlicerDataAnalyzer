@@ -56,6 +56,39 @@ def _parse_args() -> argparse.Namespace:
 		help="Override base stem color as r,g,b (e.g., 0.7,0.7,0.7). If omitted, uses the scalar map.",
 	)
 	parser.add_argument(
+		"--voxel-zones",
+		action="store_true",
+		help="Compute Gruen zones on a voxel shell around the surface for uniform sampling",
+	)
+	parser.add_argument(
+		"--voxel-size",
+		type=float,
+		default=1.5,
+		help="Voxel size (mm) for the surface shell (default: 1.5)",
+	)
+	parser.add_argument(
+		"--voxel-shell",
+		type=float,
+		default=1.5,
+		help="Shell thickness (mm) around the surface (default: 1.5)",
+	)
+	parser.add_argument(
+		"--visible-voxels",
+		action="store_true",
+		help="Mask scalar display to voxels visible from standard camera views",
+	)
+	parser.add_argument(
+		"--visibility-views",
+		default="front,back,left,right",
+		help="Comma-separated views for visibility masking (front,back,left,right)",
+	)
+	parser.add_argument(
+		"--visibility-method",
+		choices=("zbuffer", "hardware"),
+		default="zbuffer",
+		help="Visibility method (default: zbuffer)",
+	)
+	parser.add_argument(
 		"--side",
 		choices=("auto", "left", "right"),
 		default="auto",
@@ -121,6 +154,54 @@ def _parse_args() -> argparse.Namespace:
 		"--print-gruen-stats",
 		action="store_true",
 		help="Print point counts per Gruen zone",
+	)
+	parser.add_argument(
+		"--largest-region-only",
+		action="store_true",
+		help="Keep only the largest connected region per Gruen zone",
+	)
+	parser.add_argument(
+		"--composite-gruen",
+		action="store_true",
+		help="Use composite Gruen zones (1+7, 2+6, 3+5, 8+14, 9+13, 10+12)",
+	)
+	parser.add_argument(
+		"--partitioned-gruen",
+		action="store_true",
+		help="Use partitioned Gruen zones (top, mediumtop, mediumbottom, bottom)",
+	)
+	parser.add_argument(
+		"--hu-range",
+		help="Filter HU values to a named range: loosening, micromove, stable, cortical",
+	)
+	parser.add_argument(
+		"--show-hu-summary",
+		action="store_true",
+		help="Display HU range percentage summary for the selected zone",
+	)
+	parser.add_argument(
+		"--hu-table",
+		action="store_true",
+		help="Print a summary table of HU ranges and percentages",
+	)
+	parser.add_argument(
+		"--dominant-hu-zone",
+		help="Report the Gruen zone with the most values for a HU tag (loosening, micromove, stable, cortical)",
+	)
+	parser.add_argument(
+		"--show-dominant-hu-zone",
+		action="store_true",
+		help="Display the dominant HU zone on screen",
+	)
+	parser.add_argument(
+		"--highlight-dominant-hu-zone",
+		action="store_true",
+		help="Overlay the dominant HU zone on the surface",
+	)
+	parser.add_argument(
+		"--show-side-label",
+		action="store_true",
+		help="Display resolved side label in the render window",
 	)
 	parser.add_argument(
 		"--show-axes",
@@ -425,6 +506,23 @@ def _build_gruen_lookup_table() -> vtk.vtkLookupTable:
 	return lut
 
 
+def _build_partition_lookup_table() -> vtk.vtkLookupTable:
+	lut = vtk.vtkLookupTable()
+	lut.SetNumberOfTableValues(5)
+	lut.Build()
+	colors = [
+		(0.6, 0.6, 0.6),
+		(0.2, 0.6, 1.0),
+		(0.2, 0.8, 0.2),
+		(0.9, 0.7, 0.2),
+		(0.8, 0.2, 0.2),
+	]
+	for idx in range(5):
+		r, g, b = colors[idx]
+		lut.SetTableValue(idx, r, g, b, 1.0)
+	return lut
+
+
 def _parse_vector(value: str) -> tuple[float, float, float]:
 	parts = [item.strip() for item in value.split(",") if item.strip()]
 	if len(parts) != 3:
@@ -548,28 +646,42 @@ def _apply_gruen_zones(
 		if cut_proj > min_proj:
 			max_proj = cut_proj
 	axis_len = max(max_proj - min_proj, 1e-6)
-	ref = (0.0, 0.0, 1.0)
-	if abs(_dot(axis_dir, ref)) > 0.9:
-		ref = (0.0, 1.0, 0.0)
-	x_axis = _normalize(_cross(ref, axis_dir))
-	y_axis = _normalize(_cross(axis_dir, x_axis))
+	x_axis = (1.0, 0.0, 0.0)
+	if side == "right":
+		x_axis = (-1.0, 0.0, 0.0)
+	y_axis = (0.0, 1.0, 0.0)
 	zones = vtk.vtkIntArray()
 	zones.SetName("GruenZone")
 	zones.SetNumberOfComponents(1)
 	zones.SetNumberOfTuples(count)
 	for idx in range(count):
 		x, y, z = points.GetPoint(idx)
-		xp = _dot((x, y, z), x_axis)
-		yp = _dot((x, y, z), y_axis)
+		if normals is not None:
+			nx, ny, nz = normals.GetTuple(idx)
+			to_point = (x - mean[0], y - mean[1], z - mean[2])
+			if _dot((nx, ny, nz), to_point) < 0:
+				nx, ny, nz = -nx, -ny, -nz
+			norm_len = (nx * nx + ny * ny + nz * nz) ** 0.5
+			if norm_len > 1e-6:
+				nx, ny, nz = nx / norm_len, ny / norm_len, nz / norm_len
+			xp = _dot((nx, ny, nz), x_axis)
+			yp = _dot((nx, ny, nz), y_axis)
+		else:
+			to_point = (x - mean[0], y - mean[1], z - mean[2])
+			to_point = _normalize(to_point)
+			xp = _dot(to_point, x_axis)
+			yp = _dot(to_point, y_axis)
 		zproj = _dot((x, y, z), axis_dir)
 		z_norm = (zproj - min_proj) / axis_len
 		if abs(xp) >= abs(yp):
-			if side == "left":
-				group = "lateral" if xp <= 0 else "medial"
-			else:
-				group = "lateral" if xp >= 0 else "medial"
+			group = "lateral" if xp <= 0 else "medial"
 		else:
-			group = "anterior" if yp >= 0 else "posterior"
+			if side == "right":
+				group = "anterior" if yp <= 0 else "posterior"
+			else:
+				group = "anterior" if yp >= 0 else "posterior"
+		if side == "right" and group in ("lateral", "medial"):
+			group = "medial" if group == "lateral" else "lateral"
 		zones.SetTuple1(idx, float(_compute_gruen_zone(z_norm, group)))
 	point_data = poly.GetPointData()
 	if point_data.GetArray("GruenZone"):
@@ -585,9 +697,15 @@ def _apply_hu_zone_mask(poly: vtk.vtkPolyData, hu_array: str, zones: list[int]) 
 	source_array = point_data.GetArray(hu_array)
 	if source_array is None:
 		raise RuntimeError("Scalar array '%s' not found" % hu_array)
-	zone_array = point_data.GetArray("GruenZone")
+	zone_array = (
+		point_data.GetArray("GruenZonePartition")
+		or point_data.GetArray("GruenZoneComposite")
+		or point_data.GetArray("GruenZoneLargest")
+		or point_data.GetArray("GruenZone")
+	)
 	if zone_array is None:
 		raise RuntimeError("GruenZone array missing; enable --gruen-zones")
+	keep_array = point_data.GetArray("GruenZoneKeep")
 	masked_name = f"{hu_array}_Gruen"
 	masked = vtk.vtkDoubleArray()
 	masked.SetName(masked_name)
@@ -595,8 +713,15 @@ def _apply_hu_zone_mask(poly: vtk.vtkPolyData, hu_array: str, zones: list[int]) 
 	masked.SetNumberOfTuples(source_array.GetNumberOfTuples())
 	allowed = set(zones)
 	for idx in range(source_array.GetNumberOfTuples()):
-		zone_id = int(zone_array.GetTuple1(idx))
-		if zone_id in allowed:
+		zone_value = zone_array.GetTuple1(idx)
+		if zone_value != zone_value:
+			masked.SetTuple1(idx, float("nan"))
+			continue
+		zone_id = int(zone_value)
+		keep_ok = True
+		if keep_array is not None:
+			keep_ok = int(keep_array.GetTuple1(idx)) == 1
+		if keep_ok and zone_id in allowed:
 			masked.SetTuple1(idx, source_array.GetTuple1(idx))
 		else:
 			masked.SetTuple1(idx, float("nan"))
@@ -762,10 +887,601 @@ def _build_neck_point_actor(point: tuple[float, float, float]):
 	return actor
 
 
+def _build_voxel_shell_polydata(
+	poly: vtk.vtkPolyData,
+	voxel_size: float,
+	shell_thickness: float,
+) -> vtk.vtkPolyData:
+	bounds = poly.GetBounds()
+	pad = max(shell_thickness, voxel_size)
+	min_x = bounds[0] - pad
+	max_x = bounds[1] + pad
+	min_y = bounds[2] - pad
+	max_y = bounds[3] + pad
+	min_z = bounds[4] - pad
+	max_z = bounds[5] + pad
+	spacing = max(voxel_size, 0.5)
+	implicit = vtk.vtkImplicitPolyDataDistance()
+	implicit.SetInput(poly)
+	points = vtk.vtkPoints()
+	verts = vtk.vtkCellArray()
+	idx = 0
+	z = min_z
+	while z <= max_z:
+		y = min_y
+		while y <= max_y:
+			x = min_x
+			while x <= max_x:
+				dist = implicit.EvaluateFunction((x, y, z))
+				if abs(dist) <= shell_thickness:
+					points.InsertNextPoint(x, y, z)
+					verts.InsertNextCell(1)
+					verts.InsertCellPoint(idx)
+					idx += 1
+				x += spacing
+			y += spacing
+		z += spacing
+	voxel_poly = vtk.vtkPolyData()
+	voxel_poly.SetPoints(points)
+	voxel_poly.SetVerts(verts)
+	return voxel_poly
+
+
+def _interpolate_point_scalars(
+	source: vtk.vtkPolyData,
+	target: vtk.vtkPolyData,
+) -> vtk.vtkPolyData:
+	normals = source.GetPointData().GetNormals()
+	if normals is None:
+		normals_filter = vtk.vtkPolyDataNormals()
+		normals_filter.SetInputData(source)
+		normals_filter.ComputePointNormalsOn()
+		normals_filter.ComputeCellNormalsOff()
+		normals_filter.SplittingOff()
+		normals_filter.ConsistencyOn()
+		normals_filter.AutoOrientNormalsOn()
+		normals_filter.Update()
+		source = normals_filter.GetOutput()
+	interpolator = vtk.vtkPointInterpolator()
+	interpolator.SetSourceData(source)
+	interpolator.SetInputData(target)
+	interpolator.SetNullPointsStrategyToClosestPoint()
+	interpolator.SetKernel(vtk.vtkGaussianKernel())
+	interpolator.GetKernel().SetSharpness(2.0)
+	interpolator.GetKernel().SetRadius(3.0)
+	interpolator.Update()
+	return interpolator.GetOutput()
+
+
+def _interpolate_point_arrays(
+	source: vtk.vtkPolyData,
+	target: vtk.vtkPolyData,
+	nearest: bool = False,
+) -> vtk.vtkPolyData:
+	interpolator = vtk.vtkPointInterpolator()
+	interpolator.SetSourceData(source)
+	interpolator.SetInputData(target)
+	interpolator.SetNullPointsStrategyToClosestPoint()
+	if nearest:
+		kernel = vtk.vtkVoronoiKernel()
+	else:
+		kernel = vtk.vtkGaussianKernel()
+		kernel.SetSharpness(2.0)
+		kernel.SetRadius(3.0)
+	interpolator.SetKernel(kernel)
+	interpolator.Update()
+	return interpolator.GetOutput()
+
+
+def _build_voxel_glyph_actor(
+	poly: vtk.vtkPolyData,
+	voxel_size: float,
+	mapper: vtk.vtkPolyDataMapper,
+) -> vtk.vtkActor:
+	cube = vtk.vtkCubeSource()
+	cube.SetXLength(voxel_size)
+	cube.SetYLength(voxel_size)
+	cube.SetZLength(voxel_size)
+	glyph = vtk.vtkGlyph3D()
+	glyph.SetSourceConnection(cube.GetOutputPort())
+	glyph.SetInputData(poly)
+	glyph.ScalingOff()
+	glyph.Update()
+	mapper.SetInputConnection(glyph.GetOutputPort())
+	actor = vtk.vtkActor()
+	actor.SetMapper(mapper)
+	return actor
+
+
+def _parse_views(value: str) -> list[str]:
+	views = [item.strip().lower() for item in value.split(",") if item.strip()]
+	valid = {"front", "back", "left", "right"}
+	return [view for view in views if view in valid]
+
+
+def _compute_visible_ids(
+	poly: vtk.vtkPolyData,
+	views: list[str],
+	method: str,
+) -> set[int]:
+	if not views:
+		return set()
+	ids = vtk.vtkGenerateIds()
+	ids.SetInputData(poly)
+	ids.PointIdsOn()
+	ids.CellIdsOff()
+	ids.SetPointIdsArrayName("OrigId")
+	ids.Update()
+	poly_with_ids = ids.GetOutput()
+	bounds = poly_with_ids.GetBounds()
+	center = (
+		(bounds[0] + bounds[1]) * 0.5,
+		(bounds[2] + bounds[3]) * 0.5,
+		(bounds[4] + bounds[5]) * 0.5,
+	)
+	max_dim = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+	dist = max(max_dim * 2.5, 100.0)
+	view_dirs = {
+		"front": (0.0, -1.0, 0.0),
+		"back": (0.0, 1.0, 0.0),
+		"left": (1.0, 0.0, 0.0),
+		"right": (-1.0, 0.0, 0.0),
+	}
+	renderer = vtk.vtkRenderer()
+	mapper = vtk.vtkPolyDataMapper()
+	mapper.SetInputData(poly_with_ids)
+	actor = vtk.vtkActor()
+	actor.SetMapper(mapper)
+	renderer.AddActor(actor)
+	render_window = vtk.vtkRenderWindow()
+	render_window.SetOffScreenRendering(1)
+	render_window.SetSize(600, 600)
+	render_window.AddRenderer(renderer)
+	visible_ids: set[int] = set()
+	for view in views:
+		dir_vec = view_dirs.get(view)
+		if not dir_vec:
+			continue
+		camera = renderer.GetActiveCamera()
+		camera.SetFocalPoint(*center)
+		camera.SetPosition(
+			center[0] + dir_vec[0] * dist,
+			center[1] + dir_vec[1] * dist,
+			center[2] + dir_vec[2] * dist,
+		)
+		camera.SetViewUp(0.0, 0.0, 1.0)
+		renderer.ResetCameraClippingRange()
+		render_window.Render()
+		if method == "hardware":
+			print("Hardware selector not available; falling back to zbuffer.", file=sys.stderr)
+		select = vtk.vtkSelectVisiblePoints()
+		select.SetInputData(poly_with_ids)
+		select.SetRenderer(renderer)
+		select.Update()
+		visible = select.GetOutput()
+		id_array = visible.GetPointData().GetArray("OrigId")
+		if id_array is None:
+			continue
+		for idx in range(id_array.GetNumberOfTuples()):
+			visible_ids.add(int(id_array.GetTuple1(idx)))
+	return visible_ids
+
+
+def _apply_visibility_mask(poly: vtk.vtkPolyData, array_name: str, visible_ids: set[int]) -> str:
+	point_data = poly.GetPointData()
+	source_array = point_data.GetArray(array_name)
+	if source_array is None:
+		raise RuntimeError("Scalar array '%s' not found" % array_name)
+	masked_name = f"{array_name}_Visible"
+	masked = vtk.vtkDoubleArray()
+	masked.SetName(masked_name)
+	masked.SetNumberOfComponents(1)
+	masked.SetNumberOfTuples(source_array.GetNumberOfTuples())
+	for idx in range(source_array.GetNumberOfTuples()):
+		if idx in visible_ids:
+			masked.SetTuple1(idx, source_array.GetTuple1(idx))
+		else:
+			masked.SetTuple1(idx, float("nan"))
+	if point_data.GetArray(masked_name):
+		point_data.RemoveArray(masked_name)
+	point_data.AddArray(masked)
+	point_data.SetActiveScalars(masked_name)
+	poly.Modified()
+	return masked_name
+
+
+def _apply_visibility_mask_by_zone(
+	poly: vtk.vtkPolyData,
+	array_name: str,
+	zone_array: vtk.vtkDataArray,
+	visible_by_view: dict[str, set[int]],
+	zone_view_map: dict[int, str],
+) -> str:
+	point_data = poly.GetPointData()
+	source_array = point_data.GetArray(array_name)
+	if source_array is None:
+		raise RuntimeError("Scalar array '%s' not found" % array_name)
+	masked_name = f"{array_name}_Visible"
+	masked = vtk.vtkDoubleArray()
+	masked.SetName(masked_name)
+	masked.SetNumberOfComponents(1)
+	masked.SetNumberOfTuples(source_array.GetNumberOfTuples())
+	for idx in range(source_array.GetNumberOfTuples()):
+		zone_id = int(zone_array.GetTuple1(idx))
+		view_key = zone_view_map.get(zone_id)
+		if view_key and idx in visible_by_view.get(view_key, set()):
+			masked.SetTuple1(idx, source_array.GetTuple1(idx))
+		else:
+			masked.SetTuple1(idx, float("nan"))
+	if point_data.GetArray(masked_name):
+		point_data.RemoveArray(masked_name)
+	point_data.AddArray(masked)
+	point_data.SetActiveScalars(masked_name)
+	poly.Modified()
+	return masked_name
+
+
+def _apply_largest_region_mask(
+	poly: vtk.vtkPolyData,
+	source_poly: vtk.vtkPolyData | None = None,
+) -> None:
+	source = source_poly or poly
+	point_data = source.GetPointData()
+	zone_array = point_data.GetArray("GruenZone")
+	if zone_array is None:
+		raise RuntimeError("GruenZone array missing; enable --gruen-zones")
+	ids = vtk.vtkGenerateIds()
+	ids.SetInputData(source)
+	ids.PointIdsOn()
+	ids.CellIdsOff()
+	ids.SetPointIdsArrayName("OrigId")
+	ids.Update()
+	poly_with_ids = ids.GetOutput()
+	keep = vtk.vtkIntArray()
+	keep.SetName("GruenZoneKeep")
+	keep.SetNumberOfComponents(1)
+	keep.SetNumberOfTuples(poly_with_ids.GetNumberOfPoints())
+	for idx in range(keep.GetNumberOfTuples()):
+		keep.SetTuple1(idx, 0)
+	for zone_id in range(1, 15):
+		threshold = vtk.vtkThreshold()
+		threshold.SetInputData(poly_with_ids)
+		threshold.SetInputArrayToProcess(
+			0,
+			0,
+			0,
+			vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS,
+			"GruenZone",
+		)
+		if hasattr(threshold, "ThresholdBetween"):
+			threshold.ThresholdBetween(zone_id, zone_id)
+		else:
+			threshold.SetLowerThreshold(zone_id)
+			threshold.SetUpperThreshold(zone_id)
+			threshold.SetThresholdFunction(vtk.vtkThreshold.THRESHOLD_BETWEEN)
+		threshold.Update()
+		geometry = vtk.vtkGeometryFilter()
+		geometry.SetInputConnection(threshold.GetOutputPort())
+		geometry.Update()
+		connect = vtk.vtkConnectivityFilter()
+		connect.SetInputConnection(geometry.GetOutputPort())
+		connect.SetExtractionModeToLargestRegion()
+		connect.Update()
+		region = connect.GetOutput()
+		id_array = region.GetPointData().GetArray("OrigId")
+		if id_array is None:
+			continue
+		for idx in range(id_array.GetNumberOfTuples()):
+			orig_id = int(id_array.GetTuple1(idx))
+			keep.SetTuple1(orig_id, 1)
+	if source is not poly:
+		source.GetPointData().AddArray(keep)
+		mapped = _interpolate_point_arrays(source, poly, nearest=True)
+		mapped_keep = mapped.GetPointData().GetArray("GruenZoneKeep")
+		if mapped_keep is None:
+			mapped_keep = keep
+		point_data = poly.GetPointData()
+		if point_data.GetArray("GruenZoneKeep"):
+			point_data.RemoveArray("GruenZoneKeep")
+		point_data.AddArray(mapped_keep)
+		keep = mapped_keep
+	else:
+		if point_data.GetArray("GruenZoneKeep"):
+			point_data.RemoveArray("GruenZoneKeep")
+		point_data.AddArray(keep)
+		point_data = poly.GetPointData()
+	masked = vtk.vtkDoubleArray()
+	masked.SetName("GruenZoneLargest")
+	masked.SetNumberOfComponents(1)
+	masked.SetNumberOfTuples(poly.GetNumberOfPoints())
+	for idx in range(poly.GetNumberOfPoints()):
+		if int(keep.GetTuple1(idx)) == 1:
+			masked.SetTuple1(idx, poly.GetPointData().GetArray("GruenZone").GetTuple1(idx))
+		else:
+			masked.SetTuple1(idx, float("nan"))
+	if point_data.GetArray("GruenZoneLargest"):
+		point_data.RemoveArray("GruenZoneLargest")
+	point_data.AddArray(masked)
+	point_data.SetActiveScalars("GruenZoneLargest")
+	poly.Modified()
+
+
+def _apply_composite_gruen(poly: vtk.vtkPolyData) -> str:
+	point_data = poly.GetPointData()
+	zone_array = point_data.GetArray("GruenZone")
+	if zone_array is None:
+		raise RuntimeError("GruenZone array missing; enable --gruen-zones")
+	composite = vtk.vtkIntArray()
+	composite.SetName("GruenZoneComposite")
+	composite.SetNumberOfComponents(1)
+	composite.SetNumberOfTuples(zone_array.GetNumberOfTuples())
+	for idx in range(zone_array.GetNumberOfTuples()):
+		zone_value = zone_array.GetTuple1(idx)
+		if zone_value != zone_value:
+			composite.SetTuple1(idx, float("nan"))
+			continue
+		zone_id = int(zone_value)
+		if zone_id in (1, 7):
+			composite_id = 1
+		elif zone_id in (2, 6):
+			composite_id = 2
+		elif zone_id in (3, 5):
+			composite_id = 3
+		elif zone_id in (8, 14):
+			composite_id = 8
+		elif zone_id in (9, 13):
+			composite_id = 9
+		elif zone_id in (10, 12):
+			composite_id = 10
+		else:
+			composite_id = zone_id
+		composite.SetTuple1(idx, composite_id)
+	if point_data.GetArray("GruenZoneComposite"):
+		point_data.RemoveArray("GruenZoneComposite")
+	point_data.AddArray(composite)
+	point_data.SetActiveScalars("GruenZoneComposite")
+	poly.Modified()
+	return "GruenZoneComposite"
+
+
+def _apply_partitioned_gruen(poly: vtk.vtkPolyData) -> str:
+	point_data = poly.GetPointData()
+	zone_array = point_data.GetArray("GruenZone")
+	if zone_array is None:
+		raise RuntimeError("GruenZone array missing; enable --gruen-zones")
+	partition = vtk.vtkIntArray()
+	partition.SetName("GruenZonePartition")
+	partition.SetNumberOfComponents(1)
+	partition.SetNumberOfTuples(zone_array.GetNumberOfTuples())
+	for idx in range(zone_array.GetNumberOfTuples()):
+		zone_value = zone_array.GetTuple1(idx)
+		if zone_value != zone_value:
+			partition.SetTuple1(idx, float("nan"))
+			continue
+		zone_id = int(zone_value)
+		if zone_id in (1, 7, 8, 14):
+			part_id = 1  # top
+		elif zone_id in (2, 6, 9, 13):
+			part_id = 2  # mediumtop
+		elif zone_id in (3, 5, 10, 12):
+			part_id = 3  # mediumbottom
+		elif zone_id in (4, 11):
+			part_id = 4  # bottom
+		else:
+			part_id = zone_id
+		partition.SetTuple1(idx, part_id)
+	if point_data.GetArray("GruenZonePartition"):
+		point_data.RemoveArray("GruenZonePartition")
+	point_data.AddArray(partition)
+	point_data.SetActiveScalars("GruenZonePartition")
+	poly.Modified()
+	return "GruenZonePartition"
+
+
+def _parse_partition_zones(value: str) -> list[int]:
+	if not value:
+		return []
+	mapping = {
+		"top": 1,
+		"mediumtop": 2,
+		"medium-bottom": 3,
+		"mediumbottom": 3,
+		"bottom": 4,
+	}
+	result: list[int] = []
+	for raw in value.split(","):
+		item = raw.strip().lower()
+		if not item:
+			continue
+		if item.isdigit():
+			result.append(int(item))
+			continue
+		mapped = mapping.get(item)
+		if mapped is not None:
+			result.append(mapped)
+	return result
+
+
+def _resolve_hu_range(label: str | None) -> tuple[float, float] | None:
+	if not label:
+		return None
+	name = label.strip().lower()
+	for zone_min, zone_max, _color, zone_label in EZPLAN_ZONE_DEFS:
+		if zone_label.lower() == name:
+			return (zone_min, zone_max)
+	return None
+
+
+def _apply_hu_range_mask(poly: vtk.vtkPolyData, array_name: str, hu_range: tuple[float, float]) -> str:
+	point_data = poly.GetPointData()
+	source_array = point_data.GetArray(array_name)
+	if source_array is None:
+		raise RuntimeError("Scalar array '%s' not found" % array_name)
+	masked_name = f"{array_name}_Range"
+	masked = vtk.vtkDoubleArray()
+	masked.SetName(masked_name)
+	masked.SetNumberOfComponents(1)
+	masked.SetNumberOfTuples(source_array.GetNumberOfTuples())
+	low, high = hu_range
+	for idx in range(source_array.GetNumberOfTuples()):
+		value = source_array.GetTuple1(idx)
+		if value != value:
+			masked.SetTuple1(idx, float("nan"))
+			continue
+		if low <= value <= high:
+			masked.SetTuple1(idx, value)
+		else:
+			masked.SetTuple1(idx, float("nan"))
+	if point_data.GetArray(masked_name):
+		point_data.RemoveArray(masked_name)
+	point_data.AddArray(masked)
+	point_data.SetActiveScalars(masked_name)
+	poly.Modified()
+	return masked_name
+
+
 def _print_summary(path: str, array_name: str, array_range: tuple[float, float], color_label: str):
 	print("Loaded '%s'" % path)
 	print("Using scalar array '%s' (range %.2f .. %.2f)" % (array_name, array_range[0], array_range[1]))
 	print("Color mapping: %s" % color_label)
+
+
+def _add_side_label(renderer: vtk.vtkRenderer, side: str):
+	label = vtk.vtkTextActor()
+	label.SetInput(f"Side: {side}")
+	label.GetTextProperty().SetColor(0.1, 0.1, 0.1)
+	label.GetTextProperty().SetFontSize(18)
+	label.SetDisplayPosition(10, 10)
+	renderer.AddActor2D(label)
+
+
+def _add_hu_summary_label(renderer: vtk.vtkRenderer, text: str):
+	label = vtk.vtkTextActor()
+	label.SetInput(text)
+	label.GetTextProperty().SetColor(0.1, 0.1, 0.1)
+	label.GetTextProperty().SetFontSize(16)
+	label.SetDisplayPosition(10, 35)
+	renderer.AddActor2D(label)
+
+
+def _add_hu_table_label(renderer: vtk.vtkRenderer, rows: list[tuple[str, float]]):
+	lines = ["HU range summary (%):"]
+	for label, pct in rows:
+		lines.append(f"{label}: {pct:.1f}%")
+	label = vtk.vtkTextActor()
+	label.SetInput("\n".join(lines))
+	label.GetTextProperty().SetColor(0.1, 0.1, 0.1)
+	label.GetTextProperty().SetFontSize(14)
+	label.SetDisplayPosition(10, 60)
+	renderer.AddActor2D(label)
+
+
+def _add_dominant_zone_label(renderer: vtk.vtkRenderer, text: str):
+	label = vtk.vtkTextActor()
+	label.SetInput(text)
+	label.GetTextProperty().SetColor(0.1, 0.1, 0.1)
+	label.GetTextProperty().SetFontSize(16)
+	label.SetDisplayPosition(10, 180)
+	renderer.AddActor2D(label)
+
+
+def _build_zone_overlay_actor(
+	poly: vtk.vtkPolyData,
+	zone_array_name: str,
+	zone_id: int,
+	color: tuple[float, float, float] = (1.0, 0.85, 0.1),
+) -> vtk.vtkActor | None:
+	threshold = vtk.vtkThreshold()
+	threshold.SetInputData(poly)
+	threshold.SetInputArrayToProcess(
+		0,
+		0,
+		0,
+		vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS,
+		zone_array_name,
+	)
+	if hasattr(threshold, "ThresholdBetween"):
+		threshold.ThresholdBetween(zone_id, zone_id)
+	else:
+		threshold.SetLowerThreshold(zone_id)
+		threshold.SetUpperThreshold(zone_id)
+		threshold.SetThresholdFunction(vtk.vtkThreshold.THRESHOLD_BETWEEN)
+	threshold.Update()
+	geometry = vtk.vtkGeometryFilter()
+	geometry.SetInputConnection(threshold.GetOutputPort())
+	geometry.Update()
+	zone_poly = geometry.GetOutput()
+	if zone_poly is None or zone_poly.GetNumberOfPoints() == 0:
+		return None
+	mapper = vtk.vtkPolyDataMapper()
+	mapper.SetInputData(zone_poly)
+	mapper.ScalarVisibilityOff()
+	actor = vtk.vtkActor()
+	actor.SetMapper(mapper)
+	actor.GetProperty().SetColor(*color)
+	actor.GetProperty().SetOpacity(0.6)
+	return actor
+
+
+def _compute_hu_table(array: vtk.vtkDataArray) -> list[tuple[str, float]]:
+	valid_values = []
+	for idx in range(array.GetNumberOfTuples()):
+		value = array.GetTuple1(idx)
+		if value == value:
+			valid_values.append(value)
+	if not valid_values:
+		return [(zone[3], 0.0) for zone in EZPLAN_ZONE_DEFS]
+	counts = {zone[3]: 0 for zone in EZPLAN_ZONE_DEFS}
+	for value in valid_values:
+		for zone_min, zone_max, _color, label in EZPLAN_ZONE_DEFS:
+			if zone_min <= value <= zone_max:
+				counts[label] += 1
+				break
+	total = len(valid_values)
+	return [(label, 100.0 * count / total) for label, count in counts.items()]
+
+
+def _pick_zone_array(point_data: vtk.vtkPointData) -> vtk.vtkDataArray | None:
+	return (
+		point_data.GetArray("GruenZonePartition")
+		or point_data.GetArray("GruenZoneComposite")
+		or point_data.GetArray("GruenZoneLargest")
+		or point_data.GetArray("GruenZone")
+	)
+
+
+def _compute_dominant_hu_zone(
+	poly: vtk.vtkPolyData,
+	hu_array_name: str,
+	hu_range: tuple[float, float],
+) -> tuple[int | None, float]:
+	point_data = poly.GetPointData()
+	zone_array = _pick_zone_array(point_data)
+	if zone_array is None:
+		raise RuntimeError("GruenZone array missing; enable --gruen-zones")
+	hu_array = point_data.GetArray(hu_array_name)
+	if hu_array is None:
+		raise RuntimeError("Scalar array '%s' not found" % hu_array_name)
+	counts: dict[int, int] = {}
+	total = 0
+	low, high = hu_range
+	for idx in range(hu_array.GetNumberOfTuples()):
+		value = hu_array.GetTuple1(idx)
+		if value != value:
+			continue
+		if not (low <= value <= high):
+			continue
+		zone_value = zone_array.GetTuple1(idx)
+		if zone_value != zone_value:
+			continue
+		zone_id = int(zone_value)
+		counts[zone_id] = counts.get(zone_id, 0) + 1
+		total += 1
+	if not counts or total == 0:
+		return None, 0.0
+	dominant_zone = max(counts.items(), key=lambda item: item[1])[0]
+	percent = 100.0 * counts[dominant_zone] / total
+	return dominant_zone, percent
 
 
 def main() -> int:
@@ -809,16 +1525,46 @@ def main() -> int:
 			cut_plane_origin = (-cut_plane_origin[0], cut_plane_origin[1], cut_plane_origin[2])
 		if cut_plane_normal is not None:
 			cut_plane_normal = (-cut_plane_normal[0], cut_plane_normal[1], cut_plane_normal[2])
+	elif args.side == "right":
+		if neck_point is not None:
+			neck_point = (-neck_point[0], -neck_point[1], neck_point[2])
+		if cut_plane_origin is not None:
+			cut_plane_origin = (-cut_plane_origin[0], -cut_plane_origin[1], cut_plane_origin[2])
+		if cut_plane_normal is not None:
+			cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], cut_plane_normal[2])
+
+	print(f"Resolved side: {args.side}")
 
 	if args.show_neck_point and neck_point is None:
 		raise RuntimeError("--show-neck-point requires --neck-point or a seedplan.xml")
 	if args.show_cut_plane and (cut_plane_origin is None or cut_plane_normal is None):
 		raise RuntimeError("--show-cut-plane requires cut plane inputs or a seedplan.xml")
 
+	voxel_poly = None
+	if args.voxel_zones:
+		print("Voxel zoning is currently disabled; using triangulated surface instead.")
+		args.voxel_zones = False
+		voxel_poly = None
+	target_poly = poly
+
 	if args.gruen_zones or args.show_gruen_zones or args.gruen_hu_zones:
-		_apply_gruen_zones(poly, neck_point, cut_plane_origin, cut_plane_normal, args.side)
+		_apply_gruen_zones(target_poly, neck_point, cut_plane_origin, cut_plane_normal, args.side)
+		if args.largest_region_only:
+			if args.voxel_zones:
+				_apply_gruen_zones(poly, neck_point, cut_plane_origin, cut_plane_normal, args.side)
+				_apply_largest_region_mask(target_poly, source_poly=poly)
+			else:
+				_apply_largest_region_mask(target_poly)
+		if args.composite_gruen:
+			_apply_composite_gruen(target_poly)
+		if args.partitioned_gruen:
+			_apply_partitioned_gruen(target_poly)
 		if args.print_gruen_stats:
-			zone_array = poly.GetPointData().GetArray("GruenZone")
+			zone_array = (
+				target_poly.GetPointData().GetArray("GruenZonePartition")
+				or target_poly.GetPointData().GetArray("GruenZoneComposite")
+				or target_poly.GetPointData().GetArray("GruenZone")
+			)
 			if zone_array is not None:
 				counts = {idx: 0 for idx in range(1, 15)}
 				for idx in range(zone_array.GetNumberOfTuples()):
@@ -831,9 +1577,9 @@ def main() -> int:
 
 	if args.gruen_hu_zones:
 		metrics_array = _find_metrics_array_for_vtp(args.vtp)
-		selected_hu_array = _pick_scalar_array(poly, args.hu_array)
+		selected_hu_array = _pick_scalar_array(target_poly, args.hu_array)
 		if selected_hu_array is None and metrics_array:
-			selected_hu_array = _pick_scalar_array(poly, metrics_array)
+			selected_hu_array = _pick_scalar_array(target_poly, metrics_array)
 		if selected_hu_array is None:
 			raise RuntimeError("No scalar arrays available for HU masking")
 		args.hu_array = selected_hu_array
@@ -844,18 +1590,75 @@ def main() -> int:
 	scalar_range: tuple[float, float]
 	label_count = len(EZPLAN_ZONE_DEFS) + 1
 	if args.gruen_hu_zones:
-		zones = [int(item) for item in args.gruen_hu_zones.split(",") if item.strip()]
+		if args.partitioned_gruen:
+			zones = _parse_partition_zones(args.gruen_hu_zones)
+		else:
+			zones = [int(item) for item in args.gruen_hu_zones.split(",") if item.strip()]
 		if not zones:
 			raise RuntimeError("--gruen-hu-zones must list at least one zone")
-		active_array = _apply_hu_zone_mask(poly, args.hu_array, zones)
+		active_array = _apply_hu_zone_mask(target_poly, args.hu_array, zones)
+		zone_mask_array = active_array
+		display_range = _resolve_hu_range(args.hu_range)
+		if display_range is None and args.dominant_hu_zone:
+			display_range = _resolve_hu_range(args.dominant_hu_zone)
+		if display_range is not None:
+			active_array = _apply_hu_range_mask(target_poly, active_array, display_range)
+		if args.visible_voxels:
+			zone_array = (
+				target_poly.GetPointData().GetArray("GruenZonePartition")
+				or target_poly.GetPointData().GetArray("GruenZoneComposite")
+				or target_poly.GetPointData().GetArray("GruenZone")
+			)
+			if zone_array is None:
+				raise RuntimeError("GruenZone array missing for visibility masking")
+			if args.side == "right":
+				zone_view_map = {
+					1: "right", 2: "right", 3: "right",
+					5: "left", 6: "left", 7: "left",
+					8: "front", 9: "front", 10: "front",
+					12: "back", 13: "back", 14: "back",
+					4: "back", 11: "back",
+				}
+			else:
+				zone_view_map = {
+					1: "left", 2: "left", 3: "left",
+					5: "right", 6: "right", 7: "right",
+					8: "front", 9: "front", 10: "front",
+					12: "back", 13: "back", 14: "back",
+					4: "back", 11: "back",
+				}
+			views_needed = sorted(set(zone_view_map.values()))
+			visible_by_view: dict[str, set[int]] = {}
+			for view in views_needed:
+				visible_by_view[view] = _compute_visible_ids(target_poly, [view], args.visibility_method)
+			active_array = _apply_visibility_mask_by_zone(
+				target_poly,
+				active_array,
+				zone_array,
+				visible_by_view,
+				zone_view_map,
+			)
 		lookup_table = _build_ezplan_transfer_function()
 		scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
 	elif args.show_gruen_zones:
-		active_array = "GruenZone"
-		lookup_table = _build_gruen_lookup_table()
-		scalar_range = (1.0, 14.0)
-		color_label = "Gruen zones"
-		label_count = 14
+		if args.partitioned_gruen:
+			active_array = "GruenZonePartition"
+			lookup_table = _build_partition_lookup_table()
+			scalar_range = (1.0, 4.0)
+			color_label = "Gruen partitions"
+			label_count = 4
+		elif args.composite_gruen:
+			active_array = "GruenZoneComposite"
+			lookup_table = _build_gruen_lookup_table()
+			scalar_range = (1.0, 14.0)
+			color_label = "Gruen zones"
+			label_count = 14
+		else:
+			active_array = "GruenZoneLargest" if args.largest_region_only else "GruenZone"
+			lookup_table = _build_gruen_lookup_table()
+			scalar_range = (1.0, 14.0)
+			color_label = "Gruen zones"
+			label_count = 14
 	else:
 		lookup_table = _build_ezplan_transfer_function()
 		scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
@@ -869,13 +1672,17 @@ def main() -> int:
 			nan_color = (0.7, 0.7, 0.7, 1.0)
 
 	mapper, array_range, active_array = _configure_mapper(
-		poly,
+		target_poly,
 		active_array,
 		scalar_range=scalar_range,
 		lookup_table=lookup_table,
 		nan_color=nan_color,
 	)
-	actor = _build_actor(mapper, args.wireframe, args.opacity, base_color)
+	if voxel_poly is not None:
+		actor = _build_voxel_glyph_actor(target_poly, args.voxel_size, mapper)
+		actor.GetProperty().SetOpacity(max(0.0, min(args.opacity, 1.0)))
+	else:
+		actor = _build_actor(mapper, args.wireframe, args.opacity, base_color)
 	base_actor = None
 	if base_color is not None and use_scalar_overlay:
 		base_mapper = vtk.vtkPolyDataMapper()
@@ -892,6 +1699,42 @@ def main() -> int:
 	_add_scalar_bar(renderer, lookup_table, color_label, label_count)
 	if args.show_axes:
 		_add_axes(renderer, max(args.axes_size, 1.0))
+	if args.show_side_label:
+		_add_side_label(renderer, args.side)
+	if args.show_hu_summary and args.gruen_hu_zones and args.hu_range:
+		hu_range = _resolve_hu_range(args.hu_range)
+		if hu_range is not None:
+			array = target_poly.GetPointData().GetArray(active_array)
+			if array is not None:
+				valid = 0
+				for idx in range(array.GetNumberOfTuples()):
+					value = array.GetTuple1(idx)
+					if value == value:
+						valid += 1
+				total = array.GetNumberOfTuples()
+				percent = 100.0 * valid / max(total, 1)
+				label = f"{args.hu_range.title()} in zone: {percent:.1f}%"
+				_add_hu_summary_label(renderer, label)
+	if args.hu_table and args.gruen_hu_zones:
+		array_name = zone_mask_array if "zone_mask_array" in locals() else active_array
+		array = target_poly.GetPointData().GetArray(array_name)
+		if array is not None:
+			rows = _compute_hu_table(array)
+			print("HU range summary (percent of non-NaN in zone):")
+			for label, pct in rows:
+				print(f"  {label}: {pct:.1f}%")
+			_add_hu_table_label(renderer, rows)
+	dominant_zone = None
+	if args.dominant_hu_zone:
+		hu_range = _resolve_hu_range(args.dominant_hu_zone)
+		if hu_range is None:
+			raise RuntimeError("Unknown HU tag for --dominant-hu-zone")
+		dominant_zone, percent = _compute_dominant_hu_zone(target_poly, args.hu_array, hu_range)
+		if dominant_zone is not None:
+			message = f"Dominant {args.dominant_hu_zone.title()} zone: {dominant_zone} ({percent:.1f}%)"
+			print(message)
+			if args.show_dominant_hu_zone:
+				_add_dominant_zone_label(renderer, message)
 	if args.show_neck_point and neck_point is not None:
 		neck_actor = _build_neck_point_actor(neck_point)
 		renderer.AddActor(neck_actor)
@@ -899,6 +1742,12 @@ def main() -> int:
 		plane_actor = _build_cut_plane_actor(cut_plane_origin, cut_plane_normal, args.cut_plane_size)
 		if plane_actor is not None:
 			renderer.AddActor(plane_actor)
+	if args.highlight_dominant_hu_zone and dominant_zone is not None:
+		zone_array = _pick_zone_array(target_poly.GetPointData())
+		if zone_array is not None:
+			overlay = _build_zone_overlay_actor(target_poly, zone_array.GetName(), dominant_zone)
+			if overlay is not None:
+				renderer.AddActor(overlay)
 
 	render_window = vtk.vtkRenderWindow()
 	render_window.SetWindowName("Stem Viewer (EZplan LUT)")
