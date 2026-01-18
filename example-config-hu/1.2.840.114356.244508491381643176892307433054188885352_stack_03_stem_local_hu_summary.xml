@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='utf-8'?>
+<huSummary array="VolumeScalars_BelowCutPlane">
+    <zone id="1" name="top">
+        <tag name="Loosening" count="791" percent="28.2904" />
+        <tag name="MicroMove" count="1770" percent="63.3047" />
+        <tag name="Stable" count="204" percent="7.2961" />
+        <tag name="Cortical" count="29" percent="1.0372" />
+    </zone>
+    <zone id="2" name="mediumtop">
+        <tag name="Loosening" count="6444" percent="65.2161" />
+        <tag name="MicroMove" count="3125" percent="31.6264" />
+        <tag name="Stable" count="191" percent="1.9330" />
+        <tag name="Cortical" count="0" percent="0.0000" />
+    </zone>
+    <zone id="3" name="mediumbottom">
+        <tag name="Loosening" count="9980" percent="88.2171" />
+        <tag name="MicroMove" count="967" percent="8.5477" />
+        <tag name="Stable" count="32" percent="0.2829" />
+        <tag name="Cortical" count="0" percent="0.0000" />
+    </zone>
+    <zone id="4" name="bottom">
+        <tag name="Loosening" count="846" percent="85.7143" />
+        <tag name="MicroMove" count="105" percent="10.6383" />
+        <tag name="Stable" count="9" percent="0.9119" />
+        <tag name="Cortical" count="0" percent="0.0000" />
+    </zone>
+</huSummary>

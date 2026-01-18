@@ -10,6 +10,9 @@ python batch_stem_analysis.py \
 
 python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/001-M-30/Mediplan3D/Slicer-exports/active_07/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp  --local-frame --show-gruen-zones --show-cut-plane --show-neck-point  --voxel-zones --voxel-size 1.5 --voxel-shell 1.5 --opacity 1 --base-color 0.7,0.7,0.7 --side left --show-axes --show-side-label  --wireframe --gruen-hu-zones 8
 
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/001-M-30/Mediplan3D/Slicer-exports/active_07/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp  --local-frame --show-gruen-zones --show-cut-plane --show-neck-point --opacity 1 --base-color 0.7,0.7,0.7 --side auto --show-axes --show-side-label --partitioned-gruen   --hu-table --export-hu-xml  --gruen-hu-zones top
+
+
 ###
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
@@ -19,4 +22,4 @@ python batch_stem_analysis.py \
 
 python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/001-M-30/Mediplan3D/Slicer-exports/active_44/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp  --local-frame --show-gruen-zones --show-cut-plane --show-neck-point  --voxel-zones --voxel-size 1.5 --voxel-shell 1.5 --opacity 1 --base-color 0.7,0.7,0.7 --side right --show-axes --show-side-label  --wireframe --gruen-hu-zones 8
 
-
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/001-M-30/Mediplan3D/Slicer-exports/active_44/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp  --local-frame --show-gruen-zones --show-cut-plane --show-neck-point --opacity 1 --base-color 0.7,0.7,0.7 --side auto --show-axes --show-side-label --partitioned-gruen   --hu-table --export-hu-xml  --gruen-hu-zones top

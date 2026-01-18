@@ -199,6 +199,11 @@ def _parse_args() -> argparse.Namespace:
 		help="Overlay the dominant HU zone on the surface",
 	)
 	parser.add_argument(
+		"--export-hu-xml",
+		action="store_true",
+		help="Export HU tag summary per partitioned zone to XML in the VTP folder",
+	)
+	parser.add_argument(
 		"--show-side-label",
 		action="store_true",
 		help="Display resolved side label in the render window",
@@ -207,6 +212,11 @@ def _parse_args() -> argparse.Namespace:
 		"--show-axes",
 		action="store_true",
 		help="Display an XYZ axes frame in the scene",
+	)
+	parser.add_argument(
+		"--rotate-z-180",
+		action="store_true",
+		help="Rotate the stem and annotations 180° around Z for display",
 	)
 	parser.add_argument(
 		"--axes-size",
@@ -1484,9 +1494,89 @@ def _compute_dominant_hu_zone(
 	return dominant_zone, percent
 
 
+def _compute_partition_hu_summary(
+	poly: vtk.vtkPolyData,
+	hu_array_name: str,
+	partition_array: vtk.vtkDataArray,
+) -> dict[int, dict[str, tuple[int, float]]]:
+	point_data = poly.GetPointData()
+	hu_array = point_data.GetArray(hu_array_name)
+	if hu_array is None:
+		raise RuntimeError("Scalar array '%s' not found" % hu_array_name)
+	counts: dict[int, dict[str, int]] = {pid: {z[3]: 0 for z in EZPLAN_ZONE_DEFS} for pid in range(1, 5)}
+	totals: dict[int, int] = {pid: 0 for pid in range(1, 5)}
+	for idx in range(hu_array.GetNumberOfTuples()):
+		part_val = partition_array.GetTuple1(idx)
+		if part_val != part_val:
+			continue
+		part_id = int(part_val)
+		if part_id not in counts:
+			continue
+		value = hu_array.GetTuple1(idx)
+		if value != value:
+			continue
+		totals[part_id] += 1
+		for zone_min, zone_max, _color, label in EZPLAN_ZONE_DEFS:
+			if zone_min <= value <= zone_max:
+				counts[part_id][label] += 1
+				break
+	result: dict[int, dict[str, tuple[int, float]]] = {}
+	for part_id, tag_counts in counts.items():
+		part_total = totals.get(part_id, 0)
+		result[part_id] = {}
+		for label, count in tag_counts.items():
+			percent = 100.0 * count / part_total if part_total else 0.0
+			result[part_id][label] = (count, percent)
+	return result
+
+
+def _export_partition_hu_xml(
+	vtp_path: str,
+	poly: vtk.vtkPolyData,
+	hu_array_name: str,
+) -> str:
+	partition_array = poly.GetPointData().GetArray("GruenZonePartition")
+	if partition_array is None:
+		raise RuntimeError("GruenZonePartition missing; enable --partitioned-gruen")
+	summary = _compute_partition_hu_summary(poly, hu_array_name, partition_array)
+	zone_labels = {
+		1: "top",
+		2: "mediumtop",
+		3: "mediumbottom",
+		4: "bottom",
+	}
+	root = ET.Element("huSummary", attrib={"array": hu_array_name})
+	for part_id in range(1, 5):
+		zone_elem = ET.SubElement(root, "zone", attrib={"id": str(part_id), "name": zone_labels[part_id]})
+		for label, (count, percent) in summary.get(part_id, {}).items():
+			ET.SubElement(
+				zone_elem,
+				"tag",
+				attrib={
+					"name": label,
+					"count": str(count),
+					"percent": f"{percent:.4f}",
+				},
+			)
+	file_path = Path(vtp_path).with_suffix("").name + "_hu_summary.xml"
+	output_path = Path(vtp_path).resolve().parent / file_path
+	tree = ET.ElementTree(root)
+	tree.write(output_path, encoding="utf-8", xml_declaration=True)
+	return str(output_path)
+
+
 def main() -> int:
 	args = _parse_args()
 	poly = _load_polydata(args.vtp)
+	if args.rotate_z_180:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateZ(180.0)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
 
 	needs_local = any([
 		args.show_neck_point,
@@ -1526,6 +1616,13 @@ def main() -> int:
 		if cut_plane_normal is not None:
 			cut_plane_normal = (-cut_plane_normal[0], cut_plane_normal[1], cut_plane_normal[2])
 	elif args.side == "right":
+		if neck_point is not None:
+			neck_point = (-neck_point[0], -neck_point[1], neck_point[2])
+		if cut_plane_origin is not None:
+			cut_plane_origin = (-cut_plane_origin[0], -cut_plane_origin[1], cut_plane_origin[2])
+		if cut_plane_normal is not None:
+			cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], cut_plane_normal[2])
+	if args.rotate_z_180:
 		if neck_point is not None:
 			neck_point = (-neck_point[0], -neck_point[1], neck_point[2])
 		if cut_plane_origin is not None:
@@ -1724,6 +1821,17 @@ def main() -> int:
 			for label, pct in rows:
 				print(f"  {label}: {pct:.1f}%")
 			_add_hu_table_label(renderer, rows)
+	if args.export_hu_xml:
+		if not args.partitioned_gruen:
+			raise RuntimeError("--export-hu-xml requires --partitioned-gruen")
+		metrics_array = _find_metrics_array_for_vtp(args.vtp)
+		selected_hu_array = _pick_scalar_array(target_poly, args.hu_array)
+		if selected_hu_array is None and metrics_array:
+			selected_hu_array = _pick_scalar_array(target_poly, metrics_array)
+		if selected_hu_array is None:
+			raise RuntimeError("No scalar arrays available for HU XML export")
+		path = _export_partition_hu_xml(args.vtp, target_poly, selected_hu_array)
+		print(f"Saved HU summary XML: {path}")
 	dominant_zone = None
 	if args.dominant_hu_zone:
 		hu_range = _resolve_hu_range(args.dominant_hu_zone)
