@@ -90,6 +90,11 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded index (1-based) to process only the specified hip implant configuration per case.",
     )
     parser.add_argument(
+        "--scalar-below-cut-plane",
+        action="store_true",
+        help="Forwarded flag to keep HU values only below the cut plane in a separate scalar array.",
+    )
+    parser.add_argument(
         "--slicer-extra-arg",
         action="append",
         dest="extra_args",
@@ -259,6 +264,8 @@ def _build_command(
     command.append("--no-splash")
     command.append("--compute-stem-scalars")
     command.append("--export-stem-screenshots")
+    if args.scalar_below_cut_plane:
+        command.append("--scalar-below-cut-plane")
     if args.show_neck_point:
         command.append("--show-neck-point")
     if args.show_cut_plane:

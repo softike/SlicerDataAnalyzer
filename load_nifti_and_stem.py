@@ -65,6 +65,14 @@ def parse_args() -> argparse.Namespace:
         help="Probe the image volume onto the stem geometry and attach the resulting scalar field",
     )
     parser.add_argument(
+        "--scalar-below-cut-plane",
+        action="store_true",
+        help=(
+            "When enabled, keep HU values only for stem surface points below the cut plane and store them in a "
+            "separate scalar array."
+        ),
+    )
+    parser.add_argument(
         "--show-neck-point",
         action="store_true",
         help="Render the implant neck point overlay when metadata is available",
@@ -150,6 +158,7 @@ def build_slicer_script(
     pre_rotate_z_180: bool,
     post_rotate_z_180: bool,
     compute_stem_scalars: bool,
+    scalar_below_cut_plane: bool,
     show_neck_point: bool,
     show_cut_plane: bool,
     cut_plane_size: float,
@@ -190,6 +199,8 @@ def build_slicer_script(
         PRE_ROTATE_Z_180 = $PRE_ROTATE_Z_180
         POST_ROTATE_Z_180 = $POST_ROTATE_Z_180
         COMPUTE_STEM_SCALARS = $COMPUTE_STEM_SCALARS
+        SCALAR_BELOW_CUT_PLANE = $SCALAR_BELOW_CUT_PLANE
+        SCALAR_BELOW_CUT_PLANE_SUFFIX = "BelowCutPlane"
         SHOW_NECK_POINT = $SHOW_NECK_POINT
         NECK_POINT_RADIUS = 2.0
         SHOW_CUT_PLANE = $SHOW_CUT_PLANE
@@ -291,6 +302,66 @@ def build_slicer_script(
                     continue
                 return module, uid_member
             return None, None
+
+        def _transform_point(matrix, point):
+            x, y, z = point
+            return (
+                matrix.GetElement(0, 0) * x + matrix.GetElement(0, 1) * y + matrix.GetElement(0, 2) * z + matrix.GetElement(0, 3),
+                matrix.GetElement(1, 0) * x + matrix.GetElement(1, 1) * y + matrix.GetElement(1, 2) * z + matrix.GetElement(1, 3),
+                matrix.GetElement(2, 0) * x + matrix.GetElement(2, 1) * y + matrix.GetElement(2, 2) * z + matrix.GetElement(2, 3),
+            )
+
+        def _transform_vector(matrix, vector):
+            x, y, z = vector
+            return (
+                matrix.GetElement(0, 0) * x + matrix.GetElement(0, 1) * y + matrix.GetElement(0, 2) * z,
+                matrix.GetElement(1, 0) * x + matrix.GetElement(1, 1) * y + matrix.GetElement(1, 2) * z,
+                matrix.GetElement(2, 0) * x + matrix.GetElement(2, 1) * y + matrix.GetElement(2, 2) * z,
+            )
+
+        def _normalize_vector(vec):
+            x, y, z = vec
+            length = (x * x + y * y + z * z) ** 0.5
+            if length <= 1e-6:
+                return None
+            return (x / length, y / length, z / length)
+
+        def _compute_cut_plane_world(stem_info, transform_node, pre_rotate):
+            module, uid_member = _resolve_implant_module(stem_info)
+            if module is None or uid_member is None:
+                return None
+            get_cut_plane = getattr(module, "get_cut_plane", None)
+            if not callable(get_cut_plane):
+                return None
+            try:
+                plane = get_cut_plane(uid_member)
+            except Exception:
+                return None
+            origin = getattr(plane, "origin", None)
+            normal = getattr(plane, "normal", None)
+            if origin is None or normal is None:
+                return None
+            origin_vec = (float(origin[0]), float(origin[1]), float(origin[2]))
+            normal_vec = (float(normal[0]), float(normal[1]), float(normal[2]))
+            if _needs_mathys_flip(stem_info):
+                origin_vec = (-origin_vec[0], -origin_vec[1], origin_vec[2])
+                normal_vec = (-normal_vec[0], -normal_vec[1], normal_vec[2])
+            if pre_rotate:
+                origin_vec = (-origin_vec[0], -origin_vec[1], origin_vec[2])
+                normal_vec = (-normal_vec[0], -normal_vec[1], normal_vec[2])
+            if transform_node is None:
+                normal_unit = _normalize_vector(normal_vec)
+                if normal_unit is None:
+                    return None
+                return origin_vec, normal_unit
+            matrix = vtk.vtkMatrix4x4()
+            transform_node.GetMatrixTransformToParent(matrix)
+            world_origin = _transform_point(matrix, origin_vec)
+            world_normal = _transform_vector(matrix, normal_vec)
+            normal_unit = _normalize_vector(world_normal)
+            if normal_unit is None:
+                return None
+            return world_origin, normal_unit
 
         def _build_neck_point_model(stem_info, transform_node, pre_rotate):
             if not SHOW_NECK_POINT:
@@ -497,6 +568,46 @@ def build_slicer_script(
                     if array:
                         point_data.SetActiveScalars(array_name)
                         poly_data.Modified()
+
+        def _apply_below_cut_plane_mask(model_node, array_name, stem_info, transform_node, pre_rotate):
+            if not SCALAR_BELOW_CUT_PLANE:
+                return array_name
+            plane_info = _compute_cut_plane_world(stem_info, transform_node, pre_rotate)
+            if not plane_info:
+                print("Warning: cut plane unavailable; keeping full scalar field")
+                return array_name
+            origin, normal = plane_info
+            poly_data = model_node.GetPolyData() if model_node else None
+            if poly_data is None:
+                return array_name
+            point_data = poly_data.GetPointData() if poly_data else None
+            if point_data is None:
+                return array_name
+            source_array = point_data.GetArray(array_name)
+            if source_array is None:
+                return array_name
+            num_points = poly_data.GetNumberOfPoints()
+            masked_name = f"{array_name}_{SCALAR_BELOW_CUT_PLANE_SUFFIX}"
+            masked = vtk.vtkDoubleArray()
+            masked.SetName(masked_name)
+            masked.SetNumberOfComponents(1)
+            masked.SetNumberOfTuples(num_points)
+            offset = -(normal[0] * origin[0] + normal[1] * origin[1] + normal[2] * origin[2])
+            for idx in range(num_points):
+                x, y, z = poly_data.GetPoint(idx)
+                signed = normal[0] * x + normal[1] * y + normal[2] * z + offset
+                if signed <= 0.0:
+                    masked.SetTuple1(idx, source_array.GetTuple1(idx))
+                else:
+                    masked.SetTuple1(idx, float("nan"))
+            existing = point_data.GetArray(masked_name)
+            if existing:
+                point_data.RemoveArray(masked_name)
+            point_data.AddArray(masked)
+            point_data.SetActiveScalars(masked_name)
+            poly_data.Modified()
+            print("Applied cut-plane mask; active scalar set to '%s'" % masked_name)
+            return masked_name
 
         def _copy_scalar_array(source_node, target_node, array_name):
             if source_node is target_node:
@@ -1164,16 +1275,24 @@ def build_slicer_script(
                 except Exception as exc:
                     print("Warning: unable to sample scalars onto '%s' (%s)" % (target_node.GetName(), exc))
                 else:
-                    _print_scalar_percentages(target_node, array_name="VolumeScalars")
+                    scalar_name = "VolumeScalars"
+                    scalar_name = _apply_below_cut_plane_mask(
+                        target_node,
+                        scalar_name,
+                        stem_info,
+                        transform_node,
+                        pre_rotate,
+                    )
+                    _print_scalar_percentages(target_node, array_name=scalar_name)
                     lut_node = _ensure_ezplan_lut()
-                    _apply_scalar_display(target_node, array_name="VolumeScalars", color_node=lut_node)
+                    _apply_scalar_display(target_node, array_name=scalar_name, color_node=lut_node)
                     if target_node is not model_node:
-                        _copy_scalar_array(target_node, model_node, "VolumeScalars")
-                        _apply_scalar_display(model_node, array_name="VolumeScalars", color_node=lut_node)
+                        _copy_scalar_array(target_node, model_node, scalar_name)
+                        _apply_scalar_display(model_node, array_name=scalar_name, color_node=lut_node)
                     print("Stored sampled scalars on '{}' and applied '{}' LUT".format(
                         target_node.GetName(), EZPLAN_LUT_NAME
                     ))
-                    summary_for_xml = _summarize_scalar_percentages(model_node, array_name="VolumeScalars")
+                    summary_for_xml = _summarize_scalar_percentages(model_node, array_name=scalar_name)
                     stem_export_path = _export_original_stem(
                         model_node,
                         suffix=suffix,
@@ -1183,7 +1302,7 @@ def build_slicer_script(
                     _write_case_metrics_xml(
                         stem_info,
                         summary_for_xml,
-                        "VolumeScalars",
+                        scalar_name,
                         rotation_mode=rotation_mode,
                         original_vtp_path=stem_export_path,
                         suffix=suffix,
@@ -1306,6 +1425,7 @@ def build_slicer_script(
         PRE_ROTATE_Z_180="True" if pre_rotate_z_180 else "False",
         POST_ROTATE_Z_180="True" if post_rotate_z_180 else "False",
         COMPUTE_STEM_SCALARS="True" if compute_stem_scalars else "False",
+        SCALAR_BELOW_CUT_PLANE="True" if scalar_below_cut_plane else "False",
         SHOW_NECK_POINT="True" if show_neck_point else "False",
         SHOW_CUT_PLANE="True" if show_cut_plane else "False",
         CUT_PLANE_SIZE=f"{max(cut_plane_size, 1.0):.3f}",
@@ -1353,6 +1473,7 @@ def main() -> int:
         args.pre_rotate_z_180,
         args.post_rotate_z_180,
         args.compute_stem_scalars,
+        args.scalar_below_cut_plane,
         args.show_neck_point,
         args.show_cut_plane,
         args.cut_plane_size,
