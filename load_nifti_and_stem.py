@@ -201,9 +201,9 @@ def build_slicer_script(
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
         EXIT_AFTER_RUN = $EXIT_AFTER_RUN
         ROTATION_BEHAVIOR = {
-            "johnson": (True, True),
-            "mathys": (False, True),
-            "medacta": (True, True),
+            "johnson": (True, True, False),
+            "mathys": (True, True, True),
+            "medacta": (True, True, False),
         }
         SCREENSHOT_DIR = os.path.join(os.path.dirname(SEEDPLAN_PATH), "Slicer-exports")
         EZPLAN_LUT_NAME = "EZplan HU Zones"
@@ -1020,7 +1020,10 @@ def build_slicer_script(
             rotation_mode = _resolve_rotation_mode(stem_info)
             pre_rotate = bool(base_pre_rotate)
             post_rotate = bool(base_post_rotate)
-            auto_pre, auto_post = ROTATION_BEHAVIOR.get(rotation_mode, (False, False))
+            auto_pre, auto_post, auto_pre_transform = ROTATION_BEHAVIOR.get(
+                rotation_mode,
+                (False, False, False),
+            )
             mode_label = (rotation_mode or "none").capitalize()
             if auto_pre and not pre_rotate:
                 print("Auto: applying pre-rotate Z 180° for %s stem" % mode_label)
@@ -1031,8 +1034,12 @@ def build_slicer_script(
             if rotation_mode == "medacta" and not post_rotate:
                 print("Forced: applying post-rotate Z 180° for Medacta/AMISTEM stem")
                 post_rotate = True
+            pre_transform = bool(PRE_TRANSFORM_LPS_TO_RAS)
+            if auto_pre_transform and not pre_transform:
+                print("Auto: applying LPS→RAS pre-transform for %s stem" % mode_label)
+                pre_transform = True
 
-            if PRE_TRANSFORM_LPS_TO_RAS:
+            if pre_transform:
                 flip = vtk.vtkMatrix4x4()
                 flip.Identity()
                 flip.SetElement(0, 0, -1)
