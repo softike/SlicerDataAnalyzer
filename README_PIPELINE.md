@@ -13,19 +13,19 @@ python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN2/images/H001 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate --exit-after-run
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --exit-after-run
 
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN2/images/H002 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate --exit-after-run
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --exit-after-run
 
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN2/images/H003 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate --exit-after-run
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --exit-after-run
 ```
 
 > Tip: when a `seedplan.xml` contains multiple femoral stem configurations (active plus histories), the batch driver now processes every configuration automatically. Each configuration gets its own subfolder under the case’s `Slicer-exports/` directory with screenshots, VTP, and metrics XML, so you can review every contact analysis without relaunching Slicer.

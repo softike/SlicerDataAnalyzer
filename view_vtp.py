@@ -199,6 +199,11 @@ def _parse_args() -> argparse.Namespace:
 		help="Overlay the dominant HU zone on the surface",
 	)
 	parser.add_argument(
+		"--headless",
+		action="store_true",
+		help="Run without opening a render window (for batch exports)",
+	)
+	parser.add_argument(
 		"--export-hu-xml",
 		action="store_true",
 		help="Export HU tag summary per partitioned zone to XML in the VTP folder",
@@ -1843,6 +1848,9 @@ def main() -> int:
 			print(message)
 			if args.show_dominant_hu_zone:
 				_add_dominant_zone_label(renderer, message)
+	if args.headless:
+		_print_summary(args.vtp, active_array, array_range, color_label)
+		return 0
 	if args.show_neck_point and neck_point is not None:
 		neck_actor = _build_neck_point_actor(neck_point)
 		renderer.AddActor(neck_actor)
