@@ -93,6 +93,21 @@ def _parse_metric_file(path: Path) -> dict[str, Any]:
             "low": _to_float(zone_elem.get("low")),
             "high": _to_float(zone_elem.get("high")),
         }
+    partition_summary: dict[str, dict[str, float | int]] = {}
+    base_prefix = path.name.replace("_stem_metrics.xml", "")
+    partition_xml = path.with_name(f"{base_prefix}_stem_local_hu_summary.xml")
+    if partition_xml.is_file():
+        try:
+            part_tree = ET.parse(partition_xml)
+            part_root = part_tree.getroot()
+            for zone_elem in part_root.findall("./zone"):
+                zone_name = zone_elem.get("name") or zone_elem.get("id") or "Unknown"
+                partition_summary[zone_name] = {}
+                for tag_elem in zone_elem.findall("./tag"):
+                    tag_name = tag_elem.get("name") or "Unknown"
+                    partition_summary[zone_name][tag_name] = _to_float(tag_elem.get("percent"))
+        except Exception:
+            partition_summary = {}
     data = {
         "path": path,
         "user_id": root.get("userId", ""),
@@ -113,6 +128,7 @@ def _parse_metric_file(path: Path) -> dict[str, Any]:
         "generated_at": root.get("generatedAt", ""),
         "stem": stem_data,
         "zones": zones,
+        "partition_summary": partition_summary,
     }
     return data
 
@@ -129,7 +145,7 @@ def _autosize_columns(sheet) -> None:
         sheet.column_dimensions[column_letter].width = min(max_length + 2, 60)
 
 
-def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[str]) -> None:
+def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[str], partition_zones: list[str], partition_tags: list[str]) -> None:
     headers = [
         "User",
         "Case",
@@ -161,6 +177,9 @@ def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[st
     for zone_name in zone_names:
         headers.append(f"{zone_name} Count")
         headers.append(f"{zone_name} Percent (%)")
+    for zone_name in partition_zones:
+        for tag_name in partition_tags:
+            headers.append(f"{zone_name} {tag_name} (%)")
     sheet.append(headers)
 
     for entry in rows:
@@ -201,6 +220,11 @@ def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[st
             zone = entry["zones"].get(zone_name)
             row.append(zone["count"] if zone else 0)
             row.append(zone["percent"] if zone else 0.0)
+        partition_summary = entry.get("partition_summary") or {}
+        for zone_name in partition_zones:
+            zone_tags = partition_summary.get(zone_name, {})
+            for tag_name in partition_tags:
+                row.append(zone_tags.get(tag_name, 0.0))
         sheet.append(row)
 
     _autosize_columns(sheet)
@@ -269,6 +293,8 @@ def main() -> int:
 
     rows: list[dict[str, Any]] = []
     zone_names: set[str] = set()
+    partition_zone_names: set[str] = set()
+    partition_tag_names: set[str] = set()
     for xml_file in xml_files:
         try:
             entry = _parse_metric_file(xml_file)
@@ -277,6 +303,10 @@ def main() -> int:
             continue
         rows.append(entry)
         zone_names.update(entry["zones"].keys())
+        partition_summary = entry.get("partition_summary") or {}
+        partition_zone_names.update(partition_summary.keys())
+        for tag_map in partition_summary.values():
+            partition_tag_names.update(tag_map.keys())
         if not args.quiet:
             print(f"Loaded metrics from {xml_file}")
 
@@ -285,10 +315,12 @@ def main() -> int:
         return 0
 
     zone_name_list = sorted(zone_names)
+    partition_zone_list = sorted(partition_zone_names)
+    partition_tag_list = sorted(partition_tag_names)
     workbook = Workbook()
     cases_sheet = workbook.active
     cases_sheet.title = "Cases"
-    _populate_cases_sheet(cases_sheet, rows, zone_name_list)
+    _populate_cases_sheet(cases_sheet, rows, zone_name_list, partition_zone_list, partition_tag_list)
     summary_sheet = workbook.create_sheet(title="Users")
     _populate_summary_sheet(summary_sheet, rows, zone_name_list)
     workbook.save(output_path)

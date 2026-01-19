@@ -8,3 +8,4 @@ planning_data_*
 .~lock.*
 *.tar.gz
 *.ods
+*.xlsx
