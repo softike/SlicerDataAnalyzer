@@ -280,6 +280,22 @@ def _parse_args() -> argparse.Namespace:
 		help="Scale factor (mm) for normal glyphs (default: 5.0)",
 	)
 	parser.add_argument(
+		"--show-convex-hull",
+		action="store_true",
+		help="Render the convex envelope of the stem (clipped to cut plane when available)",
+	)
+	parser.add_argument(
+		"--convex-hull-opacity",
+		type=float,
+		default=0.25,
+		help="Opacity for convex envelope overlay (default: 0.25)",
+	)
+	parser.add_argument(
+		"--convex-hull-color",
+		default="0.2,0.2,0.2",
+		help="Convex envelope color as r,g,b (default: 0.2,0.2,0.2)",
+	)
+	parser.add_argument(
 		"--rotate-z-180",
 		action="store_true",
 		help="Force rotate the stem and annotations 180° around Z (auto-applied for left side)",
@@ -1202,6 +1218,51 @@ def _build_normals_actor(poly: vtk.vtkPolyData, scale: float) -> vtk.vtkActor | 
 	return actor
 
 
+def _clip_poly_by_plane(
+	poly: vtk.vtkPolyData,
+	origin: tuple[float, float, float],
+	normal: tuple[float, float, float],
+) -> vtk.vtkPolyData:
+	plane = vtk.vtkPlane()
+	plane.SetOrigin(*origin)
+	plane.SetNormal(*normal)
+	clip = vtk.vtkClipPolyData()
+	clip.SetInputData(poly)
+	clip.SetClipFunction(plane)
+	clip.InsideOutOn()
+	clip.Update()
+	return clip.GetOutput()
+
+
+def _build_convex_hull_actor(
+	poly: vtk.vtkPolyData,
+	cut_plane_origin: tuple[float, float, float] | None,
+	cut_plane_normal: tuple[float, float, float] | None,
+	color: tuple[float, float, float],
+	opacity: float,
+) -> vtk.vtkActor | None:
+	input_poly = poly
+	if cut_plane_origin is not None and cut_plane_normal is not None:
+		input_poly = _clip_poly_by_plane(poly, cut_plane_origin, cut_plane_normal)
+	if input_poly is None or input_poly.GetNumberOfPoints() == 0:
+		return None
+	delaunay = vtk.vtkDelaunay3D()
+	delaunay.SetInputData(input_poly)
+	delaunay.Update()
+	surface = vtk.vtkDataSetSurfaceFilter()
+	surface.SetInputConnection(delaunay.GetOutputPort())
+	surface.Update()
+	mapper = vtk.vtkPolyDataMapper()
+	mapper.SetInputConnection(surface.GetOutputPort())
+	mapper.ScalarVisibilityOff()
+	actor = vtk.vtkActor()
+	actor.SetMapper(mapper)
+	actor.GetProperty().SetColor(*color)
+	actor.GetProperty().SetOpacity(max(0.0, min(opacity, 1.0)))
+	actor.GetProperty().SetRepresentationToSurface()
+	return actor
+
+
 def _build_voxel_shell_polydata(
 	poly: vtk.vtkPolyData,
 	voxel_size: float,
@@ -1894,6 +1955,7 @@ def main() -> int:
 		args.partitioned_gruen_viewports,
 		args.show_junction_point,
 		args.show_junction_axes,
+		args.show_convex_hull,
 	])
 	if needs_local and not args.local_frame:
 		raise RuntimeError("Local-frame options require --local-frame")
@@ -1902,6 +1964,7 @@ def main() -> int:
 	cut_plane_origin = _parse_vector(args.cut_plane_origin) if args.cut_plane_origin else None
 	cut_plane_normal = _parse_vector(args.cut_plane_normal) if args.cut_plane_normal else None
 	base_color = _parse_vector(args.base_color) if args.base_color else None
+	convex_color = _parse_vector(args.convex_hull_color) if args.convex_hull_color else None
 
 	auto_module = None
 	auto_uid = None
@@ -2015,6 +2078,8 @@ def main() -> int:
 		raise RuntimeError("--show-neck-point requires --neck-point or a seedplan.xml")
 	if args.show_cut_plane and (cut_plane_origin is None or cut_plane_normal is None):
 		raise RuntimeError("--show-cut-plane requires cut plane inputs or a seedplan.xml")
+	if args.show_convex_hull and (cut_plane_origin is None or cut_plane_normal is None):
+		raise RuntimeError("--show-convex-hull requires cut plane inputs or a seedplan.xml")
 
 	voxel_poly = None
 	if args.voxel_zones:
@@ -2356,6 +2421,19 @@ def main() -> int:
 			renderer.AddActor(normals_actor)
 		else:
 			print("Warning: unable to compute point normals for visualization.", file=sys.stderr)
+	if args.show_convex_hull:
+		convex_color = convex_color or (0.2, 0.2, 0.2)
+		hull_actor = _build_convex_hull_actor(
+			target_poly,
+			cut_plane_origin,
+			cut_plane_normal,
+			convex_color,
+			args.convex_hull_opacity,
+		)
+		if hull_actor is not None:
+			renderer.AddActor(hull_actor)
+		else:
+			print("Warning: unable to compute convex hull for the current mesh.", file=sys.stderr)
 	if args.highlight_dominant_hu_zone and dominant_zone is not None:
 		zone_array = _pick_zone_array(target_poly.GetPointData())
 		if zone_array is not None:
