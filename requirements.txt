@@ -1,0 +1,31 @@
+# Base requirements for azsliceranalyzer (Slicer Data Analyzer)
+# Install with: pip install -r requirements.txt
+
+# Core scientific stack
+numpy
+matplotlib
+scipy
+
+# VTK rendering (implant/mesh viewers)
+vtk
+pyvista
+pyacvd
+
+# Report/export features
+weasyprint
+pandas
+openpyxl
+
+# Testing
+pytest
+
+# Optional Excel engine (alternative to openpyxl)
+# xlsxwriter
+
+# Optional PDF engine (requires wkhtmltopdf system package)
+# pdfkit
+
+# NOTE: The following are provided by 3D Slicer, not PyPI.
+# If you run inside a Slicer Python environment, you can access them there.
+# slicer
+# DICOMLib

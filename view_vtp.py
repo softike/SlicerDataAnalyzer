@@ -269,6 +269,17 @@ def _parse_args() -> argparse.Namespace:
 		help="Display an XYZ axes frame in the scene",
 	)
 	parser.add_argument(
+		"--show-normals",
+		action="store_true",
+		help="Visualize point normals as arrows",
+	)
+	parser.add_argument(
+		"--normal-scale",
+		type=float,
+		default=5.0,
+		help="Scale factor (mm) for normal glyphs (default: 5.0)",
+	)
+	parser.add_argument(
 		"--rotate-z-180",
 		action="store_true",
 		help="Force rotate the stem and annotations 180° around Z (auto-applied for left side)",
@@ -1137,6 +1148,57 @@ def _build_line_actor(
 	actor.SetMapper(mapper)
 	actor.GetProperty().SetColor(*color)
 	actor.GetProperty().SetOpacity(1.0)
+	return actor
+
+
+def _ensure_point_normals(poly: vtk.vtkPolyData) -> vtk.vtkDataArray | None:
+	point_data = poly.GetPointData()
+	normals = point_data.GetNormals()
+	if normals is None:
+		normals = point_data.GetArray("Normals")
+	if normals is None:
+		normals_filter = vtk.vtkPolyDataNormals()
+		normals_filter.SetInputData(poly)
+		normals_filter.ComputePointNormalsOn()
+		normals_filter.ComputeCellNormalsOff()
+		normals_filter.SplittingOff()
+		normals_filter.ConsistencyOn()
+		normals_filter.AutoOrientNormalsOn()
+		normals_filter.Update()
+		output = normals_filter.GetOutput()
+		computed = output.GetPointData().GetNormals()
+		if computed is not None:
+			point_data.AddArray(computed)
+			point_data.SetNormals(computed)
+			normals = computed
+	return normals
+
+
+def _build_normals_actor(poly: vtk.vtkPolyData, scale: float) -> vtk.vtkActor | None:
+	if scale <= 0:
+		return None
+	normals = _ensure_point_normals(poly)
+	if normals is None:
+		return None
+	arrow = vtk.vtkArrowSource()
+	arrow.SetTipLength(0.25)
+	arrow.SetTipRadius(0.1)
+	arrow.SetShaftRadius(0.03)
+	arrow.Update()
+	glyph = vtk.vtkGlyph3D()
+	glyph.SetInputData(poly)
+	glyph.SetSourceConnection(arrow.GetOutputPort())
+	glyph.SetVectorModeToUseNormal()
+	glyph.OrientOn()
+	glyph.ScalingOff()
+	glyph.SetScaleFactor(scale)
+	glyph.Update()
+	mapper = vtk.vtkPolyDataMapper()
+	mapper.SetInputConnection(glyph.GetOutputPort())
+	actor = vtk.vtkActor()
+	actor.SetMapper(mapper)
+	actor.GetProperty().SetColor(0.2, 0.2, 0.2)
+	actor.GetProperty().SetOpacity(0.9)
 	return actor
 
 
@@ -2288,6 +2350,12 @@ def main() -> int:
 		plane_actor = _build_cut_plane_actor(cut_plane_origin, cut_plane_normal, args.cut_plane_size)
 		if plane_actor is not None:
 			renderer.AddActor(plane_actor)
+	if args.show_normals:
+		normals_actor = _build_normals_actor(target_poly, args.normal_scale)
+		if normals_actor is not None:
+			renderer.AddActor(normals_actor)
+		else:
+			print("Warning: unable to compute point normals for visualization.", file=sys.stderr)
 	if args.highlight_dominant_hu_zone and dominant_zone is not None:
 		zone_array = _pick_zone_array(target_poly.GetPointData())
 		if zone_array is not None:
