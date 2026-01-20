@@ -280,6 +280,23 @@ def _parse_args() -> argparse.Namespace:
 		help="Scale factor (mm) for normal glyphs (default: 5.0)",
 	)
 	parser.add_argument(
+		"--remesh-iso",
+		action="store_true",
+		help="Remesh the surface to near-uniform triangle sizes using pyacvd",
+	)
+	parser.add_argument(
+		"--remesh-target",
+		type=int,
+		default=30000,
+		help="Target number of points for isotropic remesh (default: 30000)",
+	)
+	parser.add_argument(
+		"--remesh-subdivide",
+		type=int,
+		default=2,
+		help="Number of pyacvd subdivisions before clustering (default: 2)",
+	)
+	parser.add_argument(
 		"--show-convex-hull",
 		action="store_true",
 		help="Render the convex envelope of the stem (clipped to cut plane when available)",
@@ -1240,10 +1257,15 @@ def _build_convex_hull_actor(
 	cut_plane_normal: tuple[float, float, float] | None,
 	color: tuple[float, float, float],
 	opacity: float,
+	remesh_iso: bool,
+	remesh_target: int,
+	remesh_subdivide: int,
 ) -> vtk.vtkActor | None:
 	input_poly = poly
 	if cut_plane_origin is not None and cut_plane_normal is not None:
 		input_poly = _clip_poly_by_plane(poly, cut_plane_origin, cut_plane_normal)
+	if remesh_iso:
+		input_poly = _remesh_isotropic(input_poly, remesh_target, remesh_subdivide)
 	if input_poly is None or input_poly.GetNumberOfPoints() == 0:
 		return None
 	delaunay = vtk.vtkDelaunay3D()
@@ -1261,6 +1283,30 @@ def _build_convex_hull_actor(
 	actor.GetProperty().SetOpacity(max(0.0, min(opacity, 1.0)))
 	actor.GetProperty().SetRepresentationToSurface()
 	return actor
+
+
+def _remesh_isotropic(
+	poly: vtk.vtkPolyData,
+	target_points: int,
+	subdivide: int,
+) -> vtk.vtkPolyData:
+	if target_points <= 0:
+		return poly
+	try:
+		import pyvista as pv
+		import pyacvd
+	except ImportError as exc:
+		raise RuntimeError("pyacvd and pyvista are required for --remesh-iso") from exc
+	mesh = pv.wrap(poly)
+	cluster = pyacvd.Clustering(mesh)
+	if subdivide > 0:
+		cluster.subdivide(subdivide)
+	cluster.cluster(target_points)
+	remeshed = cluster.create_mesh().triangulate()
+	sampled = remeshed.sample(mesh)
+	if not isinstance(sampled, pv.PolyData):
+		sampled = sampled.extract_surface()
+	return sampled
 
 
 def _build_voxel_shell_polydata(
@@ -2429,6 +2475,9 @@ def main() -> int:
 			cut_plane_normal,
 			convex_color,
 			args.convex_hull_opacity,
+			args.remesh_iso,
+			args.remesh_target,
+			args.remesh_subdivide,
 		)
 		if hull_actor is not None:
 			renderer.AddActor(hull_actor)
