@@ -20,6 +20,13 @@ EZPLAN_ZONE_DEFS = [
 	(1000.0, 1500.0, (1.0, 0.0, 0.0), "Cortical"),
 ]
 DEFAULT_ARRAY = "VolumeScalars"
+OFFSET_COLORS = (
+	(1.0, 0.85, 0.1),
+	(0.2, 0.75, 1.0),
+	(0.9, 0.4, 0.4),
+	(0.2, 0.9, 0.4),
+	(0.95, 0.6, 0.1),
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -123,6 +130,34 @@ def _parse_args() -> argparse.Namespace:
 		help="Render the cut plane in the local frame",
 	)
 	parser.add_argument(
+		"--show-tip-point",
+		action="store_true",
+		help="Render the tip point marker",
+	)
+	parser.add_argument(
+		"--show-bottom-point",
+		action="store_true",
+		help="Render the bottom point marker",
+	)
+	parser.add_argument(
+		"--show-offset",
+		action="store_true",
+		help="Render the default head-to-stem offset using head_to_stem_offset().",
+	)
+	parser.add_argument(
+		"--offset-head",
+		default="AUTO",
+		help=(
+			"Head enum name to use when computing the offset point (default: AUTO, "
+			"uses HEAD_P0 or the first HEAD_UID)."
+		),
+	)
+	parser.add_argument(
+		"--show-all-offsets",
+		action="store_true",
+		help="Render every head-to-stem offset defined in HEAD_UIDS (if available).",
+	)
+	parser.add_argument(
 		"--cut-plane-origin",
 		help="Cut plane origin in local frame (x,y,z)",
 	)
@@ -169,6 +204,11 @@ def _parse_args() -> argparse.Namespace:
 		"--partitioned-gruen",
 		action="store_true",
 		help="Use partitioned Gruen zones (top, mediumtop, mediumbottom, bottom)",
+	)
+	parser.add_argument(
+		"--partitioned-gruen-viewports",
+		action="store_true",
+		help="Show 4 viewports for partitioned Gruen zones (top/mediumtop/mediumbottom/bottom)",
 	)
 	parser.add_argument(
 		"--hu-range",
@@ -221,7 +261,7 @@ def _parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--rotate-z-180",
 		action="store_true",
-		help="Rotate the stem and annotations 180° around Z for display",
+		help="Force rotate the stem and annotations 180° around Z (auto-applied for left side)",
 	)
 	parser.add_argument(
 		"--axes-size",
@@ -434,16 +474,18 @@ def _resolve_stem_annotation_defaults(
 	tuple[float, float, float] | None,
 	tuple[float, float, float] | None,
 	str | None,
+ 	object | None,
+ 	object | None,
 ]:
 	seedplan_path, inferred_index, inferred_side = _find_seedplan_for_vtp(vtp_path, seedplan)
 	if config_index is None:
 		config_index = inferred_index
 	if seedplan_path is None or not seedplan_path.exists():
-		return None, None, None, inferred_side
+		return None, None, None, inferred_side, None, None
 	try:
 		stem_infos = _extract_stem_infos(seedplan_path)
 	except Exception:
-		return None, None, None, inferred_side
+		return None, None, None, inferred_side, None, None
 	selected_info: dict[str, object] | None = None
 	if config_index is not None:
 		idx = max(config_index - 1, 0)
@@ -460,7 +502,7 @@ def _resolve_stem_annotation_defaults(
 	uid_val = selected_info.get("uid") if selected_info else None
 	module, uid_member = _resolve_implant_module(uid_val if isinstance(uid_val, int) else None)
 	if module is None or uid_member is None:
-		return None, None, None, inferred_side
+		return None, None, None, inferred_side, None, None
 	neck_point = None
 	cut_origin = None
 	cut_normal = None
@@ -483,7 +525,7 @@ def _resolve_stem_annotation_defaults(
 		except Exception:
 			cut_origin = None
 			cut_normal = None
-	return neck_point, cut_origin, cut_normal, inferred_side
+	return neck_point, cut_origin, cut_normal, inferred_side, module, uid_member
 
 
 def _build_ezplan_transfer_function() -> vtk.vtkColorTransferFunction:
@@ -545,6 +587,13 @@ def _parse_vector(value: str) -> tuple[float, float, float]:
 	return (float(parts[0]), float(parts[1]), float(parts[2]))
 
 
+def _coerce_point(value: object) -> tuple[float, float, float]:
+	try:
+		return (float(value[0]), float(value[1]), float(value[2]))
+	except Exception as exc:
+		raise ValueError("Invalid point") from exc
+
+
 def _normalize(vec: tuple[float, float, float]) -> tuple[float, float, float]:
 	x, y, z = vec
 	length = (x * x + y * y + z * z) ** 0.5
@@ -603,6 +652,58 @@ def _compute_principal_axis(poly: vtk.vtkPolyData) -> tuple[tuple[float, float, 
 			var[2][0] * vec[0] + var[2][1] * vec[1] + var[2][2] * vec[2],
 		))
 	return vec, (mean[0], mean[1], mean[2])
+
+
+def _compute_tip_bottom_points(
+	poly: vtk.vtkPolyData,
+	neck_point: tuple[float, float, float] | None,
+) -> tuple[tuple[float, float, float] | None, tuple[float, float, float] | None]:
+	points = poly.GetPoints()
+	if points is None:
+		return None, None
+	count = points.GetNumberOfPoints()
+	if count == 0:
+		return None, None
+	axis_dir, _mean = _compute_principal_axis(poly)
+	min_proj = float("inf")
+	max_proj = float("-inf")
+	min_point = None
+	max_point = None
+	for idx in range(count):
+		x, y, z = points.GetPoint(idx)
+		proj = _dot((x, y, z), axis_dir)
+		if proj < min_proj:
+			min_proj = proj
+			min_point = (x, y, z)
+		if proj > max_proj:
+			max_proj = proj
+			max_point = (x, y, z)
+	if min_point is None or max_point is None:
+		return None, None
+	if neck_point is not None:
+		neck_proj = _dot(neck_point, axis_dir)
+		if abs(neck_proj - min_proj) < abs(neck_proj - max_proj):
+			return min_point, max_point
+	return max_point, min_point
+
+
+def _apply_side_rotation_point(
+	point: tuple[float, float, float] | None,
+	side: str,
+	rotate_z_180: bool,
+) -> tuple[float, float, float] | None:
+	if point is None:
+		return None
+	x, y, z = point
+	if side == "left":
+		x = -x
+	elif side == "right":
+		x = -x
+		y = -y
+	if rotate_z_180:
+		x = -x
+		y = -y
+	return (x, y, z)
 
 
 def _compute_gruen_zone(z_norm: float, group: str) -> int:
@@ -899,6 +1000,51 @@ def _build_neck_point_actor(point: tuple[float, float, float]):
 	actor = vtk.vtkActor()
 	actor.SetMapper(mapper)
 	actor.GetProperty().SetColor(1.0, 0.2, 0.2)
+	return actor
+
+
+def _build_tip_point_actor(point: tuple[float, float, float]):
+	sphere = vtk.vtkSphereSource()
+	sphere.SetCenter(*point)
+	sphere.SetRadius(2.5)
+	sphere.SetThetaResolution(32)
+	sphere.SetPhiResolution(32)
+	sphere.Update()
+	mapper = vtk.vtkPolyDataMapper()
+	mapper.SetInputConnection(sphere.GetOutputPort())
+	actor = vtk.vtkActor()
+	actor.SetMapper(mapper)
+	actor.GetProperty().SetColor(1.0, 0.6, 0.1)
+	return actor
+
+
+def _build_bottom_point_actor(point: tuple[float, float, float]):
+	sphere = vtk.vtkSphereSource()
+	sphere.SetCenter(*point)
+	sphere.SetRadius(2.5)
+	sphere.SetThetaResolution(32)
+	sphere.SetPhiResolution(32)
+	sphere.Update()
+	mapper = vtk.vtkPolyDataMapper()
+	mapper.SetInputConnection(sphere.GetOutputPort())
+	actor = vtk.vtkActor()
+	actor.SetMapper(mapper)
+	actor.GetProperty().SetColor(0.3, 0.85, 1.0)
+	return actor
+
+
+def _build_offset_actor(point: tuple[float, float, float], color: tuple[float, float, float]):
+	sphere = vtk.vtkSphereSource()
+	sphere.SetCenter(*point)
+	sphere.SetRadius(2.5)
+	sphere.SetThetaResolution(24)
+	sphere.SetPhiResolution(24)
+	sphere.Update()
+	mapper = vtk.vtkPolyDataMapper()
+	mapper.SetInputConnection(sphere.GetOutputPort())
+	actor = vtk.vtkActor()
+	actor.SetMapper(mapper)
+	actor.GetProperty().SetColor(*color)
 	return actor
 
 
@@ -1438,6 +1584,15 @@ def _build_zone_overlay_actor(
 	return actor
 
 
+def _add_viewport_label(renderer: vtk.vtkRenderer, text: str, y: int = 10):
+	label = vtk.vtkTextActor()
+	label.SetInput(text)
+	label.GetTextProperty().SetColor(0.1, 0.1, 0.1)
+	label.GetTextProperty().SetFontSize(16)
+	label.SetDisplayPosition(10, y)
+	renderer.AddActor2D(label)
+
+
 def _compute_hu_table(array: vtk.vtkDataArray) -> list[tuple[str, float]]:
 	valid_values = []
 	for idx in range(array.GetNumberOfTuples()):
@@ -1573,15 +1728,6 @@ def _export_partition_hu_xml(
 def main() -> int:
 	args = _parse_args()
 	poly = _load_polydata(args.vtp)
-	if args.rotate_z_180:
-		transform = vtk.vtkTransform()
-		transform.Identity()
-		transform.RotateZ(180.0)
-		transformer = vtk.vtkTransformPolyDataFilter()
-		transformer.SetTransform(transform)
-		transformer.SetInputData(poly)
-		transformer.Update()
-		poly = transformer.GetOutput()
 
 	needs_local = any([
 		args.show_neck_point,
@@ -1589,6 +1735,9 @@ def main() -> int:
 		args.gruen_zones,
 		args.show_gruen_zones,
 		bool(args.gruen_hu_zones),
+		args.show_offset,
+		args.show_all_offsets,
+		args.partitioned_gruen_viewports,
 	])
 	if needs_local and not args.local_frame:
 		raise RuntimeError("Local-frame options require --local-frame")
@@ -1598,11 +1747,21 @@ def main() -> int:
 	cut_plane_normal = _parse_vector(args.cut_plane_normal) if args.cut_plane_normal else None
 	base_color = _parse_vector(args.base_color) if args.base_color else None
 
-	if args.local_frame and (neck_point is None or cut_plane_origin is None or cut_plane_normal is None):
-		auto_neck, auto_origin, auto_normal, auto_side = _resolve_stem_annotation_defaults(
-			args.vtp,
-			args.seedplan,
-			args.config_index,
+	auto_module = None
+	auto_uid = None
+	if args.local_frame and (
+		neck_point is None
+		or cut_plane_origin is None
+		or cut_plane_normal is None
+		or args.show_offset
+		or args.show_all_offsets
+	):
+		auto_neck, auto_origin, auto_normal, auto_side, auto_module, auto_uid = (
+			_resolve_stem_annotation_defaults(
+				args.vtp,
+				args.seedplan,
+				args.config_index,
+			)
 		)
 		if neck_point is None:
 			neck_point = auto_neck
@@ -1612,6 +1771,17 @@ def main() -> int:
 			cut_plane_normal = auto_normal
 		if args.side == "auto" and auto_side:
 			args.side = "left" if auto_side.strip().lower().startswith("l") else "right"
+
+	effective_rotate_z_180 = args.rotate_z_180 or args.side == "left"
+	if effective_rotate_z_180:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateZ(180.0)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
 
 	if args.side == "left":
 		if neck_point is not None:
@@ -1627,13 +1797,61 @@ def main() -> int:
 			cut_plane_origin = (-cut_plane_origin[0], -cut_plane_origin[1], cut_plane_origin[2])
 		if cut_plane_normal is not None:
 			cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], cut_plane_normal[2])
-	if args.rotate_z_180:
+	if effective_rotate_z_180:
 		if neck_point is not None:
 			neck_point = (-neck_point[0], -neck_point[1], neck_point[2])
 		if cut_plane_origin is not None:
 			cut_plane_origin = (-cut_plane_origin[0], -cut_plane_origin[1], cut_plane_origin[2])
 		if cut_plane_normal is not None:
 			cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], cut_plane_normal[2])
+
+	offset_point = None
+	offset_head_label = None
+	all_offset_points: list[tuple[str, tuple[float, float, float]]] = []
+	if args.show_offset or args.show_all_offsets:
+		module = auto_module
+		uid_member = auto_uid
+		if module is None or uid_member is None:
+			raise RuntimeError("Offset points require a seedplan.xml to resolve implant data")
+		head_offset_fn = getattr(module, "head_to_stem_offset", None)
+		if not callable(head_offset_fn):
+			raise RuntimeError("Implant module does not define head_to_stem_offset()")
+		head_enum_cls = getattr(module, "S3UID", None)
+		head_token = (args.offset_head or "").strip().upper()
+		offset_head_uid = None
+		if head_enum_cls is not None and head_token and head_token != "AUTO":
+			offset_head_uid = getattr(head_enum_cls, head_token, None)
+		if offset_head_uid is None:
+			offset_head_uid = getattr(head_enum_cls, "HEAD_P0", None)
+		if offset_head_uid is None:
+			head_uids = getattr(module, "HEAD_UIDS", None)
+			if head_uids:
+				offset_head_uid = head_uids[0]
+		if args.show_offset and offset_head_uid is not None:
+			offset_head_label = (
+				offset_head_uid.name if hasattr(offset_head_uid, "name") else str(offset_head_uid)
+			)
+			try:
+				offset_point = _coerce_point(head_offset_fn(offset_head_uid, uid_member))
+			except ValueError:
+				offset_point = None
+		if args.show_all_offsets:
+			head_uids = getattr(module, "HEAD_UIDS", None)
+			if head_uids:
+				for head_uid in head_uids:
+					label = head_uid.name if hasattr(head_uid, "name") else str(head_uid)
+					try:
+						point = _coerce_point(head_offset_fn(head_uid, uid_member))
+					except ValueError:
+						continue
+					all_offset_points.append((label, point))
+		offset_point = _apply_side_rotation_point(offset_point, args.side, effective_rotate_z_180)
+	if all_offset_points:
+		all_offset_points = [
+				(label, _apply_side_rotation_point(point, args.side, effective_rotate_z_180))
+			for label, point in all_offset_points
+			if point is not None
+		]
 
 	print(f"Resolved side: {args.side}")
 
@@ -1649,7 +1867,12 @@ def main() -> int:
 		voxel_poly = None
 	target_poly = poly
 
-	if args.gruen_zones or args.show_gruen_zones or args.gruen_hu_zones:
+	tip_point = None
+	bottom_point = None
+	if args.show_tip_point or args.show_bottom_point:
+		tip_point, bottom_point = _compute_tip_bottom_points(target_poly, neck_point)
+
+	if args.gruen_zones or args.show_gruen_zones or args.gruen_hu_zones or args.partitioned_gruen_viewports:
 		_apply_gruen_zones(target_poly, neck_point, cut_plane_origin, cut_plane_normal, args.side)
 		if args.largest_region_only:
 			if args.voxel_zones:
@@ -1659,7 +1882,7 @@ def main() -> int:
 				_apply_largest_region_mask(target_poly)
 		if args.composite_gruen:
 			_apply_composite_gruen(target_poly)
-		if args.partitioned_gruen:
+		if args.partitioned_gruen or args.partitioned_gruen_viewports:
 			_apply_partitioned_gruen(target_poly)
 		if args.print_gruen_stats:
 			zone_array = (
@@ -1851,9 +2074,98 @@ def main() -> int:
 	if args.headless:
 		_print_summary(args.vtp, active_array, array_range, color_label)
 		return 0
+	if args.partitioned_gruen_viewports:
+		partition_array = target_poly.GetPointData().GetArray("GruenZonePartition")
+		if partition_array is None:
+			raise RuntimeError("Partitioned viewports require GruenZonePartition")
+		metrics_array = _find_metrics_array_for_vtp(args.vtp)
+		selected_hu_array = _pick_scalar_array(target_poly, args.hu_array)
+		if selected_hu_array is None and metrics_array:
+			selected_hu_array = _pick_scalar_array(target_poly, metrics_array)
+		if selected_hu_array is None:
+			raise RuntimeError("No scalar arrays available for HU heatmap")
+		viewport_lookup = _build_ezplan_transfer_function()
+		viewport_scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
+		viewport_nan_color = None
+		if base_color is not None:
+			viewport_nan_color = (base_color[0], base_color[1], base_color[2], 1.0)
+		else:
+			viewport_nan_color = (0.7, 0.7, 0.7, 1.0)
+		viewport_range = _resolve_hu_range(args.hu_range) if args.hu_range else None
+		base_rgb = base_color if base_color is not None else (0.75, 0.75, 0.75)
+		partition_labels = [
+			("Top", 1, (0.2, 0.6, 1.0)),
+			("Medium top", 2, (0.2, 0.8, 0.2)),
+			("Medium bottom", 3, (0.9, 0.7, 0.2)),
+			("Bottom", 4, (0.8, 0.2, 0.2)),
+		]
+		viewports = [
+			(0.0, 0.5, 0.5, 1.0),
+			(0.5, 0.5, 1.0, 1.0),
+			(0.0, 0.0, 0.5, 0.5),
+			(0.5, 0.0, 1.0, 0.5),
+		]
+		render_window = vtk.vtkRenderWindow()
+		render_window.SetWindowName("Stem Viewer (Partitioned Gruen)")
+		render_window.SetSize(1100, 850)
+		for (label, zone_id, color), viewport in zip(partition_labels, viewports):
+			renderer = vtk.vtkRenderer()
+			renderer.SetViewport(*viewport)
+			renderer.SetBackground(1.0, 1.0, 1.0)
+			viewport_poly = vtk.vtkPolyData()
+			viewport_poly.ShallowCopy(target_poly)
+			viewport_active = _apply_hu_zone_mask(viewport_poly, selected_hu_array, [zone_id])
+			if viewport_range is not None:
+				viewport_active = _apply_hu_range_mask(viewport_poly, viewport_active, viewport_range)
+			viewport_mapper, _viewport_range, _viewport_array = _configure_mapper(
+				viewport_poly,
+				viewport_active,
+				scalar_range=viewport_scalar_range,
+				lookup_table=viewport_lookup,
+				nan_color=viewport_nan_color,
+			)
+			if base_color is not None and use_scalar_overlay:
+				base_mapper = vtk.vtkPolyDataMapper()
+				base_mapper.SetInputData(viewport_poly)
+				base_mapper.ScalarVisibilityOff()
+				base_actor = _build_actor(base_mapper, args.wireframe, args.opacity, base_rgb)
+				renderer.AddActor(base_actor)
+			viewport_actor = _build_actor(viewport_mapper, args.wireframe, args.opacity, base_color)
+			renderer.AddActor(viewport_actor)
+			_add_viewport_label(renderer, f"Partition: {label}")
+			if args.show_axes:
+				_add_axes(renderer, max(args.axes_size, 1.0))
+			renderer.ResetCamera()
+			render_window.AddRenderer(renderer)
+		interactor = vtk.vtkRenderWindowInteractor()
+		interactor.SetRenderWindow(render_window)
+		style = vtk.vtkInteractorStyleTrackballCamera()
+		interactor.SetInteractorStyle(style)
+		_print_summary(args.vtp, active_array, array_range, color_label)
+		interactor.Initialize()
+		render_window.Render()
+		interactor.Start()
+		return 0
 	if args.show_neck_point and neck_point is not None:
 		neck_actor = _build_neck_point_actor(neck_point)
 		renderer.AddActor(neck_actor)
+	if args.show_tip_point and tip_point is not None:
+		tip_actor = _build_tip_point_actor(tip_point)
+		renderer.AddActor(tip_actor)
+	if args.show_bottom_point and bottom_point is not None:
+		bottom_actor = _build_bottom_point_actor(bottom_point)
+		renderer.AddActor(bottom_actor)
+	if args.show_offset and offset_point is not None:
+		offset_actor = _build_offset_actor(offset_point, OFFSET_COLORS[0])
+		renderer.AddActor(offset_actor)
+	if args.show_all_offsets and all_offset_points:
+		for idx, (label, point) in enumerate(all_offset_points):
+			if offset_point is not None and offset_head_label == label:
+				continue
+			color = OFFSET_COLORS[idx % len(OFFSET_COLORS)]
+			if point is not None:
+				offset_actor = _build_offset_actor(point, color)
+				renderer.AddActor(offset_actor)
 	if args.show_cut_plane and cut_plane_origin is not None and cut_plane_normal is not None:
 		plane_actor = _build_cut_plane_actor(cut_plane_origin, cut_plane_normal, args.cut_plane_size)
 		if plane_actor is not None:
