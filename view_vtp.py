@@ -145,6 +145,16 @@ def _parse_args() -> argparse.Namespace:
 		help="Render the default head-to-stem offset using head_to_stem_offset().",
 	)
 	parser.add_argument(
+		"--show-junction-point",
+		action="store_true",
+		help="Render the junction between the neck-offset axis and the stem axis (from bottom).",
+	)
+	parser.add_argument(
+		"--show-junction-axes",
+		action="store_true",
+		help="Render axes from head offset→junction and junction→bottom.",
+	)
+	parser.add_argument(
 		"--offset-head",
 		default="AUTO",
 		help=(
@@ -594,6 +604,18 @@ def _coerce_point(value: object) -> tuple[float, float, float]:
 		raise ValueError("Invalid point") from exc
 
 
+def _vec_add(a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float, float]:
+	return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
+
+
+def _vec_sub(a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float, float]:
+	return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _vec_scale(a: tuple[float, float, float], scale: float) -> tuple[float, float, float]:
+	return (a[0] * scale, a[1] * scale, a[2] * scale)
+
+
 def _normalize(vec: tuple[float, float, float]) -> tuple[float, float, float]:
 	x, y, z = vec
 	length = (x * x + y * y + z * z) ** 0.5
@@ -602,8 +624,38 @@ def _normalize(vec: tuple[float, float, float]) -> tuple[float, float, float]:
 	return (x / length, y / length, z / length)
 
 
+def _vector_length(vec: tuple[float, float, float]) -> float:
+	return (vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]) ** 0.5
+
+
 def _dot(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
 	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _closest_points_between_lines(
+	point1: tuple[float, float, float],
+	dir1: tuple[float, float, float],
+	point2: tuple[float, float, float],
+	dir2: tuple[float, float, float],
+) -> tuple[tuple[float, float, float], tuple[float, float, float]] | None:
+	d1 = _normalize(dir1)
+	d2 = _normalize(dir2)
+	if _vector_length(d1) <= 1e-6 or _vector_length(d2) <= 1e-6:
+		return None
+	r = _vec_sub(point1, point2)
+	a = _dot(d1, d1)
+	e = _dot(d2, d2)
+	b = _dot(d1, d2)
+	c = _dot(d1, r)
+	f = _dot(d2, r)
+	denom = a * e - b * b
+	if abs(denom) <= 1e-6:
+		return None
+	s = (b * f - c * e) / denom
+	t = (a * f - b * c) / denom
+	p1 = _vec_add(point1, _vec_scale(d1, s))
+	p2 = _vec_add(point2, _vec_scale(d2, t))
+	return p1, p2
 
 
 def _cross(a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float, float]:
@@ -1045,6 +1097,46 @@ def _build_offset_actor(point: tuple[float, float, float], color: tuple[float, f
 	actor = vtk.vtkActor()
 	actor.SetMapper(mapper)
 	actor.GetProperty().SetColor(*color)
+	return actor
+
+
+def _build_junction_actor(point: tuple[float, float, float]):
+	sphere = vtk.vtkSphereSource()
+	sphere.SetCenter(*point)
+	sphere.SetRadius(3.0)
+	sphere.SetThetaResolution(32)
+	sphere.SetPhiResolution(32)
+	sphere.Update()
+	mapper = vtk.vtkPolyDataMapper()
+	mapper.SetInputConnection(sphere.GetOutputPort())
+	actor = vtk.vtkActor()
+	actor.SetMapper(mapper)
+	actor.GetProperty().SetColor(1.0, 0.3, 0.9)
+	return actor
+
+
+def _build_line_actor(
+	start: tuple[float, float, float],
+	end: tuple[float, float, float],
+	color: tuple[float, float, float] = (0.2, 0.2, 0.2),
+	radius: float = 0.6,
+) -> vtk.vtkActor:
+	line = vtk.vtkLineSource()
+	line.SetPoint1(*start)
+	line.SetPoint2(*end)
+	line.Update()
+	tube = vtk.vtkTubeFilter()
+	tube.SetInputConnection(line.GetOutputPort())
+	tube.SetRadius(max(radius, 0.1))
+	tube.SetNumberOfSides(18)
+	tube.CappingOn()
+	tube.Update()
+	mapper = vtk.vtkPolyDataMapper()
+	mapper.SetInputConnection(tube.GetOutputPort())
+	actor = vtk.vtkActor()
+	actor.SetMapper(mapper)
+	actor.GetProperty().SetColor(*color)
+	actor.GetProperty().SetOpacity(1.0)
 	return actor
 
 
@@ -1738,6 +1830,8 @@ def main() -> int:
 		args.show_offset,
 		args.show_all_offsets,
 		args.partitioned_gruen_viewports,
+		args.show_junction_point,
+		args.show_junction_axes,
 	])
 	if needs_local and not args.local_frame:
 		raise RuntimeError("Local-frame options require --local-frame")
@@ -1871,6 +1965,22 @@ def main() -> int:
 	bottom_point = None
 	if args.show_tip_point or args.show_bottom_point:
 		tip_point, bottom_point = _compute_tip_bottom_points(target_poly, neck_point)
+
+	junction_point = None
+	if args.show_junction_point:
+		if offset_point is None or neck_point is None:
+			raise RuntimeError("--show-junction-point requires --show-offset (or --show-all-offsets) and --neck-point")
+		if bottom_point is None:
+			_tip, bottom_point = _compute_tip_bottom_points(target_poly, neck_point)
+		if bottom_point is not None:
+			neck_dir = _vec_sub(offset_point, neck_point)
+			axis_dir = (0.0, 0.0, 1.0)
+			closest = _closest_points_between_lines(neck_point, neck_dir, bottom_point, axis_dir)
+			if closest:
+				neck_pt, axis_pt = closest
+				junction_point = _vec_scale(_vec_add(neck_pt, axis_pt), 0.5)
+	if args.show_junction_axes and not args.show_junction_point:
+		raise RuntimeError("--show-junction-axes requires --show-junction-point")
 
 	if args.gruen_zones or args.show_gruen_zones or args.gruen_hu_zones or args.partitioned_gruen_viewports:
 		_apply_gruen_zones(target_poly, neck_point, cut_plane_origin, cut_plane_normal, args.side)
@@ -2166,6 +2276,14 @@ def main() -> int:
 			if point is not None:
 				offset_actor = _build_offset_actor(point, color)
 				renderer.AddActor(offset_actor)
+	if args.show_junction_point and junction_point is not None:
+		junction_actor = _build_junction_actor(junction_point)
+		renderer.AddActor(junction_actor)
+	if args.show_junction_axes and junction_point is not None and offset_point is not None and bottom_point is not None:
+		axis1 = _build_line_actor(offset_point, junction_point, color=(0.9, 0.4, 0.2), radius=0.7)
+		axis2 = _build_line_actor(junction_point, bottom_point, color=(0.2, 0.6, 0.9), radius=0.7)
+		renderer.AddActor(axis1)
+		renderer.AddActor(axis2)
 	if args.show_cut_plane and cut_plane_origin is not None and cut_plane_normal is not None:
 		plane_actor = _build_cut_plane_actor(cut_plane_origin, cut_plane_normal, args.cut_plane_size)
 		if plane_actor is not None:
