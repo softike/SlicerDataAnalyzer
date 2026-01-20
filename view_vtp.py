@@ -329,6 +329,18 @@ def _parse_args() -> argparse.Namespace:
 		help="Voxel spacing (mm) for stem marching cubes reconstruction (default: 1.0)",
 	)
 	parser.add_argument(
+		"--stem-mc-hausdorff",
+		action="store_true",
+		help="Report Hausdorff-style distance stats between original and implicit-remeshed stem",
+	)
+	parser.add_argument(
+		"--stem-mc-hausdorff-sweep",
+		default=None,
+		help=(
+			"Sweep spacing to see convergence, format: start,end,steps (e.g., 2.0,0.4,6)"
+		),
+	)
+	parser.add_argument(
 		"--convex-hull-opacity",
 		type=float,
 		default=0.25,
@@ -1369,6 +1381,66 @@ def _reconstruct_surface_mc(poly: vtk.vtkPolyData, spacing: float) -> vtk.vtkPol
 	return contour.GetOutput()
 
 
+def _parse_hausdorff_sweep(value: str | None) -> tuple[float, float, int] | None:
+	if not value:
+		return None
+	parts = [item.strip() for item in value.split(",") if item.strip()]
+	if len(parts) != 3:
+		raise ValueError("--stem-mc-hausdorff-sweep expects start,end,steps")
+	start = float(parts[0])
+	end = float(parts[1])
+	steps = int(parts[2])
+	if steps < 2:
+		raise ValueError("--stem-mc-hausdorff-sweep steps must be >= 2")
+	return start, end, steps
+
+
+def _distance_stats(points: vtk.vtkPoints, implicit: vtk.vtkImplicitFunction) -> dict[str, float]:
+	count = points.GetNumberOfPoints()
+	if count == 0:
+		return {"max": 0.0, "mean": 0.0, "p95": 0.0, "p99": 0.0, "rms": 0.0}
+	dists: list[float] = []
+	sum_val = 0.0
+	sum_sq = 0.0
+	max_val = 0.0
+	for idx in range(count):
+		x, y, z = points.GetPoint(idx)
+		val = abs(implicit.EvaluateFunction(x, y, z))
+		dists.append(val)
+		sum_val += val
+		sum_sq += val * val
+		if val > max_val:
+			max_val = val
+	dists.sort()
+	mean = sum_val / count
+	rms = (sum_sq / count) ** 0.5
+	idx95 = min(count - 1, int(round(0.95 * (count - 1))))
+	idx99 = min(count - 1, int(round(0.99 * (count - 1))))
+	return {
+		"max": max_val,
+		"mean": mean,
+		"p95": dists[idx95],
+		"p99": dists[idx99],
+		"rms": rms,
+	}
+
+
+def _hausdorff_stats(a: vtk.vtkPolyData, b: vtk.vtkPolyData) -> dict[str, float]:
+	implicit_a = vtk.vtkImplicitPolyDataDistance()
+	implicit_a.SetInput(a)
+	implicit_b = vtk.vtkImplicitPolyDataDistance()
+	implicit_b.SetInput(b)
+	stats_ab = _distance_stats(a.GetPoints(), implicit_b)
+	stats_ba = _distance_stats(b.GetPoints(), implicit_a)
+	return {
+		"max": max(stats_ab["max"], stats_ba["max"]),
+		"mean": 0.5 * (stats_ab["mean"] + stats_ba["mean"]),
+		"p95": max(stats_ab["p95"], stats_ba["p95"]),
+		"p99": max(stats_ab["p99"], stats_ba["p99"]),
+		"rms": 0.5 * (stats_ab["rms"] + stats_ba["rms"]),
+	}
+
+
 def _remesh_isotropic(
 	poly: vtk.vtkPolyData,
 	target_points: int,
@@ -2153,9 +2225,36 @@ def main() -> int:
 			cut_plane_origin = (-cut_plane_origin[0], -cut_plane_origin[1], cut_plane_origin[2])
 		if cut_plane_normal is not None:
 			cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], cut_plane_normal[2])
+	original_poly = poly
+	if args.stem_mc_hausdorff_sweep:
+		try:
+			sweep = _parse_hausdorff_sweep(args.stem_mc_hausdorff_sweep)
+		except ValueError as exc:
+			raise RuntimeError(str(exc)) from exc
+		if sweep is not None:
+			start, end, steps = sweep
+			print("Hausdorff sweep (implicit marching cubes):")
+			for idx in range(steps):
+				factor = idx / (steps - 1)
+				spacing = start + (end - start) * factor
+				recon = _reconstruct_surface_mc(original_poly, spacing)
+				stats = _hausdorff_stats(original_poly, recon)
+				print(
+					f"  spacing={spacing:.4f} -> max={stats['max']:.4f}, "
+					f"mean={stats['mean']:.4f}, rms={stats['rms']:.4f}, "
+					f"p95={stats['p95']:.4f}, p99={stats['p99']:.4f}"
+				)
 	if args.stem_mc:
 		reconstructed = _reconstruct_surface_mc(poly, args.stem_mc_spacing)
 		poly = _interpolate_point_arrays(poly, reconstructed, nearest=True)
+	if args.stem_mc_hausdorff:
+		recon = _reconstruct_surface_mc(original_poly, args.stem_mc_spacing)
+		stats = _hausdorff_stats(original_poly, recon)
+		print(
+			"Hausdorff stats (implicit marching cubes): "
+			f"max={stats['max']:.4f}, mean={stats['mean']:.4f}, rms={stats['rms']:.4f}, "
+			f"p95={stats['p95']:.4f}, p99={stats['p99']:.4f}"
+		)
 
 	offset_point = None
 	offset_head_label = None
