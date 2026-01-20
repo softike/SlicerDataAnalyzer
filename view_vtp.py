@@ -318,6 +318,17 @@ def _parse_args() -> argparse.Namespace:
 		help="Voxel spacing (mm) for marching cubes reconstruction (default: 1.0)",
 	)
 	parser.add_argument(
+		"--stem-mc",
+		action="store_true",
+		help="Reconstruct the stem surface using implicit sampling + marching cubes",
+	)
+	parser.add_argument(
+		"--stem-mc-spacing",
+		type=float,
+		default=1.0,
+		help="Voxel spacing (mm) for stem marching cubes reconstruction (default: 1.0)",
+	)
+	parser.add_argument(
 		"--convex-hull-opacity",
 		type=float,
 		default=0.25,
@@ -1330,6 +1341,34 @@ def _build_convex_hull_actor(
 	return actor
 
 
+def _reconstruct_surface_mc(poly: vtk.vtkPolyData, spacing: float) -> vtk.vtkPolyData:
+	spacing = max(spacing, 0.1)
+	implicit = vtk.vtkImplicitPolyDataDistance()
+	implicit.SetInput(poly)
+	bounds = poly.GetBounds()
+	pad = spacing * 2.0
+	min_x = bounds[0] - pad
+	max_x = bounds[1] + pad
+	min_y = bounds[2] - pad
+	max_y = bounds[3] + pad
+	min_z = bounds[4] - pad
+	max_z = bounds[5] + pad
+	dim_x = max(2, int(round((max_x - min_x) / spacing)) + 1)
+	dim_y = max(2, int(round((max_y - min_y) / spacing)) + 1)
+	dim_z = max(2, int(round((max_z - min_z) / spacing)) + 1)
+	sample = vtk.vtkSampleFunction()
+	sample.SetImplicitFunction(implicit)
+	sample.SetModelBounds(min_x, max_x, min_y, max_y, min_z, max_z)
+	sample.SetSampleDimensions(dim_x, dim_y, dim_z)
+	sample.ComputeNormalsOff()
+	sample.Update()
+	contour = vtk.vtkContourFilter()
+	contour.SetInputConnection(sample.GetOutputPort())
+	contour.SetValue(0, 0.0)
+	contour.Update()
+	return contour.GetOutput()
+
+
 def _remesh_isotropic(
 	poly: vtk.vtkPolyData,
 	target_points: int,
@@ -2114,6 +2153,9 @@ def main() -> int:
 			cut_plane_origin = (-cut_plane_origin[0], -cut_plane_origin[1], cut_plane_origin[2])
 		if cut_plane_normal is not None:
 			cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], cut_plane_normal[2])
+	if args.stem_mc:
+		reconstructed = _reconstruct_surface_mc(poly, args.stem_mc_spacing)
+		poly = _interpolate_point_arrays(poly, reconstructed, nearest=True)
 
 	offset_point = None
 	offset_head_label = None
