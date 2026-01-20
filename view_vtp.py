@@ -302,6 +302,22 @@ def _parse_args() -> argparse.Namespace:
 		help="Render the convex envelope of the stem (clipped to cut plane when available)",
 	)
 	parser.add_argument(
+		"--convex-hull-only",
+		action="store_true",
+		help="Render only the convex envelope (hide the original mesh)",
+	)
+	parser.add_argument(
+		"--convex-hull-mc",
+		action="store_true",
+		help="Reconstruct the convex envelope using implicit sampling + marching cubes",
+	)
+	parser.add_argument(
+		"--convex-hull-mc-spacing",
+		type=float,
+		default=1.0,
+		help="Voxel spacing (mm) for marching cubes reconstruction (default: 1.0)",
+	)
+	parser.add_argument(
 		"--convex-hull-opacity",
 		type=float,
 		default=0.25,
@@ -1260,6 +1276,8 @@ def _build_convex_hull_actor(
 	remesh_iso: bool,
 	remesh_target: int,
 	remesh_subdivide: int,
+	use_marching_cubes: bool,
+	mc_spacing: float,
 ) -> vtk.vtkActor | None:
 	input_poly = poly
 	if cut_plane_origin is not None and cut_plane_normal is not None:
@@ -1274,8 +1292,35 @@ def _build_convex_hull_actor(
 	surface = vtk.vtkDataSetSurfaceFilter()
 	surface.SetInputConnection(delaunay.GetOutputPort())
 	surface.Update()
+	hull_poly = surface.GetOutput()
+	if use_marching_cubes:
+		mc_spacing = max(mc_spacing, 0.1)
+		implicit = vtk.vtkImplicitPolyDataDistance()
+		implicit.SetInput(hull_poly)
+		bounds = hull_poly.GetBounds()
+		pad = mc_spacing * 2.0
+		min_x = bounds[0] - pad
+		max_x = bounds[1] + pad
+		min_y = bounds[2] - pad
+		max_y = bounds[3] + pad
+		min_z = bounds[4] - pad
+		max_z = bounds[5] + pad
+		dim_x = max(2, int(round((max_x - min_x) / mc_spacing)) + 1)
+		dim_y = max(2, int(round((max_y - min_y) / mc_spacing)) + 1)
+		dim_z = max(2, int(round((max_z - min_z) / mc_spacing)) + 1)
+		sample = vtk.vtkSampleFunction()
+		sample.SetImplicitFunction(implicit)
+		sample.SetModelBounds(min_x, max_x, min_y, max_y, min_z, max_z)
+		sample.SetSampleDimensions(dim_x, dim_y, dim_z)
+		sample.ComputeNormalsOff()
+		sample.Update()
+		contour = vtk.vtkContourFilter()
+		contour.SetInputConnection(sample.GetOutputPort())
+		contour.SetValue(0, 0.0)
+		contour.Update()
+		hull_poly = contour.GetOutput()
 	mapper = vtk.vtkPolyDataMapper()
-	mapper.SetInputConnection(surface.GetOutputPort())
+	mapper.SetInputData(hull_poly)
 	mapper.ScalarVisibilityOff()
 	actor = vtk.vtkActor()
 	actor.SetMapper(mapper)
@@ -2299,12 +2344,14 @@ def main() -> int:
 		base_actor = _build_actor(base_mapper, args.wireframe, args.opacity, base_color)
 
 	renderer = vtk.vtkRenderer()
-	if base_actor is not None:
-		renderer.AddActor(base_actor)
-	renderer.AddActor(actor)
+	if not args.convex_hull_only:
+		if base_actor is not None:
+			renderer.AddActor(base_actor)
+		renderer.AddActor(actor)
 	renderer.SetBackground(1.0, 1.0, 1.0)
 	renderer.ResetCamera()
-	_add_scalar_bar(renderer, lookup_table, color_label, label_count)
+	if not args.convex_hull_only:
+		_add_scalar_bar(renderer, lookup_table, color_label, label_count)
 	if args.show_axes:
 		_add_axes(renderer, max(args.axes_size, 1.0))
 	if args.show_side_label:
@@ -2478,6 +2525,8 @@ def main() -> int:
 			args.remesh_iso,
 			args.remesh_target,
 			args.remesh_subdivide,
+			args.convex_hull_mc,
+			args.convex_hull_mc_spacing,
 		)
 		if hull_actor is not None:
 			renderer.AddActor(hull_actor)
