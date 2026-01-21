@@ -348,14 +348,42 @@ def _parse_args() -> argparse.Namespace:
 		),
 	)
 	parser.add_argument(
+		"--envelope-gruen-mode",
+		choices=("position", "normal"),
+		default="position",
+		help="Side assignment for envelope zones: position or normal (default: position)",
+	)
+	parser.add_argument(
 		"--show-envelope-gruen",
 		action="store_true",
 		help="Display the envelope-based Gruen zones",
 	)
 	parser.add_argument(
+		"--envelope-top-zones",
+		type=int,
+		default=None,
+		help="Show only the N largest envelope zones (by point count)",
+	)
+	parser.add_argument(
 		"--show-envelope-contours",
 		action="store_true",
 		help="Overlay zone contour lines for envelope-based Gruen zones",
+	)
+	parser.add_argument(
+		"--show-zone-contours",
+		action="store_true",
+		help="Overlay solid contour lines to delineate zone boundaries",
+	)
+	parser.add_argument(
+		"--solid-zones",
+		action="store_true",
+		help="Render zone colors fully opaque (ignores --opacity for zone views)",
+	)
+	parser.add_argument(
+		"--zone-only",
+		type=int,
+		default=None,
+		help="Show only a specific zone id for the active zone view",
 	)
 	parser.add_argument(
 		"--convex-hull-opacity",
@@ -979,6 +1007,7 @@ def _apply_envelope_gruen_zones(
 	poly: vtk.vtkPolyData,
 	cut_plane_origin: tuple[float, float, float] | None,
 	cut_plane_normal: tuple[float, float, float] | None,
+	mode: str = "position",
 ) -> str:
 	points = poly.GetPoints()
 	if points is None:
@@ -993,6 +1022,11 @@ def _apply_envelope_gruen_zones(
 	height = max(max_z - min_z, 1e-6)
 	band_1 = min_z + height * 0.4
 	band_2 = min_z + height * 0.8
+	normals = None
+	if mode == "normal":
+		normals = _ensure_point_normals(poly)
+		if normals is None:
+			raise RuntimeError("Envelope zones (normal mode) require point normals")
 	zones = vtk.vtkDoubleArray()
 	zones.SetName("EnvelopeZone")
 	zones.SetNumberOfComponents(1)
@@ -1012,19 +1046,19 @@ def _apply_envelope_gruen_zones(
 			band = 1
 		else:
 			band = 2
-		dist_x_max = abs(max_x - x)
-		dist_x_min = abs(x - min_x)
-		dist_y_max = abs(max_y - y)
-		dist_y_min = abs(y - min_y)
-		min_dist = min(dist_x_max, dist_x_min, dist_y_max, dist_y_min)
-		if min_dist == dist_x_max:
-			face = 0  # +X
-		elif min_dist == dist_x_min:
-			face = 1  # -X
-		elif min_dist == dist_y_max:
-			face = 2  # +Y
+		if mode == "normal":
+			nx, ny, _nz = normals.GetTuple(idx)
+			if abs(nx) >= abs(ny):
+				face = 0 if nx >= 0 else 1
+			else:
+				face = 2 if ny >= 0 else 3
 		else:
-			face = 3  # -Y
+			dx = x - center_x
+			dy = y - center_y
+			if abs(dx) >= abs(dy):
+				face = 0 if dx >= 0 else 1
+			else:
+				face = 2 if dy >= 0 else 3
 		zone_id = band * 4 + face + 1
 		zones.SetTuple1(idx, float(zone_id))
 	point_data = poly.GetPointData()
@@ -1036,9 +1070,84 @@ def _apply_envelope_gruen_zones(
 	return "EnvelopeZone"
 
 
+def _apply_top_envelope_zones(poly: vtk.vtkPolyData, top_n: int) -> str:
+	if top_n <= 0:
+		return "EnvelopeZone"
+	point_data = poly.GetPointData()
+	zone_array = point_data.GetArray("EnvelopeZone")
+	if zone_array is None:
+		raise RuntimeError("EnvelopeZone array missing")
+	counts = {idx: 0 for idx in range(1, 13)}
+	for idx in range(zone_array.GetNumberOfTuples()):
+		zone_val = zone_array.GetTuple1(idx)
+		if zone_val != zone_val:
+			continue
+		zone_id = int(zone_val)
+		if zone_id in counts:
+			counts[zone_id] += 1
+	ordered = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+	keep_ids = {zone_id for zone_id, _count in ordered[:top_n]}
+	masked = vtk.vtkDoubleArray()
+	masked.SetName("EnvelopeZoneTop")
+	masked.SetNumberOfComponents(1)
+	masked.SetNumberOfTuples(zone_array.GetNumberOfTuples())
+	for idx in range(zone_array.GetNumberOfTuples()):
+		zone_val = zone_array.GetTuple1(idx)
+		if zone_val != zone_val:
+			masked.SetTuple1(idx, float("nan"))
+			continue
+		zone_id = int(zone_val)
+		if zone_id in keep_ids:
+			masked.SetTuple1(idx, float(zone_id))
+		else:
+			masked.SetTuple1(idx, float("nan"))
+	if point_data.GetArray("EnvelopeZoneTop"):
+		point_data.RemoveArray("EnvelopeZoneTop")
+	point_data.AddArray(masked)
+	point_data.SetActiveScalars("EnvelopeZoneTop")
+	poly.Modified()
+	return "EnvelopeZoneTop"
+
+
+def _apply_zone_only(poly: vtk.vtkPolyData, array_name: str, zone_id: int) -> str:
+	point_data = poly.GetPointData()
+	zone_array = point_data.GetArray(array_name)
+	if zone_array is None:
+		raise RuntimeError(f"Zone array '{array_name}' not found")
+	masked_name = f"{array_name}_Only"
+	masked = vtk.vtkDoubleArray()
+	masked.SetName(masked_name)
+	masked.SetNumberOfComponents(1)
+	masked.SetNumberOfTuples(zone_array.GetNumberOfTuples())
+	for idx in range(zone_array.GetNumberOfTuples()):
+		value = zone_array.GetTuple1(idx)
+		if value != value or int(value) != zone_id:
+			masked.SetTuple1(idx, float("nan"))
+		else:
+			masked.SetTuple1(idx, float(zone_id))
+	if point_data.GetArray(masked_name):
+		point_data.RemoveArray(masked_name)
+	point_data.AddArray(masked)
+	point_data.SetActiveScalars(masked_name)
+	poly.Modified()
+	return masked_name
+
+
+def _count_zone_ids(array: vtk.vtkDataArray) -> tuple[int, dict[int, int]]:
+	counts: dict[int, int] = {}
+	for idx in range(array.GetNumberOfTuples()):
+		value = array.GetTuple1(idx)
+		if value != value:
+			continue
+		zone_id = int(value)
+		counts[zone_id] = counts.get(zone_id, 0) + 1
+	return len(counts), counts
+
+
 def _build_zone_contours_actor(
 	poly: vtk.vtkPolyData,
 	array_name: str,
+	max_zone: int,
 	color: tuple[float, float, float] = (0.1, 0.1, 0.1),
 	radius: float = 0.4,
 ) -> vtk.vtkActor | None:
@@ -1055,7 +1164,7 @@ def _build_zone_contours_actor(
 		vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS,
 		array_name,
 	)
-	for idx in range(1, 12):
+	for idx in range(1, max_zone):
 		contour.SetValue(idx - 1, idx + 0.5)
 	contour.Update()
 	if contour.GetOutput().GetNumberOfPoints() == 0:
@@ -2508,7 +2617,20 @@ def main() -> int:
 						print(f"  Zone {zone_id}: {counts[zone_id]}")
 
 	if args.envelope_gruen or args.show_envelope_gruen:
-		_apply_envelope_gruen_zones(target_poly, cut_plane_origin, cut_plane_normal)
+		_apply_envelope_gruen_zones(
+			target_poly,
+			cut_plane_origin,
+			cut_plane_normal,
+			mode=args.envelope_gruen_mode,
+		)
+		if args.envelope_top_zones is not None:
+			_apply_top_envelope_zones(target_poly, args.envelope_top_zones)
+		zone_array = target_poly.GetPointData().GetArray(
+			"EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone"
+		)
+		if zone_array is not None:
+			zone_count, _counts = _count_zone_ids(zone_array)
+			print(f"Envelope zones found: {zone_count}")
 
 	if args.gruen_hu_zones:
 		metrics_array = _find_metrics_array_for_vtp(args.vtp)
@@ -2595,7 +2717,7 @@ def main() -> int:
 			color_label = "Gruen zones"
 			label_count = 14
 	elif args.show_envelope_gruen:
-		active_array = "EnvelopeZone"
+		active_array = "EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone"
 		lookup_table = _build_envelope_lookup_table()
 		scalar_range = (1.0, 12.0)
 		color_label = "Envelope zones"
@@ -2603,6 +2725,8 @@ def main() -> int:
 	else:
 		lookup_table = _build_ezplan_transfer_function()
 		scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
+	if args.zone_only is not None and (args.show_gruen_zones or args.show_envelope_gruen):
+		active_array = _apply_zone_only(target_poly, active_array, args.zone_only)
 
 	use_scalar_overlay = True
 	nan_color = None
@@ -2619,11 +2743,13 @@ def main() -> int:
 		lookup_table=lookup_table,
 		nan_color=nan_color,
 	)
+	zone_view = args.show_gruen_zones or args.show_envelope_gruen
+	actor_opacity = 1.0 if (args.solid_zones and zone_view) else args.opacity
 	if voxel_poly is not None:
 		actor = _build_voxel_glyph_actor(target_poly, args.voxel_size, mapper)
-		actor.GetProperty().SetOpacity(max(0.0, min(args.opacity, 1.0)))
+		actor.GetProperty().SetOpacity(max(0.0, min(actor_opacity, 1.0)))
 	else:
-		actor = _build_actor(mapper, args.wireframe, args.opacity, base_color)
+		actor = _build_actor(mapper, args.wireframe, actor_opacity, base_color)
 	base_actor = None
 	if base_color is not None and use_scalar_overlay:
 		base_mapper = vtk.vtkPolyDataMapper()
@@ -2821,7 +2947,20 @@ def main() -> int:
 		else:
 			print("Warning: unable to compute convex hull for the current mesh.", file=sys.stderr)
 	if args.show_envelope_contours:
-		contour_actor = _build_zone_contours_actor(target_poly, "EnvelopeZone")
+		contour_actor = _build_zone_contours_actor(target_poly, "EnvelopeZone", 12)
+		if contour_actor is not None:
+			renderer.AddActor(contour_actor)
+	if args.show_zone_contours:
+		if args.show_envelope_gruen:
+			contour_actor = _build_zone_contours_actor(target_poly, "EnvelopeZone", 12)
+		elif args.show_gruen_zones:
+			max_zone = 4 if args.partitioned_gruen else (14 if not args.composite_gruen else 14)
+			array_name = "GruenZonePartition" if args.partitioned_gruen else (
+				"GruenZoneComposite" if args.composite_gruen else "GruenZoneLargest"
+			)
+			contour_actor = _build_zone_contours_actor(target_poly, array_name, max_zone)
+		else:
+			contour_actor = None
 		if contour_actor is not None:
 			renderer.AddActor(contour_actor)
 	if args.highlight_dominant_hu_zone and dominant_zone is not None:
