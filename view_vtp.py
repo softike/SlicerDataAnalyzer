@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 import xml.etree.ElementTree as ET
@@ -761,6 +762,26 @@ def _normalize(vec: tuple[float, float, float]) -> tuple[float, float, float]:
 	if length <= 1e-6:
 		return (0.0, 0.0, 0.0)
 	return (x / length, y / length, z / length)
+
+
+def _rotate_z_point(point: tuple[float, float, float] | None, degrees: float) -> tuple[float, float, float] | None:
+	if point is None:
+		return None
+	rad = math.radians(degrees)
+	cos_v = math.cos(rad)
+	sin_v = math.sin(rad)
+	x, y, z = point
+	return (x * cos_v - y * sin_v, x * sin_v + y * cos_v, z)
+
+
+def _rotate_z_vector(vec: tuple[float, float, float] | None, degrees: float) -> tuple[float, float, float] | None:
+	if vec is None:
+		return None
+	rad = math.radians(degrees)
+	cos_v = math.cos(rad)
+	sin_v = math.sin(rad)
+	x, y, z = vec
+	return _normalize((x * cos_v - y * sin_v, x * sin_v + y * cos_v, z))
 
 
 def _vector_length(vec: tuple[float, float, float]) -> float:
@@ -2500,6 +2521,7 @@ def main() -> int:
 
 	auto_module = None
 	auto_uid = None
+	amistem_rotation_deg = 0.0
 	if args.local_frame and (
 		neck_point is None
 		or cut_plane_origin is None
@@ -2522,8 +2544,26 @@ def main() -> int:
 			cut_plane_normal = auto_normal
 		if args.side == "auto" and auto_side:
 			args.side = "left" if auto_side.strip().lower().startswith("l") else "right"
+		if auto_module is not None and getattr(auto_module, "__name__", "") == "amedacta_complete":
+			if args.side == "right":
+				amistem_rotation_deg = 90.0
+			elif args.side == "left":
+				amistem_rotation_deg = 90.0
+			if amistem_rotation_deg:
+				neck_point = _rotate_z_point(neck_point, amistem_rotation_deg)
+				cut_plane_origin = _rotate_z_point(cut_plane_origin, amistem_rotation_deg)
+				cut_plane_normal = _rotate_z_vector(cut_plane_normal, amistem_rotation_deg)
 
 	effective_rotate_z_180 = args.rotate_z_180 or args.side == "left"
+	if amistem_rotation_deg:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateZ(amistem_rotation_deg)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
 	if effective_rotate_z_180:
 		transform = vtk.vtkTransform()
 		transform.Identity()
@@ -2616,6 +2656,8 @@ def main() -> int:
 				offset_point = _coerce_point(head_offset_fn(offset_head_uid, uid_member))
 			except ValueError:
 				offset_point = None
+			if amistem_rotation_deg:
+				offset_point = _rotate_z_point(offset_point, amistem_rotation_deg)
 		if args.show_all_offsets:
 			head_uids = getattr(module, "HEAD_UIDS", None)
 			if head_uids:
@@ -2625,6 +2667,8 @@ def main() -> int:
 						point = _coerce_point(head_offset_fn(head_uid, uid_member))
 					except ValueError:
 						continue
+					if amistem_rotation_deg:
+						point = _rotate_z_point(point, amistem_rotation_deg)
 					all_offset_points.append((label, point))
 		offset_point = _apply_side_rotation_point(offset_point, args.side, effective_rotate_z_180)
 	if all_offset_points:
