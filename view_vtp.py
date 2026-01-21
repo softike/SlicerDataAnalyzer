@@ -330,6 +330,16 @@ def _parse_args() -> argparse.Namespace:
 		help="Voxel spacing (mm) for stem marching cubes reconstruction (default: 1.0)",
 	)
 	parser.add_argument(
+		"--cache-remesh",
+		action="store_true",
+		help="Cache remeshed stem/envelope VTPs under the Slicer export folder",
+	)
+	parser.add_argument(
+		"--cache-remesh-refresh",
+		action="store_true",
+		help="Force recompute remesh caches even if cache files exist",
+	)
+	parser.add_argument(
 		"--stem-mc-hausdorff",
 		action="store_true",
 		help="Report Hausdorff-style distance stats between original and implicit-remeshed stem",
@@ -1758,7 +1768,21 @@ def _build_convex_hull_actor(
 	remesh_subdivide: int,
 	use_marching_cubes: bool,
 	mc_spacing: float,
+	cache_path: Path | None = None,
+	refresh_cache: bool = False,
 ) -> vtk.vtkActor | None:
+	if cache_path is not None and cache_path.exists() and not refresh_cache:
+		cached = _read_vtp_cache(cache_path)
+		if cached is not None and cached.GetNumberOfPoints() > 0:
+			mapper = vtk.vtkPolyDataMapper()
+			mapper.SetInputData(cached)
+			mapper.ScalarVisibilityOff()
+			actor = vtk.vtkActor()
+			actor.SetMapper(mapper)
+			actor.GetProperty().SetColor(*color)
+			actor.GetProperty().SetOpacity(max(0.0, min(opacity, 1.0)))
+			actor.GetProperty().SetRepresentationToSurface()
+			return actor
 	input_poly = poly
 	if cut_plane_origin is not None and cut_plane_normal is not None:
 		input_poly = _clip_poly_by_plane(poly, cut_plane_origin, cut_plane_normal)
@@ -1799,6 +1823,8 @@ def _build_convex_hull_actor(
 		contour.SetValue(0, 0.0)
 		contour.Update()
 		hull_poly = contour.GetOutput()
+	if cache_path is not None:
+		_write_vtp_cache(hull_poly, cache_path)
 	mapper = vtk.vtkPolyDataMapper()
 	mapper.SetInputData(hull_poly)
 	mapper.ScalarVisibilityOff()
@@ -1836,6 +1862,27 @@ def _reconstruct_surface_mc(poly: vtk.vtkPolyData, spacing: float) -> vtk.vtkPol
 	contour.SetValue(0, 0.0)
 	contour.Update()
 	return contour.GetOutput()
+
+
+def _read_vtp_cache(path: Path) -> vtk.vtkPolyData | None:
+	reader = vtk.vtkXMLPolyDataReader()
+	reader.SetFileName(str(path))
+	reader.Update()
+	output = reader.GetOutput()
+	if output is None or output.GetNumberOfPoints() == 0:
+		return None
+	return output
+
+
+def _write_vtp_cache(poly: vtk.vtkPolyData, path: Path) -> None:
+	try:
+		path.parent.mkdir(parents=True, exist_ok=True)
+		writer = vtk.vtkXMLPolyDataWriter()
+		writer.SetFileName(str(path))
+		writer.SetInputData(poly)
+		writer.Write()
+	except OSError:
+		pass
 
 
 def _parse_hausdorff_sweep(value: str | None) -> tuple[float, float, int] | None:
@@ -2787,7 +2834,20 @@ def main() -> int:
 					f"p95={stats['p95']:.4f}, p99={stats['p99']:.4f}"
 				)
 	if args.stem_mc:
-		reconstructed = _reconstruct_surface_mc(poly, args.stem_mc_spacing)
+		reconstructed = None
+		stem_cache_path = None
+		if args.cache_remesh:
+			stem_cache_path = (
+				Path(args.vtp).resolve().parent
+				/ f"{Path(args.vtp).stem}_stem_mc_{args.stem_mc_spacing:.3f}.vtp"
+			)
+			if stem_cache_path.exists() and not args.cache_remesh_refresh:
+				reconstructed = _read_vtp_cache(stem_cache_path)
+			if reconstructed is None:
+				reconstructed = _reconstruct_surface_mc(poly, args.stem_mc_spacing)
+				_write_vtp_cache(reconstructed, stem_cache_path)
+		if reconstructed is None:
+			reconstructed = _reconstruct_surface_mc(poly, args.stem_mc_spacing)
 		poly = _interpolate_point_arrays(poly, reconstructed, nearest=True)
 	if args.stem_mc_hausdorff:
 		recon = _reconstruct_surface_mc(original_poly, args.stem_mc_spacing)
@@ -3268,6 +3328,15 @@ def main() -> int:
 			print("Warning: unable to compute point normals for visualization.", file=sys.stderr)
 	if args.show_convex_hull:
 		convex_color = convex_color or (0.2, 0.2, 0.2)
+		hull_cache_path = None
+		if args.cache_remesh and args.convex_hull_mc:
+			hull_cache_path = (
+				Path(args.vtp).resolve().parent
+				/ (
+					f"{Path(args.vtp).stem}_hull_mc_{args.convex_hull_mc_spacing:.3f}"
+					f"_iso{int(args.remesh_iso)}_t{args.remesh_target}_s{args.remesh_subdivide}.vtp"
+				)
+			)
 		hull_actor = _build_convex_hull_actor(
 			target_poly,
 			cut_plane_origin,
@@ -3279,6 +3348,8 @@ def main() -> int:
 			args.remesh_subdivide,
 			args.convex_hull_mc,
 			args.convex_hull_mc_spacing,
+			hull_cache_path,
+			args.cache_remesh_refresh,
 		)
 		if hull_actor is not None:
 			renderer.AddActor(hull_actor)
