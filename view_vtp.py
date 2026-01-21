@@ -983,6 +983,7 @@ def _apply_gruen_zones(
 	cut_plane_origin: tuple[float, float, float] | None,
 	cut_plane_normal: tuple[float, float, float] | None,
 	side: str,
+	cut_plane_mode: str = "below",
 ) -> str:
 	axis_dir, mean = _compute_principal_axis(poly)
 	point_data = poly.GetPointData()
@@ -1017,10 +1018,61 @@ def _apply_gruen_zones(
 		if abs(neck_proj - min_proj) < abs(neck_proj - max_proj):
 			min_proj, max_proj = max_proj, min_proj
 			axis_dir = (-axis_dir[0], -axis_dir[1], -axis_dir[2])
-	if cut_plane_origin is not None:
+	bottom_point, _tip = _compute_tip_bottom_points(poly, neck_point)
+	if bottom_point is not None and neck_point is not None:
+		bottom_proj = axis_dir[0] * bottom_point[0] + axis_dir[1] * bottom_point[1] + axis_dir[2] * bottom_point[2]
+		neck_proj = axis_dir[0] * neck_point[0] + axis_dir[1] * neck_point[1] + axis_dir[2] * neck_point[2]
+		min_proj = bottom_proj
+		max_proj = neck_proj
+		if max_proj < min_proj:
+			min_proj, max_proj = max_proj, min_proj
+			axis_dir = (-axis_dir[0], -axis_dir[1], -axis_dir[2])
+	if cut_plane_origin is not None and cut_plane_normal is not None:
 		cut_proj = axis_dir[0] * cut_plane_origin[0] + axis_dir[1] * cut_plane_origin[1] + axis_dir[2] * cut_plane_origin[2]
-		if cut_proj > min_proj:
+		neck_side = None
+		if neck_point is not None:
+			neck_side = (
+				(neck_point[0] - cut_plane_origin[0]) * cut_plane_normal[0]
+				+ (neck_point[1] - cut_plane_origin[1]) * cut_plane_normal[1]
+				+ (neck_point[2] - cut_plane_origin[2]) * cut_plane_normal[2]
+			)
+		def _is_below_plane(sign: float) -> bool:
+			if neck_side is None or abs(neck_side) < 1e-6:
+				return sign <= 0.0
+			return sign <= 0.0 if neck_side > 0.0 else sign >= 0.0
+		keep_below = cut_plane_mode != "above"
+		filtered_min = float("inf")
+		filtered_max = float("-inf")
+		found = False
+		for idx in range(count):
+			x, y, z = points.GetPoint(idx)
+			plane_sign = (
+				(x - cut_plane_origin[0]) * cut_plane_normal[0]
+				+ (y - cut_plane_origin[1]) * cut_plane_normal[1]
+				+ (z - cut_plane_origin[2]) * cut_plane_normal[2]
+			)
+			is_below = _is_below_plane(plane_sign)
+			if keep_below != is_below:
+				continue
+			proj = axis_dir[0] * x + axis_dir[1] * y + axis_dir[2] * z
+			filtered_min = min(filtered_min, proj)
+			filtered_max = max(filtered_max, proj)
+			found = True
+		if found:
+			min_proj, max_proj = filtered_min, filtered_max
+		if cut_plane_mode == "above":
+			min_proj = cut_proj
+		else:
 			max_proj = cut_proj
+		align = (
+			axis_dir[0] * cut_plane_normal[0]
+			+ axis_dir[1] * cut_plane_normal[1]
+			+ axis_dir[2] * cut_plane_normal[2]
+		)
+		want_positive = cut_plane_mode == "above"
+		if (align > 0 and not want_positive) or (align < 0 and want_positive):
+			axis_dir = (-axis_dir[0], -axis_dir[1], -axis_dir[2])
+			min_proj, max_proj = -max_proj, -min_proj
 	axis_len = max(max_proj - min_proj, 1e-6)
 	x_axis = (1.0, 0.0, 0.0)
 	if side == "right":
@@ -2050,6 +2102,27 @@ def _compute_visible_ids(
 	return visible_ids
 
 
+def _set_camera_z_up(renderer: vtk.vtkRenderer, bounds: tuple[float, float, float, float, float, float] | None) -> None:
+	if bounds is None:
+		renderer.ResetCamera()
+		camera = renderer.GetActiveCamera()
+		camera.SetViewUp(0.0, 0.0, 1.0)
+		renderer.ResetCameraClippingRange()
+		return
+	center = (
+		(bounds[0] + bounds[1]) * 0.5,
+		(bounds[2] + bounds[3]) * 0.5,
+		(bounds[4] + bounds[5]) * 0.5,
+	)
+	max_dim = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+	dist = max(max_dim * 2.5, 100.0)
+	camera = renderer.GetActiveCamera()
+	camera.SetFocalPoint(*center)
+	camera.SetPosition(center[0], center[1] - dist, center[2])
+	camera.SetViewUp(0.0, 0.0, 1.0)
+	renderer.ResetCameraClippingRange()
+
+
 def _apply_visibility_mask(poly: vtk.vtkPolyData, array_name: str, visible_ids: set[int]) -> str:
 	point_data = poly.GetPointData()
 	source_array = point_data.GetArray(array_name)
@@ -2587,6 +2660,7 @@ def main() -> int:
 	amistem_rotation_deg = 0.0
 	actis_rotation_deg = 0.0
 	mathys_rotation_x_deg = 0.0
+	gruen_cut_plane_mode = "below"
 	if args.local_frame and (
 		neck_point is None
 		or cut_plane_origin is None
@@ -2631,6 +2705,8 @@ def main() -> int:
 			neck_point = _rotate_x_point(neck_point, mathys_rotation_x_deg)
 			cut_plane_origin = _rotate_x_point(cut_plane_origin, mathys_rotation_x_deg)
 			cut_plane_normal = _rotate_x_vector(cut_plane_normal, mathys_rotation_x_deg)
+			cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], -cut_plane_normal[2])
+			gruen_cut_plane_mode = "above"
 
 	effective_rotate_z_180 = args.rotate_z_180 or args.side == "left"
 	if amistem_rotation_deg:
@@ -2830,10 +2906,24 @@ def main() -> int:
 
 
 	if args.gruen_zones or args.show_gruen_zones or args.gruen_hu_zones or args.partitioned_gruen_viewports:
-		_apply_gruen_zones(target_poly, neck_point, cut_plane_origin, cut_plane_normal, args.side)
+		_apply_gruen_zones(
+			target_poly,
+			neck_point,
+			cut_plane_origin,
+			cut_plane_normal,
+			args.side,
+			gruen_cut_plane_mode,
+		)
 		if args.largest_region_only:
 			if args.voxel_zones:
-				_apply_gruen_zones(poly, neck_point, cut_plane_origin, cut_plane_normal, args.side)
+				_apply_gruen_zones(
+					poly,
+					neck_point,
+					cut_plane_origin,
+					cut_plane_normal,
+					args.side,
+					gruen_cut_plane_mode,
+				)
 				_apply_largest_region_mask(target_poly, source_poly=poly)
 			else:
 				_apply_largest_region_mask(target_poly)
@@ -3011,7 +3101,7 @@ def main() -> int:
 			renderer.AddActor(base_actor)
 		renderer.AddActor(actor)
 	renderer.SetBackground(1.0, 1.0, 1.0)
-	renderer.ResetCamera()
+	_set_camera_z_up(renderer, target_poly.GetBounds())
 	if not args.convex_hull_only:
 		_add_scalar_bar(renderer, lookup_table, color_label, label_count)
 	if args.show_axes:
@@ -3127,7 +3217,7 @@ def main() -> int:
 			_add_viewport_label(renderer, f"Partition: {label}")
 			if args.show_axes:
 				_add_axes(renderer, max(args.axes_size, 1.0))
-			renderer.ResetCamera()
+			_set_camera_z_up(renderer, viewport_poly.GetBounds())
 			render_window.AddRenderer(renderer)
 		interactor = vtk.vtkRenderWindowInteractor()
 		interactor.SetRenderWindow(render_window)
