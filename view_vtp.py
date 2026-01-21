@@ -386,6 +386,17 @@ def _parse_args() -> argparse.Namespace:
 		help="Show only a specific zone id for the active zone view",
 	)
 	parser.add_argument(
+		"--merge-zone-islands",
+		action="store_true",
+		help="Merge small isolated zone islands into the surrounding dominant zone",
+	)
+	parser.add_argument(
+		"--merge-zone-min-points",
+		type=int,
+		default=200,
+		help="Minimum island size to keep as its own zone (default: 200 points)",
+	)
+	parser.add_argument(
 		"--convex-hull-opacity",
 		type=float,
 		default=0.25,
@@ -1142,6 +1153,82 @@ def _count_zone_ids(array: vtk.vtkDataArray) -> tuple[int, dict[int, int]]:
 		zone_id = int(value)
 		counts[zone_id] = counts.get(zone_id, 0) + 1
 	return len(counts), counts
+
+
+def _merge_zone_islands(
+	poly: vtk.vtkPolyData,
+	array_name: str,
+	min_points: int,
+) -> str:
+	point_data = poly.GetPointData()
+	zone_array = point_data.GetArray(array_name)
+	if zone_array is None:
+		raise RuntimeError(f"Zone array '{array_name}' not found")
+	if min_points <= 0:
+		return array_name
+	point_count = poly.GetNumberOfPoints()
+	neighbors: list[list[int]] = [[] for _ in range(point_count)]
+	cells = poly.GetPolys()
+	if cells is None:
+		return array_name
+	cells.InitTraversal()
+	ids = vtk.vtkIdList()
+	while cells.GetNextCell(ids):
+		cell_ids = [ids.GetId(i) for i in range(ids.GetNumberOfIds())]
+		for i in range(len(cell_ids)):
+			pid = cell_ids[i]
+			for j in range(len(cell_ids)):
+				if i == j:
+					continue
+				neighbors[pid].append(cell_ids[j])
+	visited = [False] * point_count
+	new_array = vtk.vtkDoubleArray()
+	new_array.DeepCopy(zone_array)
+	new_array.SetName(f"{array_name}Merged")
+	for start in range(point_count):
+		val = zone_array.GetTuple1(start)
+		if val != val:
+			continue
+		zone_id = int(val)
+		if visited[start]:
+			continue
+		stack = [start]
+		component: list[int] = []
+		visited[start] = True
+		while stack:
+			pid = stack.pop()
+			component.append(pid)
+			for nbr in neighbors[pid]:
+				if visited[nbr]:
+					continue
+				val_n = zone_array.GetTuple1(nbr)
+				if val_n != val_n or int(val_n) != zone_id:
+					continue
+				visited[nbr] = True
+				stack.append(nbr)
+		if len(component) >= min_points:
+			continue
+		neighbor_counts: dict[int, int] = {}
+		for pid in component:
+			for nbr in neighbors[pid]:
+				val_n = zone_array.GetTuple1(nbr)
+				if val_n != val_n:
+					continue
+				neighbor_id = int(val_n)
+				if neighbor_id == zone_id:
+					continue
+				neighbor_counts[neighbor_id] = neighbor_counts.get(neighbor_id, 0) + 1
+		if not neighbor_counts:
+			continue
+		replace_id = max(neighbor_counts.items(), key=lambda item: item[1])[0]
+		for pid in component:
+			new_array.SetTuple1(pid, float(replace_id))
+	if point_data.GetArray(new_array.GetName()):
+		point_data.RemoveArray(new_array.GetName())
+	point_data.AddArray(new_array)
+	point_data.SetActiveScalars(new_array.GetName())
+	poly.Modified()
+	return new_array.GetName()
 
 
 def _build_zone_contours_actor(
@@ -2725,6 +2812,8 @@ def main() -> int:
 	else:
 		lookup_table = _build_ezplan_transfer_function()
 		scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
+	if args.merge_zone_islands and (args.show_gruen_zones or args.show_envelope_gruen):
+		active_array = _merge_zone_islands(target_poly, active_array, args.merge_zone_min_points)
 	if args.zone_only is not None and (args.show_gruen_zones or args.show_envelope_gruen):
 		active_array = _apply_zone_only(target_poly, active_array, args.zone_only)
 
