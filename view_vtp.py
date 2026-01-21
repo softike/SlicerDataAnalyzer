@@ -355,6 +355,11 @@ def _parse_args() -> argparse.Namespace:
 		help="Side assignment for envelope zones: position or normal (default: position)",
 	)
 	parser.add_argument(
+		"--envelope-z-bands",
+		default="0.4,0.4,0.2",
+		help="Z band fractions for envelope zones (default: 0.4,0.4,0.2)",
+	)
+	parser.add_argument(
 		"--show-envelope-gruen",
 		action="store_true",
 		help="Display the envelope-based Gruen zones",
@@ -764,6 +769,8 @@ def _normalize(vec: tuple[float, float, float]) -> tuple[float, float, float]:
 	return (x / length, y / length, z / length)
 
 
+
+
 def _rotate_z_point(point: tuple[float, float, float] | None, degrees: float) -> tuple[float, float, float] | None:
 	if point is None:
 		return None
@@ -782,6 +789,47 @@ def _rotate_z_vector(vec: tuple[float, float, float] | None, degrees: float) -> 
 	sin_v = math.sin(rad)
 	x, y, z = vec
 	return _normalize((x * cos_v - y * sin_v, x * sin_v + y * cos_v, z))
+
+
+def _rotate_x_point(point: tuple[float, float, float] | None, degrees: float) -> tuple[float, float, float] | None:
+	if point is None:
+		return None
+	rad = math.radians(degrees)
+	cos_v = math.cos(rad)
+	sin_v = math.sin(rad)
+	x, y, z = point
+	return (x, y * cos_v - z * sin_v, y * sin_v + z * cos_v)
+
+
+def _rotate_x_vector(vec: tuple[float, float, float] | None, degrees: float) -> tuple[float, float, float] | None:
+	if vec is None:
+		return None
+	rad = math.radians(degrees)
+	cos_v = math.cos(rad)
+	sin_v = math.sin(rad)
+	x, y, z = vec
+	return _normalize((x, y * cos_v - z * sin_v, y * sin_v + z * cos_v))
+
+
+def _rotate_x_180_point(point: tuple[float, float, float] | None) -> tuple[float, float, float] | None:
+	if point is None:
+		return None
+	x, y, z = point
+	return (x, -y, -z)
+
+
+def _rotate_y_180_point(point: tuple[float, float, float] | None) -> tuple[float, float, float] | None:
+	if point is None:
+		return None
+	x, y, z = point
+	return (-x, y, -z)
+
+
+def _rotate_y_180_vector(vec: tuple[float, float, float] | None) -> tuple[float, float, float] | None:
+	if vec is None:
+		return None
+	x, y, z = vec
+	return _normalize((-x, y, -z))
 
 
 def _vector_length(vec: tuple[float, float, float]) -> float:
@@ -1040,6 +1088,7 @@ def _apply_envelope_gruen_zones(
 	cut_plane_origin: tuple[float, float, float] | None,
 	cut_plane_normal: tuple[float, float, float] | None,
 	mode: str = "position",
+	band_fractions: tuple[float, float, float] = (0.4, 0.4, 0.2),
 ) -> str:
 	points = poly.GetPoints()
 	if points is None:
@@ -1052,8 +1101,15 @@ def _apply_envelope_gruen_zones(
 	center_x = (min_x + max_x) * 0.5
 	center_y = (min_y + max_y) * 0.5
 	height = max(max_z - min_z, 1e-6)
-	band_1 = min_z + height * 0.4
-	band_2 = min_z + height * 0.8
+	f1, f2, f3 = band_fractions
+	if f1 <= 0 or f2 <= 0 or f3 <= 0:
+		f1, f2, f3 = (0.4, 0.4, 0.2)
+	sum_f = f1 + f2 + f3
+	if sum_f <= 1e-6:
+		f1, f2, f3 = (0.4, 0.4, 0.2)
+		sum_f = 1.0
+	band_1 = min_z + height * (f1 / sum_f)
+	band_2 = min_z + height * ((f1 + f2) / sum_f)
 	normals = None
 	if mode == "normal":
 		normals = _ensure_point_normals(poly)
@@ -2229,6 +2285,13 @@ def _parse_partition_zones(value: str) -> list[int]:
 	return result
 
 
+def _parse_envelope_bands(value: str) -> tuple[float, float, float]:
+	parts = [item.strip() for item in value.split(",") if item.strip()]
+	if len(parts) != 3:
+		raise ValueError("--envelope-z-bands expects three comma-separated values")
+	return (float(parts[0]), float(parts[1]), float(parts[2]))
+
+
 def _resolve_hu_range(label: str | None) -> tuple[float, float] | None:
 	if not label:
 		return None
@@ -2522,6 +2585,8 @@ def main() -> int:
 	auto_module = None
 	auto_uid = None
 	amistem_rotation_deg = 0.0
+	actis_rotation_deg = 0.0
+	mathys_rotation_x_deg = 0.0
 	if args.local_frame and (
 		neck_point is None
 		or cut_plane_origin is None
@@ -2553,12 +2618,43 @@ def main() -> int:
 				neck_point = _rotate_z_point(neck_point, amistem_rotation_deg)
 				cut_plane_origin = _rotate_z_point(cut_plane_origin, amistem_rotation_deg)
 				cut_plane_normal = _rotate_z_vector(cut_plane_normal, amistem_rotation_deg)
+		if auto_module is not None and getattr(auto_module, "__name__", "") == "johnson_actis_complete":
+			actis_rotation_deg = 180.0
+			neck_point = _rotate_z_point(neck_point, actis_rotation_deg)
+			cut_plane_origin = _rotate_z_point(cut_plane_origin, actis_rotation_deg)
+			cut_plane_normal = _rotate_z_vector(cut_plane_normal, actis_rotation_deg)
+		if auto_module is not None and getattr(auto_module, "__name__", "") == "mathys_optimys_complete":
+			neck_point = _rotate_z_point(neck_point, -90.0)
+			cut_plane_origin = _rotate_z_point(cut_plane_origin, -90.0)
+			cut_plane_normal = _rotate_z_vector(cut_plane_normal, -90.0)
+			mathys_rotation_x_deg = 90.0
+			neck_point = _rotate_x_point(neck_point, mathys_rotation_x_deg)
+			cut_plane_origin = _rotate_x_point(cut_plane_origin, mathys_rotation_x_deg)
+			cut_plane_normal = _rotate_x_vector(cut_plane_normal, mathys_rotation_x_deg)
 
 	effective_rotate_z_180 = args.rotate_z_180 or args.side == "left"
 	if amistem_rotation_deg:
 		transform = vtk.vtkTransform()
 		transform.Identity()
 		transform.RotateZ(amistem_rotation_deg)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
+	if actis_rotation_deg:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateZ(actis_rotation_deg)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
+	if mathys_rotation_x_deg:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateX(mathys_rotation_x_deg)
 		transformer = vtk.vtkTransformPolyDataFilter()
 		transformer.SetTransform(transform)
 		transformer.SetInputData(poly)
@@ -2656,8 +2752,15 @@ def main() -> int:
 				offset_point = _coerce_point(head_offset_fn(offset_head_uid, uid_member))
 			except ValueError:
 				offset_point = None
+			if module is not None and getattr(module, "__name__", "") == "mathys_optimys_complete":
+				if offset_point is not None:
+					offset_point = (-offset_point[0], offset_point[1], offset_point[2])
 			if amistem_rotation_deg:
 				offset_point = _rotate_z_point(offset_point, amistem_rotation_deg)
+			if actis_rotation_deg:
+				offset_point = _rotate_z_point(offset_point, actis_rotation_deg)
+			if mathys_rotation_x_deg:
+				offset_point = _rotate_x_point(offset_point, mathys_rotation_x_deg)
 		if args.show_all_offsets:
 			head_uids = getattr(module, "HEAD_UIDS", None)
 			if head_uids:
@@ -2667,8 +2770,14 @@ def main() -> int:
 						point = _coerce_point(head_offset_fn(head_uid, uid_member))
 					except ValueError:
 						continue
+					if module is not None and getattr(module, "__name__", "") == "mathys_optimys_complete":
+						point = (-point[0], point[1], point[2])
 					if amistem_rotation_deg:
 						point = _rotate_z_point(point, amistem_rotation_deg)
+					if actis_rotation_deg:
+						point = _rotate_z_point(point, actis_rotation_deg)
+					if mathys_rotation_x_deg:
+						point = _rotate_x_point(point, mathys_rotation_x_deg)
 					all_offset_points.append((label, point))
 		offset_point = _apply_side_rotation_point(offset_point, args.side, effective_rotate_z_180)
 	if all_offset_points:
@@ -2719,6 +2828,7 @@ def main() -> int:
 	if args.show_junction_axes and not args.show_junction_point:
 		raise RuntimeError("--show-junction-axes requires --show-junction-point")
 
+
 	if args.gruen_zones or args.show_gruen_zones or args.gruen_hu_zones or args.partitioned_gruen_viewports:
 		_apply_gruen_zones(target_poly, neck_point, cut_plane_origin, cut_plane_normal, args.side)
 		if args.largest_region_only:
@@ -2748,11 +2858,16 @@ def main() -> int:
 						print(f"  Zone {zone_id}: {counts[zone_id]}")
 
 	if args.envelope_gruen or args.show_envelope_gruen:
+		try:
+			band_fractions = _parse_envelope_bands(args.envelope_z_bands)
+		except ValueError as exc:
+			raise RuntimeError(str(exc)) from exc
 		_apply_envelope_gruen_zones(
 			target_poly,
 			cut_plane_origin,
 			cut_plane_normal,
 			mode=args.envelope_gruen_mode,
+			band_fractions=band_fractions,
 		)
 		if args.envelope_top_zones is not None:
 			_apply_top_envelope_zones(target_poly, args.envelope_top_zones)
