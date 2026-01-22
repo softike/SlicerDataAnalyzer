@@ -197,3 +197,10 @@ python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H003/002-F-36/
 python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H003/001-M-30/Mediplan3D/Slicer-exports/history_126/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp --local-frame --show-cut-plane --show-neck-point --opacity 0.3 --base-color 0.7,0.7,0.7 --side auto  --show-side-label   --hu-table  --show-bottom-point --show-offset --show-junction-point --show-junction-axes  --convex-hull-opacity 0.8 --convex-hull-color 1,0.5,0 --convex-hull-mc --convex-hull-mc-spacing 0.5 --stem-mc --stem-mc-spacing 0.5 --solid-zones   --show-axes  --cache-remesh --show-envelope-gruen  --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --zone-only 1
 
 ```
+
+## Minimize the options to get still Gruen zones
+
+```shell
+# this one works well
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/Mediplan3D/Slicer-exports/active_03/1.3.46.670589.33.1.63828549743236925000003.4985465118747613432_stem_local.vtp --local-frame --show-cut-plane --opacity 0.3 --base-color 0.7,0.7,0.7 --side auto  --show-side-label   --hu-table  --stem-mc --stem-mc-spacing 0.5 --solid-zones   --show-axes  --cache-remesh --show-envelope-gruen  --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --zone-only 1
+```

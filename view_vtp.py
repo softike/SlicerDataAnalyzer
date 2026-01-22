@@ -411,6 +411,11 @@ def _parse_args() -> argparse.Namespace:
 		help="Display the envelope-based Gruen zones",
 	)
 	parser.add_argument(
+		"--envelope-hu",
+		action="store_true",
+		help="Show HU scalar values masked by the envelope zones (uses --zone-only)",
+	)
+	parser.add_argument(
 		"--envelope-top-zones",
 		type=int,
 		default=None,
@@ -1507,6 +1512,43 @@ def _apply_hu_zone_mask(poly: vtk.vtkPolyData, hu_array: str, zones: list[int]) 
 		if keep_array is not None:
 			keep_ok = int(keep_array.GetTuple1(idx)) == 1
 		if keep_ok and zone_id in allowed:
+			masked.SetTuple1(idx, source_array.GetTuple1(idx))
+		else:
+			masked.SetTuple1(idx, float("nan"))
+	if point_data.GetArray(masked_name):
+		point_data.RemoveArray(masked_name)
+	point_data.AddArray(masked)
+	point_data.SetActiveScalars(masked_name)
+	poly.Modified()
+	return masked_name
+
+
+def _apply_hu_zone_mask_by_array(
+	poly: vtk.vtkPolyData,
+	hu_array: str,
+	zone_array_name: str,
+	zones: list[int],
+) -> str:
+	point_data = poly.GetPointData()
+	source_array = point_data.GetArray(hu_array)
+	if source_array is None:
+		raise RuntimeError("Scalar array '%s' not found" % hu_array)
+	zone_array = point_data.GetArray(zone_array_name)
+	if zone_array is None:
+		raise RuntimeError("Zone array '%s' not found" % zone_array_name)
+	masked_name = f"{hu_array}_{zone_array_name}"
+	masked = vtk.vtkDoubleArray()
+	masked.SetName(masked_name)
+	masked.SetNumberOfComponents(1)
+	masked.SetNumberOfTuples(source_array.GetNumberOfTuples())
+	allowed = set(zones)
+	for idx in range(source_array.GetNumberOfTuples()):
+		zone_value = zone_array.GetTuple1(idx)
+		if zone_value != zone_value:
+			masked.SetTuple1(idx, float("nan"))
+			continue
+		zone_id = int(zone_value)
+		if zone_id in allowed:
 			masked.SetTuple1(idx, source_array.GetTuple1(idx))
 		else:
 			masked.SetTuple1(idx, float("nan"))
@@ -3100,7 +3142,7 @@ def main() -> int:
 			zone_count, _counts = _count_zone_ids(zone_array)
 			print(f"Envelope zones found: {zone_count}")
 
-	if args.gruen_hu_zones:
+	if args.gruen_hu_zones or (args.show_envelope_gruen and args.envelope_hu):
 		metrics_array = _find_metrics_array_for_vtp(args.vtp)
 		selected_hu_array = _pick_scalar_array(target_poly, args.hu_array)
 		if selected_hu_array is None and metrics_array:
@@ -3192,7 +3234,25 @@ def main() -> int:
 			color_label = "Gruen zones"
 			label_count = 14
 	elif args.show_envelope_gruen:
-		if args.gruen_remapped:
+		if args.envelope_hu:
+			zone_array_name = (
+				"EnvelopeZoneRemap"
+				if args.gruen_remapped
+				else ("EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone")
+			)
+			if args.zone_only is None:
+				raise RuntimeError("--envelope-hu requires --zone-only to select a zone")
+			active_array = _apply_hu_zone_mask_by_array(
+				target_poly,
+				args.hu_array,
+				zone_array_name,
+				[args.zone_only],
+			)
+			lookup_table = _build_ezplan_transfer_function()
+			scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
+			color_label = "HU (EZplan LUT)"
+			label_count = len(EZPLAN_ZONE_DEFS) + 1
+		elif args.gruen_remapped:
 			active_array = "EnvelopeZoneRemap"
 			lookup_table = _build_gruen_lookup_table()
 			scalar_range = (1.0, 14.0)
@@ -3210,7 +3270,8 @@ def main() -> int:
 	if args.merge_zone_islands and (args.show_gruen_zones or args.show_envelope_gruen):
 		active_array = _merge_zone_islands(target_poly, active_array, args.merge_zone_min_points)
 	if args.zone_only is not None and (args.show_gruen_zones or args.show_envelope_gruen):
-		active_array = _apply_zone_only(target_poly, active_array, args.zone_only)
+		if not (args.show_envelope_gruen and args.envelope_hu):
+			active_array = _apply_zone_only(target_poly, active_array, args.zone_only)
 
 	use_scalar_overlay = True
 	nan_color = None
