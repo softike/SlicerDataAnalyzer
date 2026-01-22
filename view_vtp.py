@@ -296,6 +296,22 @@ def _parse_args() -> argparse.Namespace:
 		help="Export HU tag summary per partitioned zone to XML in the VTP folder",
 	)
 	parser.add_argument(
+		"--export-gruen-hu-xml",
+		action="store_true",
+		help="Export HU tag summary per Gruen zone to XML in the VTP folder",
+	)
+	parser.add_argument(
+		"--gruen-hu-remesh",
+		action="store_true",
+		help="Use a remeshed surface (with interpolated scalars) for Gruen HU statistics",
+	)
+	parser.add_argument(
+		"--gruen-bottom-sphere-radius",
+		type=float,
+		default=0.0,
+		help="Radius (mm) around the bottom point to use for Gruen zones 4/11 HU stats",
+	)
+	parser.add_argument(
 		"--show-side-label",
 		action="store_true",
 		help="Display resolved side label in the render window",
@@ -1205,6 +1221,7 @@ def _apply_envelope_gruen_zones(
 	poly: vtk.vtkPolyData,
 	cut_plane_origin: tuple[float, float, float] | None,
 	cut_plane_normal: tuple[float, float, float] | None,
+	neck_point: tuple[float, float, float] | None = None,
 	mode: str = "position",
 	band_fractions: tuple[float, float, float] = (0.4, 0.4, 0.2),
 ) -> str:
@@ -1237,13 +1254,25 @@ def _apply_envelope_gruen_zones(
 	zones.SetName("EnvelopeZone")
 	zones.SetNumberOfComponents(1)
 	zones.SetNumberOfTuples(count)
+	neck_side = None
+	if cut_plane_origin is not None and cut_plane_normal is not None and neck_point is not None:
+		neck_side = (
+			(neck_point[0] - cut_plane_origin[0]) * cut_plane_normal[0]
+			+ (neck_point[1] - cut_plane_origin[1]) * cut_plane_normal[1]
+			+ (neck_point[2] - cut_plane_origin[2]) * cut_plane_normal[2]
+		)
+	def _is_below_plane(sign: float) -> bool:
+		if neck_side is None or abs(neck_side) < 1e-6:
+			return sign <= 0.0
+		return sign <= 0.0 if neck_side > 0.0 else sign >= 0.0
 	for idx in range(count):
 		x, y, z = points.GetPoint(idx)
 		if cut_plane_origin is not None and cut_plane_normal is not None:
 			dx = x - cut_plane_origin[0]
 			dy = y - cut_plane_origin[1]
 			dz = z - cut_plane_origin[2]
-			if (dx * cut_plane_normal[0] + dy * cut_plane_normal[1] + dz * cut_plane_normal[2]) > 0:
+			plane_sign = dx * cut_plane_normal[0] + dy * cut_plane_normal[1] + dz * cut_plane_normal[2]
+			if not _is_below_plane(plane_sign):
 				zones.SetTuple1(idx, float("nan"))
 				continue
 		if z <= band_1:
@@ -1567,6 +1596,37 @@ def _apply_hu_zone_mask_by_array(
 			masked.SetTuple1(idx, source_array.GetTuple1(idx))
 		else:
 			masked.SetTuple1(idx, float("nan"))
+	if point_data.GetArray(masked_name):
+		point_data.RemoveArray(masked_name)
+	point_data.AddArray(masked)
+	point_data.SetActiveScalars(masked_name)
+	poly.Modified()
+	return masked_name
+
+
+def _apply_hu_presence_mask_by_array(
+	poly: vtk.vtkPolyData,
+	hu_array: str,
+	zone_array_name: str,
+) -> str:
+	point_data = poly.GetPointData()
+	source_array = point_data.GetArray(hu_array)
+	if source_array is None:
+		raise RuntimeError("Scalar array '%s' not found" % hu_array)
+	zone_array = point_data.GetArray(zone_array_name)
+	if zone_array is None:
+		raise RuntimeError("Zone array '%s' not found" % zone_array_name)
+	masked_name = f"{hu_array}_{zone_array_name}_All"
+	masked = vtk.vtkDoubleArray()
+	masked.SetName(masked_name)
+	masked.SetNumberOfComponents(1)
+	masked.SetNumberOfTuples(source_array.GetNumberOfTuples())
+	for idx in range(source_array.GetNumberOfTuples()):
+		zone_value = zone_array.GetTuple1(idx)
+		if zone_value != zone_value:
+			masked.SetTuple1(idx, float("nan"))
+			continue
+		masked.SetTuple1(idx, source_array.GetTuple1(idx))
 	if point_data.GetArray(masked_name):
 		point_data.RemoveArray(masked_name)
 	point_data.AddArray(masked)
@@ -2801,6 +2861,74 @@ def _compute_partition_hu_summary(
 	return result
 
 
+def _compute_gruen_hu_summary(
+	poly: vtk.vtkPolyData,
+	hu_array_name: str,
+	zone_array: vtk.vtkDataArray,
+	max_zone: int = 14,
+	bottom_point: tuple[float, float, float] | None = None,
+	bottom_radius: float = 0.0,
+	bottom_zone_ids: tuple[int, int] = (4, 11),
+) -> dict[int, dict[str, tuple[int, float]]]:
+	point_data = poly.GetPointData()
+	hu_array = point_data.GetArray(hu_array_name)
+	if hu_array is None:
+		raise RuntimeError("Scalar array '%s' not found" % hu_array_name)
+	counts: dict[int, dict[str, int]] = {
+		zone_id: {z[3]: 0 for z in EZPLAN_ZONE_DEFS} for zone_id in range(1, max_zone + 1)
+	}
+	totals: dict[int, int] = {zone_id: 0 for zone_id in range(1, max_zone + 1)}
+	for idx in range(hu_array.GetNumberOfTuples()):
+		zone_value = zone_array.GetTuple1(idx)
+		if zone_value != zone_value:
+			continue
+		zone_id = int(zone_value)
+		if zone_id not in counts:
+			continue
+		value = hu_array.GetTuple1(idx)
+		if value != value:
+			continue
+		totals[zone_id] += 1
+		for zone_min, zone_max, _color, label in EZPLAN_ZONE_DEFS:
+			if zone_min <= value <= zone_max:
+				counts[zone_id][label] += 1
+				break
+	result: dict[int, dict[str, tuple[int, float]]] = {}
+	if bottom_point is not None and bottom_radius > 0:
+		x0, y0, z0 = bottom_point
+		r2 = bottom_radius * bottom_radius
+		bottom_counts = {z[3]: 0 for z in EZPLAN_ZONE_DEFS}
+		bottom_total = 0
+		points = poly.GetPoints()
+		if points is not None:
+			for idx in range(hu_array.GetNumberOfTuples()):
+				value = hu_array.GetTuple1(idx)
+				if value != value:
+					continue
+				x, y, z = points.GetPoint(idx)
+				dx = x - x0
+				dy = y - y0
+				dz = z - z0
+				if dx * dx + dy * dy + dz * dz > r2:
+					continue
+				bottom_total += 1
+				for zone_min, zone_max, _color, label in EZPLAN_ZONE_DEFS:
+					if zone_min <= value <= zone_max:
+						bottom_counts[label] += 1
+						break
+			for zone_id in bottom_zone_ids:
+				if zone_id in counts:
+					counts[zone_id] = dict(bottom_counts)
+					totals[zone_id] = bottom_total
+	for zone_id, tag_counts in counts.items():
+		zone_total = totals.get(zone_id, 0)
+		result[zone_id] = {}
+		for label, count in tag_counts.items():
+			percent = 100.0 * count / zone_total if zone_total else 0.0
+			result[zone_id][label] = (count, percent)
+	return result
+
+
 def _export_partition_hu_xml(
 	vtp_path: str,
 	poly: vtk.vtkPolyData,
@@ -2830,6 +2958,46 @@ def _export_partition_hu_xml(
 				},
 			)
 	file_path = Path(vtp_path).with_suffix("").name + "_hu_summary.xml"
+	output_path = Path(vtp_path).resolve().parent / file_path
+	tree = ET.ElementTree(root)
+	tree.write(output_path, encoding="utf-8", xml_declaration=True)
+	return str(output_path)
+
+
+def _export_gruen_hu_xml(
+	vtp_path: str,
+	poly: vtk.vtkPolyData,
+	hu_array_name: str,
+	zone_array_name: str,
+	max_zone: int = 14,
+	bottom_point: tuple[float, float, float] | None = None,
+	bottom_radius: float = 0.0,
+) -> str:
+	zone_array = poly.GetPointData().GetArray(zone_array_name)
+	if zone_array is None:
+		raise RuntimeError(f"{zone_array_name} missing; enable --show-gruen-zones")
+	summary = _compute_gruen_hu_summary(
+		poly,
+		hu_array_name,
+		zone_array,
+		max_zone=max_zone,
+		bottom_point=bottom_point,
+		bottom_radius=bottom_radius,
+	)
+	root = ET.Element("huSummary", attrib={"array": hu_array_name, "zoneArray": zone_array_name})
+	for zone_id in range(1, max_zone + 1):
+		zone_elem = ET.SubElement(root, "zone", attrib={"id": str(zone_id)})
+		for label, (count, percent) in summary.get(zone_id, {}).items():
+			ET.SubElement(
+				zone_elem,
+				"tag",
+				attrib={
+					"name": label,
+					"count": str(count),
+					"percent": f"{percent:.4f}",
+				},
+			)
+	file_path = Path(vtp_path).with_suffix("").name + "_stem_local_gruen_hu_summary.xml"
 	output_path = Path(vtp_path).resolve().parent / file_path
 	tree = ET.ElementTree(root)
 	tree.write(output_path, encoding="utf-8", xml_declaration=True)
@@ -3181,6 +3349,7 @@ def main() -> int:
 			target_poly,
 			cut_plane_origin,
 			cut_plane_normal,
+			neck_point,
 			mode=args.envelope_gruen_mode,
 			band_fractions=band_fractions,
 		)
@@ -3295,13 +3464,18 @@ def main() -> int:
 				else ("EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone")
 			)
 			if args.zone_only is None:
-				raise RuntimeError("--envelope-hu requires --zone-only to select a zone")
-			active_array = _apply_hu_zone_mask_by_array(
-				target_poly,
-				args.hu_array,
-				zone_array_name,
-				[args.zone_only],
-			)
+				active_array = _apply_hu_presence_mask_by_array(
+					target_poly,
+					args.hu_array,
+					zone_array_name,
+				)
+			else:
+				active_array = _apply_hu_zone_mask_by_array(
+					target_poly,
+					args.hu_array,
+					zone_array_name,
+					[args.zone_only],
+				)
 			lookup_table = _build_ezplan_transfer_function()
 			scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
 			color_label = "HU (EZplan LUT)"
@@ -3403,6 +3577,70 @@ def main() -> int:
 			raise RuntimeError("No scalar arrays available for HU XML export")
 		path = _export_partition_hu_xml(args.vtp, target_poly, selected_hu_array)
 		print(f"Saved HU summary XML: {path}")
+	if args.export_gruen_hu_xml:
+		if args.partitioned_gruen or args.composite_gruen:
+			raise RuntimeError("--export-gruen-hu-xml requires standard or envelope Gruen zones")
+		metrics_array = _find_metrics_array_for_vtp(args.vtp)
+		selected_hu_array = _pick_scalar_array(target_poly, args.hu_array)
+		if selected_hu_array is None and metrics_array:
+			selected_hu_array = _pick_scalar_array(target_poly, metrics_array)
+		if selected_hu_array is None:
+			raise RuntimeError("No scalar arrays available for Gruen HU XML export")
+		export_poly = target_poly
+		if args.gruen_hu_remesh and not args.stem_mc:
+			remeshed = _reconstruct_surface_mc(original_poly, args.stem_mc_spacing)
+			export_poly = _interpolate_point_arrays(original_poly, remeshed, nearest=True)
+			if args.show_envelope_gruen:
+				_apply_envelope_gruen_zones(
+					export_poly,
+					cut_plane_origin,
+					cut_plane_normal,
+					neck_point,
+					mode=args.envelope_gruen_mode,
+					band_fractions=_parse_envelope_bands(args.envelope_z_bands),
+				)
+				if args.envelope_top_zones is not None:
+					_apply_top_envelope_zones(export_poly, args.envelope_top_zones)
+				if args.gruen_remapped:
+					source_name = "EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone"
+					_apply_gruen_zone_remap(export_poly, source_name, "EnvelopeZoneRemap", args.side)
+			else:
+				_apply_gruen_zones(
+					export_poly,
+					neck_point,
+					cut_plane_origin,
+					cut_plane_normal,
+					args.side,
+					gruen_cut_plane_mode,
+				)
+				if args.largest_region_only:
+					_apply_largest_region_mask(export_poly)
+				if args.gruen_remapped:
+					source_array = "GruenZoneLargest" if args.largest_region_only else "GruenZone"
+					_apply_gruen_zone_remap(export_poly, source_array, "GruenZoneRemap", args.side)
+		if args.show_envelope_gruen:
+			zone_array_name = "EnvelopeZoneRemap" if args.gruen_remapped else (
+				"EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone"
+			)
+			max_zone = 14 if args.gruen_remapped else 12
+		else:
+			zone_array_name = "GruenZoneRemap" if args.gruen_remapped else (
+				"GruenZoneLargest" if args.largest_region_only else "GruenZone"
+			)
+			max_zone = 14
+		bottom_point_export = None
+		if args.gruen_bottom_sphere_radius > 0:
+			_tip, bottom_point_export = _compute_tip_bottom_points(export_poly, neck_point)
+		path = _export_gruen_hu_xml(
+			args.vtp,
+			export_poly,
+			selected_hu_array,
+			zone_array_name,
+			max_zone=max_zone,
+			bottom_point=bottom_point_export,
+			bottom_radius=args.gruen_bottom_sphere_radius,
+		)
+		print(f"Saved Gruen HU summary XML: {path}")
 	dominant_zone = None
 	if args.dominant_hu_zone:
 		hu_range = _resolve_hu_range(args.dominant_hu_zone)

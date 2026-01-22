@@ -108,6 +108,25 @@ def _parse_metric_file(path: Path) -> dict[str, Any]:
                     partition_summary[zone_name][tag_name] = _to_float(tag_elem.get("percent"))
         except Exception:
             partition_summary = {}
+    gruen_summary: dict[int, dict[str, tuple[int, float]]] = {}
+    gruen_xml = path.with_name(f"{base_prefix}_stem_local_gruen_hu_summary.xml")
+    if gruen_xml.is_file():
+        try:
+            gruen_tree = ET.parse(gruen_xml)
+            gruen_root = gruen_tree.getroot()
+            for zone_elem in gruen_root.findall("./zone"):
+                zone_id = _to_int(zone_elem.get("id"))
+                if zone_id <= 0:
+                    continue
+                gruen_summary[zone_id] = {}
+                for tag_elem in zone_elem.findall("./tag"):
+                    tag_name = tag_elem.get("name") or "Unknown"
+                    gruen_summary[zone_id][tag_name] = (
+                        _to_int(tag_elem.get("count")),
+                        _to_float(tag_elem.get("percent")),
+                    )
+        except Exception:
+            gruen_summary = {}
     data = {
         "path": path,
         "user_id": root.get("userId", ""),
@@ -129,6 +148,7 @@ def _parse_metric_file(path: Path) -> dict[str, Any]:
         "stem": stem_data,
         "zones": zones,
         "partition_summary": partition_summary,
+        "gruen_summary": gruen_summary,
     }
     return data
 
@@ -145,7 +165,15 @@ def _autosize_columns(sheet) -> None:
         sheet.column_dimensions[column_letter].width = min(max_length + 2, 60)
 
 
-def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[str], partition_zones: list[str], partition_tags: list[str]) -> None:
+def _populate_cases_sheet(
+    sheet,
+    rows: list[dict[str, Any]],
+    zone_names: list[str],
+    partition_zones: list[str],
+    partition_tags: list[str],
+    gruen_zone_ids: list[int],
+    gruen_tags: list[str],
+) -> None:
     headers = [
         "User",
         "Case",
@@ -180,6 +208,10 @@ def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[st
     for zone_name in partition_zones:
         for tag_name in partition_tags:
             headers.append(f"{zone_name} {tag_name} (%)")
+    for zone_id in gruen_zone_ids:
+        for tag_name in gruen_tags:
+            headers.append(f"Gruen {zone_id} {tag_name} Count")
+            headers.append(f"Gruen {zone_id} {tag_name} Percent (%)")
     sheet.append(headers)
 
     for entry in rows:
@@ -225,6 +257,13 @@ def _populate_cases_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[st
             zone_tags = partition_summary.get(zone_name, {})
             for tag_name in partition_tags:
                 row.append(zone_tags.get(tag_name, 0.0))
+        gruen_summary = entry.get("gruen_summary") or {}
+        for zone_id in gruen_zone_ids:
+            zone_tags = gruen_summary.get(zone_id, {})
+            for tag_name in gruen_tags:
+                count, percent = zone_tags.get(tag_name, (0, 0.0))
+                row.append(count)
+                row.append(percent)
         sheet.append(row)
 
     _autosize_columns(sheet)
@@ -295,6 +334,8 @@ def main() -> int:
     zone_names: set[str] = set()
     partition_zone_names: set[str] = set()
     partition_tag_names: set[str] = set()
+    gruen_zone_ids: set[int] = set()
+    gruen_tag_names: set[str] = set()
     for xml_file in xml_files:
         try:
             entry = _parse_metric_file(xml_file)
@@ -307,6 +348,10 @@ def main() -> int:
         partition_zone_names.update(partition_summary.keys())
         for tag_map in partition_summary.values():
             partition_tag_names.update(tag_map.keys())
+        gruen_summary = entry.get("gruen_summary") or {}
+        gruen_zone_ids.update(gruen_summary.keys())
+        for tag_map in gruen_summary.values():
+            gruen_tag_names.update(tag_map.keys())
         if not args.quiet:
             print(f"Loaded metrics from {xml_file}")
 
@@ -317,10 +362,20 @@ def main() -> int:
     zone_name_list = sorted(zone_names)
     partition_zone_list = sorted(partition_zone_names)
     partition_tag_list = sorted(partition_tag_names)
+    gruen_zone_list = sorted(gruen_zone_ids)
+    gruen_tag_list = sorted(gruen_tag_names)
     workbook = Workbook()
     cases_sheet = workbook.active
     cases_sheet.title = "Cases"
-    _populate_cases_sheet(cases_sheet, rows, zone_name_list, partition_zone_list, partition_tag_list)
+    _populate_cases_sheet(
+        cases_sheet,
+        rows,
+        zone_name_list,
+        partition_zone_list,
+        partition_tag_list,
+        gruen_zone_list,
+        gruen_tag_list,
+    )
     summary_sheet = workbook.create_sheet(title="Users")
     _populate_summary_sheet(summary_sheet, rows, zone_name_list)
     workbook.save(output_path)
