@@ -421,6 +421,16 @@ def _parse_args() -> argparse.Namespace:
 		help="Show two viewports: full HU and envelope-zone HU (requires --zone-only)",
 	)
 	parser.add_argument(
+		"--envelope-hu-cortical",
+		action="store_true",
+		help="In envelope HU viewports, auto-select zones containing cortical HU (1000-1500)",
+	)
+	parser.add_argument(
+		"--envelope-hu-stable",
+		action="store_true",
+		help="In envelope HU viewports, auto-select zones containing stable HU (400-1000)",
+	)
+	parser.add_argument(
 		"--envelope-top-zones",
 		type=int,
 		default=None,
@@ -1563,6 +1573,34 @@ def _apply_hu_zone_mask_by_array(
 	point_data.SetActiveScalars(masked_name)
 	poly.Modified()
 	return masked_name
+
+
+def _find_zones_with_hu_range_by_array(
+	poly: vtk.vtkPolyData,
+	hu_array_name: str,
+	zone_array_name: str,
+	hu_range: tuple[float, float],
+) -> list[int]:
+	point_data = poly.GetPointData()
+	hu_array = point_data.GetArray(hu_array_name)
+	if hu_array is None:
+		raise RuntimeError("Scalar array '%s' not found" % hu_array_name)
+	zone_array = point_data.GetArray(zone_array_name)
+	if zone_array is None:
+		raise RuntimeError("Zone array '%s' not found" % zone_array_name)
+	low, high = hu_range
+	zones_with_range: set[int] = set()
+	for idx in range(hu_array.GetNumberOfTuples()):
+		value = hu_array.GetTuple1(idx)
+		if value != value:
+			continue
+		if not (low <= value <= high):
+			continue
+		zone_value = zone_array.GetTuple1(idx)
+		if zone_value != zone_value:
+			continue
+		zones_with_range.add(int(zone_value))
+	return sorted(zones_with_range)
 
 def _configure_mapper(
 	poly: vtk.vtkPolyData,
@@ -3380,13 +3418,35 @@ def main() -> int:
 		_print_summary(args.vtp, active_array, array_range, color_label)
 		return 0
 	if args.envelope_hu_viewports:
-		if args.zone_only is None:
-			raise RuntimeError("--envelope-hu-viewports requires --zone-only to select a zone")
+		if args.envelope_hu_cortical and args.envelope_hu_stable:
+			raise RuntimeError("--envelope-hu-cortical and --envelope-hu-stable cannot be combined")
+		if args.zone_only is None and not (args.envelope_hu_cortical or args.envelope_hu_stable):
+			raise RuntimeError("--envelope-hu-viewports requires --zone-only or --envelope-hu-cortical/--envelope-hu-stable")
 		zone_array_name = (
 			"EnvelopeZoneRemap"
 			if args.gruen_remapped
 			else ("EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone")
 		)
+		cortical_zones: list[int] | None = None
+		if args.envelope_hu_cortical:
+			cortical_zones = _find_zones_with_hu_range_by_array(
+				target_poly,
+				args.hu_array,
+				zone_array_name,
+				(1000.0, 1500.0),
+			)
+			if not cortical_zones:
+				print("Warning: no cortical zones detected for the current HU range.")
+		stable_zones: list[int] | None = None
+		if args.envelope_hu_stable:
+			stable_zones = _find_zones_with_hu_range_by_array(
+				target_poly,
+				args.hu_array,
+				zone_array_name,
+				(400.0, 1000.0),
+			)
+			if not stable_zones:
+				print("Warning: no stable zones detected for the current HU range.")
 		full_lookup = _build_ezplan_transfer_function()
 		full_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
 		zone_lookup = full_lookup
@@ -3421,11 +3481,17 @@ def main() -> int:
 				nan_color = full_nan_color
 				opacity = 1.0
 			else:
+				if cortical_zones is not None:
+					zones_for_mask = cortical_zones
+				elif stable_zones is not None:
+					zones_for_mask = stable_zones
+				else:
+					zones_for_mask = [args.zone_only]
 				active = _apply_hu_zone_mask_by_array(
 					viewport_poly,
 					args.hu_array,
 					zone_array_name,
-					[args.zone_only],
+					zones_for_mask,
 				)
 				lookup = zone_lookup
 				scalar_range = zone_range
@@ -3463,7 +3529,14 @@ def main() -> int:
 			if idx == 0:
 				_add_viewport_label(renderer, labels[idx], x=label_x, y=80)
 			if idx == 1:
-				_add_viewport_label(renderer, f"Gruen zone: {args.zone_only}", x=label_x, y=80)
+				if cortical_zones is not None:
+					zone_list = ", ".join(str(zone_id) for zone_id in cortical_zones) if cortical_zones else "none"
+					_add_viewport_label(renderer, f"Cortical zones: {zone_list}", x=label_x, y=80)
+				elif stable_zones is not None:
+					zone_list = ", ".join(str(zone_id) for zone_id in stable_zones) if stable_zones else "none"
+					_add_viewport_label(renderer, f"Stable zones: {zone_list}", x=label_x, y=80)
+				else:
+					_add_viewport_label(renderer, f"Gruen zone: {args.zone_only}", x=label_x, y=80)
 			if args.show_axes:
 				_add_axes(renderer, max(args.axes_size, 1.0))
 			if args.show_side_label:
