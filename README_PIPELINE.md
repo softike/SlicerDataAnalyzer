@@ -28,7 +28,7 @@ python batch_stem_analysis.py \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --exit-after-run
 ```
 
-# Add export to local stem
+## Add export to local stem
 
 ```shell
 python batch_stem_analysis.py \
