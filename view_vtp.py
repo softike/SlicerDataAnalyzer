@@ -416,6 +416,11 @@ def _parse_args() -> argparse.Namespace:
 		help="Show HU scalar values masked by the envelope zones (uses --zone-only)",
 	)
 	parser.add_argument(
+		"--envelope-hu-viewports",
+		action="store_true",
+		help="Show two viewports: full HU and envelope-zone HU (requires --zone-only)",
+	)
+	parser.add_argument(
 		"--envelope-top-zones",
 		type=int,
 		default=None,
@@ -1632,13 +1637,23 @@ def _add_scalar_bar(
 	lookup_table: vtk.vtkScalarsToColors,
 	title: str,
 	label_count: int,
+	position_x: float | None = None,
+	position_y: float | None = None,
+	title_separation: int | None = None,
 ):
 	scalar_bar = vtk.vtkScalarBarActor()
 	scalar_bar.SetLookupTable(lookup_table)
 	scalar_bar.SetTitle(title)
 	scalar_bar.GetLabelTextProperty().SetColor(0.1, 0.1, 0.1)
 	scalar_bar.GetTitleTextProperty().SetColor(0.1, 0.1, 0.1)
+	scalar_bar.SetLabelFormat(" %.0f")
 	scalar_bar.SetNumberOfLabels(label_count)
+	if position_x is not None or position_y is not None:
+		scalar_bar.SetPosition(position_x if position_x is not None else 0.90, position_y if position_y is not None else 0.05)
+	if title_separation is not None and hasattr(scalar_bar, "SetVerticalTitleSeparation"):
+		scalar_bar.SetVerticalTitleSeparation(title_separation)
+	if hasattr(scalar_bar, "SetTextPad"):
+		scalar_bar.SetTextPad(6)
 	renderer.AddActor2D(scalar_bar)
 
 
@@ -2642,12 +2657,12 @@ def _build_zone_overlay_actor(
 	return actor
 
 
-def _add_viewport_label(renderer: vtk.vtkRenderer, text: str, y: int = 10):
+def _add_viewport_label(renderer: vtk.vtkRenderer, text: str, x: int = 10, y: int = 10):
 	label = vtk.vtkTextActor()
 	label.SetInput(text)
 	label.GetTextProperty().SetColor(0.1, 0.1, 0.1)
 	label.GetTextProperty().SetFontSize(16)
-	label.SetDisplayPosition(10, y)
+	label.SetDisplayPosition(x, y)
 	renderer.AddActor2D(label)
 
 
@@ -2801,6 +2816,7 @@ def main() -> int:
 		args.show_convex_hull,
 		args.envelope_gruen,
 		args.show_envelope_gruen,
+		args.envelope_hu_viewports,
 	])
 	if needs_local and not args.local_frame:
 		raise RuntimeError("Local-frame options require --local-frame")
@@ -3118,7 +3134,7 @@ def main() -> int:
 					for zone_id in sorted(counts):
 						print(f"  Zone {zone_id}: {counts[zone_id]}")
 
-	if args.envelope_gruen or args.show_envelope_gruen:
+	if args.envelope_gruen or args.show_envelope_gruen or args.envelope_hu_viewports:
 		try:
 			band_fractions = _parse_envelope_bands(args.envelope_z_bands)
 		except ValueError as exc:
@@ -3142,7 +3158,7 @@ def main() -> int:
 			zone_count, _counts = _count_zone_ids(zone_array)
 			print(f"Envelope zones found: {zone_count}")
 
-	if args.gruen_hu_zones or (args.show_envelope_gruen and args.envelope_hu):
+	if args.gruen_hu_zones or (args.show_envelope_gruen and args.envelope_hu) or args.envelope_hu_viewports:
 		metrics_array = _find_metrics_array_for_vtp(args.vtp)
 		selected_hu_array = _pick_scalar_array(target_poly, args.hu_array)
 		if selected_hu_array is None and metrics_array:
@@ -3362,6 +3378,110 @@ def main() -> int:
 				_add_dominant_zone_label(renderer, message)
 	if args.headless:
 		_print_summary(args.vtp, active_array, array_range, color_label)
+		return 0
+	if args.envelope_hu_viewports:
+		if args.zone_only is None:
+			raise RuntimeError("--envelope-hu-viewports requires --zone-only to select a zone")
+		zone_array_name = (
+			"EnvelopeZoneRemap"
+			if args.gruen_remapped
+			else ("EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone")
+		)
+		full_lookup = _build_ezplan_transfer_function()
+		full_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
+		zone_lookup = full_lookup
+		zone_range = full_range
+		full_nan_color = None
+		zone_nan_color = None
+		if base_color is not None:
+			full_nan_color = (base_color[0], base_color[1], base_color[2], 1.0)
+			zone_nan_color = (base_color[0], base_color[1], base_color[2], 1.0)
+		else:
+			full_nan_color = (0.7, 0.7, 0.7, 1.0)
+			zone_nan_color = (0.7, 0.7, 0.7, 1.0)
+		viewports = [
+			(0.0, 0.0, 0.5, 1.0),
+			(0.5, 0.0, 1.0, 1.0),
+		]
+		labels = [
+			"HU (full)",
+			"HU (zone)",
+		]
+		render_window = vtk.vtkRenderWindow()
+		render_window.SetWindowName("Stem Viewer (Envelope HU viewports)")
+		render_window.SetSize(1100, 700)
+		window_width, _window_height = render_window.GetSize()
+		for idx, viewport in enumerate(viewports):
+			viewport_poly = vtk.vtkPolyData()
+			viewport_poly.ShallowCopy(target_poly)
+			if idx == 0:
+				active = args.hu_array
+				lookup = full_lookup
+				scalar_range = full_range
+				nan_color = full_nan_color
+				opacity = 1.0
+			else:
+				active = _apply_hu_zone_mask_by_array(
+					viewport_poly,
+					args.hu_array,
+					zone_array_name,
+					[args.zone_only],
+				)
+				lookup = zone_lookup
+				scalar_range = zone_range
+				nan_color = zone_nan_color
+				opacity = args.opacity
+			mapper, _range, _array = _configure_mapper(
+				viewport_poly,
+				active,
+				scalar_range=scalar_range,
+				lookup_table=lookup,
+				nan_color=nan_color,
+			)
+			renderer = vtk.vtkRenderer()
+			renderer.SetViewport(*viewport)
+			renderer.SetBackground(1.0, 1.0, 1.0)
+			if base_color is not None:
+				base_mapper = vtk.vtkPolyDataMapper()
+				base_mapper.SetInputData(viewport_poly)
+				base_mapper.ScalarVisibilityOff()
+				base_opacity = min(0.25, opacity)
+				base_actor = _build_actor(base_mapper, args.wireframe, base_opacity, base_color)
+				renderer.AddActor(base_actor)
+			actor = _build_actor(mapper, args.wireframe, opacity, None)
+			renderer.AddActor(actor)
+			label_x = int(viewport[0] * window_width) + 10
+			_add_scalar_bar(
+				renderer,
+				lookup,
+				"HU (EZplan LUT)",
+				len(EZPLAN_ZONE_DEFS) + 1,
+				position_x=0.82,
+				position_y=0.20,
+				title_separation=12,
+			)
+			if idx == 0:
+				_add_viewport_label(renderer, labels[idx], x=label_x, y=80)
+			if idx == 1:
+				_add_viewport_label(renderer, f"Gruen zone: {args.zone_only}", x=label_x, y=80)
+			if args.show_axes:
+				_add_axes(renderer, max(args.axes_size, 1.0))
+			if args.show_side_label:
+				_add_side_label(renderer, args.side)
+			if args.show_cut_plane and cut_plane_origin is not None and cut_plane_normal is not None:
+				plane_actor = _build_cut_plane_actor(cut_plane_origin, cut_plane_normal, args.cut_plane_size)
+				if plane_actor is not None:
+					renderer.AddActor(plane_actor)
+			_set_camera_z_up(renderer, viewport_poly.GetBounds())
+			render_window.AddRenderer(renderer)
+		interactor = vtk.vtkRenderWindowInteractor()
+		interactor.SetRenderWindow(render_window)
+		style = vtk.vtkInteractorStyleTrackballCamera()
+		interactor.SetInteractorStyle(style)
+		_print_summary(args.vtp, active_array, array_range, color_label)
+		interactor.Initialize()
+		render_window.Render()
+		interactor.Start()
 		return 0
 	if args.partitioned_gruen_viewports:
 		partition_array = target_poly.GetPointData().GetArray("GruenZonePartition")
