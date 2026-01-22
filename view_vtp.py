@@ -3934,11 +3934,12 @@ def main() -> int:
 		else:
 			print("Warning: unable to compute convex hull for the current mesh.", file=sys.stderr)
 	if args.show_envelope_contours:
-		contour_actor = _build_zone_contours_actor(target_poly, "EnvelopeZone", 12)
-		if contour_actor is not None:
-			renderer.AddActor(contour_actor)
+		if args.show_envelope_gruen or args.envelope_hu:
+			contour_actor = _build_zone_contours_actor(target_poly, "EnvelopeZone", 12)
+			if contour_actor is not None:
+				renderer.AddActor(contour_actor)
 	if args.show_zone_contours:
-		if args.show_envelope_gruen:
+		if args.show_envelope_gruen or args.envelope_hu:
 			contour_actor = _build_zone_contours_actor(target_poly, "EnvelopeZone", 12)
 		elif args.show_gruen_zones:
 			max_zone = 4 if args.partitioned_gruen else (14 if not args.composite_gruen else 14)
