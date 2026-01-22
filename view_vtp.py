@@ -20,6 +20,34 @@ EZPLAN_ZONE_DEFS = [
 	(400.0, 1000.0, (0.0, 1.0, 0.0), "Stable"),
 	(1000.0, 1500.0, (1.0, 0.0, 0.0), "Cortical"),
 ]
+GRUEN_ZONE_ID_REMAP_LEFT = {
+	1: 5,
+	5: 6,
+	9: 7,
+	2: 3,
+	6: 2,
+	10: 1,
+	3: 10,
+	7: 9,
+	11: 8,
+	4: 12,
+	8: 13,
+	12: 14,
+}
+GRUEN_ZONE_ID_REMAP_RIGHT = {
+	1: 3,
+	5: 2,
+	9: 1,
+	2: 5,
+	6: 6,
+	10: 7,
+	3: 10,
+	7: 9,
+	11: 8,
+	4: 12,
+	8: 13,
+	12: 14,
+}
 DEFAULT_ARRAY = "VolumeScalars"
 OFFSET_COLORS = (
 	(1.0, 0.85, 0.1),
@@ -215,6 +243,14 @@ def _parse_args() -> argparse.Namespace:
 		"--partitioned-gruen",
 		action="store_true",
 		help="Use partitioned Gruen zones (top, mediumtop, mediumbottom, bottom)",
+	)
+	parser.add_argument(
+		"--gruen-remapped",
+		action="store_true",
+		help=(
+			"Remap Gruen zone IDs using the alternate numbering "
+			"(1→5, 2→3, 3→10, 4→12, 5→6, 6→2, 7→9, 8→13, 9→7, 10→1, 11→8, 12→14)"
+		),
 	)
 	parser.add_argument(
 		"--partitioned-gruen-viewports",
@@ -1218,6 +1254,37 @@ def _apply_envelope_gruen_zones(
 	point_data.SetActiveScalars("EnvelopeZone")
 	poly.Modified()
 	return "EnvelopeZone"
+
+
+def _apply_gruen_zone_remap(
+	poly: vtk.vtkPolyData,
+	array_name: str,
+	output_name: str,
+	side: str,
+) -> str:
+	point_data = poly.GetPointData()
+	zone_array = point_data.GetArray(array_name)
+	if zone_array is None:
+		raise RuntimeError(f"Zone array '{array_name}' not found")
+	remap_table = GRUEN_ZONE_ID_REMAP_RIGHT if side == "right" else GRUEN_ZONE_ID_REMAP_LEFT
+	remapped = vtk.vtkIntArray()
+	remapped.SetName(output_name)
+	remapped.SetNumberOfComponents(1)
+	remapped.SetNumberOfTuples(zone_array.GetNumberOfTuples())
+	for idx in range(zone_array.GetNumberOfTuples()):
+		zone_value = zone_array.GetTuple1(idx)
+		if zone_value != zone_value:
+			remapped.SetTuple1(idx, float("nan"))
+			continue
+		zone_id = int(zone_value)
+		remapped_id = remap_table.get(zone_id, zone_id)
+		remapped.SetTuple1(idx, remapped_id)
+	if point_data.GetArray(output_name):
+		point_data.RemoveArray(output_name)
+	point_data.AddArray(remapped)
+	point_data.SetActiveScalars(output_name)
+	poly.Modified()
+	return output_name
 
 
 def _apply_top_envelope_zones(poly: vtk.vtkPolyData, top_n: int) -> str:
@@ -2974,6 +3041,8 @@ def main() -> int:
 			args.side,
 			gruen_cut_plane_mode,
 		)
+		if args.gruen_remapped and (args.partitioned_gruen or args.partitioned_gruen_viewports or args.composite_gruen):
+			raise RuntimeError("--gruen-remapped cannot be combined with composite or partitioned Gruen zones")
 		if args.largest_region_only:
 			if args.voxel_zones:
 				_apply_gruen_zones(
@@ -3021,6 +3090,9 @@ def main() -> int:
 		)
 		if args.envelope_top_zones is not None:
 			_apply_top_envelope_zones(target_poly, args.envelope_top_zones)
+		if args.gruen_remapped:
+			source_name = "EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone"
+			_apply_gruen_zone_remap(target_poly, source_name, "EnvelopeZoneRemap", args.side)
 		zone_array = target_poly.GetPointData().GetArray(
 			"EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone"
 		)
@@ -3106,6 +3178,13 @@ def main() -> int:
 			scalar_range = (1.0, 14.0)
 			color_label = "Gruen zones"
 			label_count = 14
+		elif args.gruen_remapped:
+			source_array = "GruenZoneLargest" if args.largest_region_only else "GruenZone"
+			active_array = _apply_gruen_zone_remap(target_poly, source_array, "GruenZoneRemap", args.side)
+			lookup_table = _build_gruen_lookup_table()
+			scalar_range = (1.0, 14.0)
+			color_label = "Gruen zones"
+			label_count = 14
 		else:
 			active_array = "GruenZoneLargest" if args.largest_region_only else "GruenZone"
 			lookup_table = _build_gruen_lookup_table()
@@ -3113,11 +3192,18 @@ def main() -> int:
 			color_label = "Gruen zones"
 			label_count = 14
 	elif args.show_envelope_gruen:
-		active_array = "EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone"
-		lookup_table = _build_envelope_lookup_table()
-		scalar_range = (1.0, 12.0)
-		color_label = "Envelope zones"
-		label_count = 12
+		if args.gruen_remapped:
+			active_array = "EnvelopeZoneRemap"
+			lookup_table = _build_gruen_lookup_table()
+			scalar_range = (1.0, 14.0)
+			color_label = "Gruen zones"
+			label_count = 14
+		else:
+			active_array = "EnvelopeZoneTop" if args.envelope_top_zones is not None else "EnvelopeZone"
+			lookup_table = _build_envelope_lookup_table()
+			scalar_range = (1.0, 12.0)
+			color_label = "Envelope zones"
+			label_count = 12
 	else:
 		lookup_table = _build_ezplan_transfer_function()
 		scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
