@@ -110,7 +110,27 @@ def _parse_metric_file(path: Path) -> dict[str, Any]:
             partition_summary = {}
     gruen_summary: dict[int, dict[str, tuple[int, float]]] = {}
     gruen_xml = path.with_name(f"{base_prefix}_stem_local_gruen_hu_summary.xml")
-    if gruen_xml.is_file():
+    gruen_candidates: list[Path] = [path.parent]
+    original_vtp_value = root.get("stemOriginalVtp")
+    if original_vtp_value:
+        gruen_candidates.append(Path(original_vtp_value).parent)
+    screenshot_dir = root.get("screenshotDir")
+    if screenshot_dir:
+        gruen_candidates.append(Path(screenshot_dir))
+    gruen_xml_found = False
+    for candidate_dir in gruen_candidates:
+        if not candidate_dir:
+            continue
+        candidate_dir = Path(candidate_dir)
+        candidate_path = candidate_dir / f"{base_prefix}_stem_local_gruen_hu_summary.xml"
+        if not candidate_path.is_file():
+            alt_matches = sorted(candidate_dir.glob("*_stem_local_gruen_hu_summary.xml"))
+            candidate_path = alt_matches[0] if alt_matches else candidate_path
+        if candidate_path.is_file():
+            gruen_xml = candidate_path
+            gruen_xml_found = True
+            break
+    if gruen_xml_found:
         try:
             gruen_tree = ET.parse(gruen_xml)
             gruen_root = gruen_tree.getroot()
@@ -149,6 +169,7 @@ def _parse_metric_file(path: Path) -> dict[str, Any]:
         "zones": zones,
         "partition_summary": partition_summary,
         "gruen_summary": gruen_summary,
+        "gruen_xml_found": gruen_xml_found,
     }
     return data
 
@@ -317,6 +338,64 @@ def _populate_summary_sheet(sheet, rows: list[dict[str, Any]], zone_names: list[
     _autosize_columns(sheet)
 
 
+def _populate_gruen_sheet(
+    sheet,
+    rows: list[dict[str, Any]],
+    gruen_zone_ids: list[int],
+    gruen_tags: list[str],
+) -> None:
+    sheet.title = "GruenHU"
+    headers = [
+        "User",
+        "Case",
+        "Config Label",
+        "Config Source",
+        "Config Index",
+        "Hip Config Name",
+        "Stem UID",
+        "Requested Side",
+        "Configured Side",
+        "Metrics XML",
+        "Gruen Zone",
+        "HU Tag",
+        "Count",
+        "Percent (%)",
+    ]
+    sheet.append(headers)
+
+    for entry in rows:
+        gruen_summary = entry.get("gruen_summary") or {}
+        if not gruen_summary:
+            continue
+        config_index_value = entry.get("config_index")
+        if config_index_value is None or config_index_value < 0:
+            config_index_value = ""
+        stem = entry.get("stem", {})
+        for zone_id in gruen_zone_ids:
+            zone_tags = gruen_summary.get(zone_id, {})
+            for tag_name in gruen_tags:
+                count, percent = zone_tags.get(tag_name, (0, 0.0))
+                row = [
+                    entry.get("user_id", ""),
+                    entry.get("case_id", ""),
+                    entry.get("config_label", ""),
+                    entry.get("config_source", ""),
+                    config_index_value,
+                    entry.get("hip_config_name", ""),
+                    stem.get("uid", ""),
+                    stem.get("requestedSide", ""),
+                    stem.get("configuredSide", ""),
+                    str(entry.get("path", "")),
+                    zone_id,
+                    tag_name,
+                    count,
+                    percent,
+                ]
+                sheet.append(row)
+
+    _autosize_columns(sheet)
+
+
 def main() -> int:
     args = _parse_args()
     root = Path(args.root).expanduser().resolve()
@@ -378,6 +457,13 @@ def main() -> int:
     )
     summary_sheet = workbook.create_sheet(title="Users")
     _populate_summary_sheet(summary_sheet, rows, zone_name_list)
+    if gruen_zone_list and gruen_tag_list:
+        gruen_sheet = workbook.create_sheet(title="GruenHU")
+        _populate_gruen_sheet(gruen_sheet, rows, gruen_zone_list, gruen_tag_list)
+    else:
+        if any(entry.get("gruen_xml_found") for entry in rows):
+            gruen_sheet = workbook.create_sheet(title="GruenHU")
+            _populate_gruen_sheet(gruen_sheet, rows, gruen_zone_list, gruen_tag_list)
     workbook.save(output_path)
     print(f"Wrote Excel workbook: {output_path}")
     return 0
