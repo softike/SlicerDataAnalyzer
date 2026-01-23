@@ -64,7 +64,12 @@ def _parse_args() -> argparse.Namespace:
 			"View a VTP stem file with the same EZplan HU LUT used by load_nifti_and_stem."
 		)
 	)
-	parser.add_argument("vtp", help="Path to the .vtp file exported from Slicer")
+	parser.add_argument(
+		"vtp",
+		nargs="?",
+		default=None,
+		help="Path to the .vtp file exported from Slicer",
+	)
 	parser.add_argument(
 		"--array",
 		default=DEFAULT_ARRAY,
@@ -350,6 +355,27 @@ def _parse_args() -> argparse.Namespace:
 		help="Number of pyacvd subdivisions before clustering (default: 2)",
 	)
 	parser.add_argument(
+		"--batch-remesh-input",
+		help=(
+			"Root folder containing VTPs or STLs to remesh recursively. "
+			"When set, runs batch remesh and skips viewer."
+		),
+	)
+	parser.add_argument(
+		"--batch-remesh-output",
+		help="Destination root folder for remeshed VTPs (preserves subfolders).",
+	)
+	parser.add_argument(
+		"--batch-remesh-glob",
+		default="**/*.vtp",
+		help="Glob pattern relative to input root (default: **/*.vtp)",
+	)
+	parser.add_argument(
+		"--batch-remesh-overwrite",
+		action="store_true",
+		help="Overwrite existing outputs in batch remesh",
+	)
+	parser.add_argument(
 		"--show-convex-hull",
 		action="store_true",
 		help="Render the convex envelope of the stem (clipped to cut plane when available)",
@@ -519,6 +545,23 @@ def _load_polydata(path: str) -> vtk.vtkPolyData:
 	if not poly or poly.GetNumberOfPoints() == 0:
 		raise RuntimeError("VTP file '%s' produced empty polydata" % path)
 	return poly
+
+
+def _load_polydata_any(path: str) -> vtk.vtkPolyData:
+	if not os.path.isfile(path):
+		raise FileNotFoundError(path)
+	suffix = Path(path).suffix.lower()
+	if suffix == ".vtp":
+		return _load_polydata(path)
+	if suffix == ".stl":
+		reader = vtk.vtkSTLReader()
+		reader.SetFileName(path)
+		reader.Update()
+		poly = reader.GetOutput()
+		if not poly or poly.GetNumberOfPoints() == 0:
+			raise RuntimeError("STL file '%s' produced empty polydata" % path)
+		return poly
+	raise RuntimeError(f"Unsupported mesh format: {suffix}")
 
 
 def _derive_config_labels(source_label: str, ordinal: int, *candidates: str | None) -> tuple[str, str]:
@@ -2107,6 +2150,78 @@ def _write_vtp_cache(poly: vtk.vtkPolyData, path: Path) -> None:
 		pass
 
 
+def _write_polydata_output(poly: vtk.vtkPolyData, path: Path) -> None:
+	path.parent.mkdir(parents=True, exist_ok=True)
+	suffix = path.suffix.lower()
+	if suffix == ".vtp":
+		writer = vtk.vtkXMLPolyDataWriter()
+		writer.SetFileName(str(path))
+		writer.SetInputData(poly)
+		if writer.Write() == 0:
+			raise RuntimeError(f"Failed to write VTP output: {path}")
+		return
+	if suffix == ".stl":
+		triangulate = vtk.vtkTriangleFilter()
+		triangulate.SetInputData(poly)
+		triangulate.Update()
+		writer = vtk.vtkSTLWriter()
+		writer.SetFileName(str(path))
+		writer.SetInputData(triangulate.GetOutput())
+		if writer.Write() == 0:
+			raise RuntimeError(f"Failed to write STL output: {path}")
+		return
+	raise RuntimeError(f"Unsupported output mesh format: {suffix}")
+
+
+def _batch_remesh_vtps(
+	input_root: Path,
+	output_root: Path,
+	pattern: str,
+	remesh_iso: bool,
+	remesh_target: int,
+	remesh_subdivide: int,
+	stem_mc: bool,
+	stem_mc_spacing: float,
+	overwrite: bool,
+) -> int:
+	if not input_root.exists():
+		raise FileNotFoundError(str(input_root))
+	if not input_root.is_dir():
+		raise NotADirectoryError(str(input_root))
+	if not remesh_iso and not stem_mc:
+		raise RuntimeError("Batch remesh requires --remesh-iso and/or --stem-mc")
+	inputs = sorted(path for path in input_root.glob(pattern) if path.is_file())
+	if not inputs and pattern == "**/*.vtp":
+		inputs = sorted(path for path in input_root.glob("**/*.stl") if path.is_file())
+	if not inputs:
+		print("No input VTP files found for batch remesh.")
+		return 0
+	processed = 0
+	skipped = 0
+	for src_path in inputs:
+		try:
+			rel_path = src_path.relative_to(input_root)
+		except ValueError:
+			continue
+		dst_path = output_root / rel_path
+		if dst_path.exists() and not overwrite:
+			skipped += 1
+			continue
+		poly = _load_polydata_any(str(src_path))
+		if stem_mc:
+			reconstructed = _reconstruct_surface_mc(poly, stem_mc_spacing)
+			poly = _interpolate_point_arrays(poly, reconstructed, nearest=True)
+		if remesh_iso:
+			poly = _remesh_isotropic(poly, remesh_target, remesh_subdivide)
+		_write_polydata_output(poly, dst_path)
+		processed += 1
+	print(
+		f"Batch remesh complete: {processed} written, {skipped} skipped, "
+		f"source={input_root}, output={output_root}"
+	)
+	return processed
+
+
 def _parse_hausdorff_sweep(value: str | None) -> tuple[float, float, int] | None:
 	if not value:
 		return None
@@ -3006,6 +3121,25 @@ def _export_gruen_hu_xml(
 
 def main() -> int:
 	args = _parse_args()
+	if args.batch_remesh_input or args.batch_remesh_output:
+		if not args.batch_remesh_input or not args.batch_remesh_output:
+			raise RuntimeError("--batch-remesh-input and --batch-remesh-output must be provided together")
+		input_root = Path(args.batch_remesh_input).resolve()
+		output_root = Path(args.batch_remesh_output).resolve()
+		_batch_remesh_vtps(
+			input_root,
+			output_root,
+			args.batch_remesh_glob,
+			args.remesh_iso,
+			args.remesh_target,
+			args.remesh_subdivide,
+			args.stem_mc,
+			args.stem_mc_spacing,
+			args.batch_remesh_overwrite,
+		)
+		return 0
+	if not args.vtp:
+		raise RuntimeError("Missing VTP path. Provide a VTP file or use --batch-remesh-input")
 	poly = _load_polydata(args.vtp)
 
 	needs_local = any([
