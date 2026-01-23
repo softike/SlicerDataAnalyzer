@@ -21,32 +21,32 @@ EZPLAN_ZONE_DEFS = [
 	(1000.0, 1500.0, (1.0, 0.0, 0.0), "Cortical"),
 ]
 GRUEN_ZONE_ID_REMAP_LEFT = {
-	1: 5,
-	5: 6,
-	9: 7,
-	2: 3,
-	6: 2,
-	10: 1,
-	3: 10,
-	7: 9,
-	11: 8,
-	4: 12,
-	8: 13,
-	12: 14,
-}
-GRUEN_ZONE_ID_REMAP_RIGHT = {
 	1: 3,
 	5: 2,
 	9: 1,
 	2: 5,
 	6: 6,
 	10: 7,
-	3: 10,
-	7: 9,
-	11: 8,
-	4: 12,
-	8: 13,
-	12: 14,
+	3: 12,
+	7: 13,
+	11: 14,
+	4: 10,
+	8: 9,
+	12: 8,
+}
+GRUEN_ZONE_ID_REMAP_RIGHT = {
+	1: 5,
+	5: 6,
+	9: 7,
+	2: 3,
+	6: 2,
+	10: 1,
+	3: 12,
+	7: 13,
+	11: 14,
+	4: 10,
+	8: 9,
+	12: 8,
 }
 DEFAULT_ARRAY = "VolumeScalars"
 OFFSET_COLORS = (
@@ -309,6 +309,16 @@ def _parse_args() -> argparse.Namespace:
 		"--gruen-hu-remesh",
 		action="store_true",
 		help="Use a remeshed surface (with interpolated scalars) for Gruen HU statistics",
+	)
+	parser.add_argument(
+		"--gruen-hu-remesh-input",
+		action="store_true",
+		help="Use the input mesh as the remeshed surface for Gruen HU statistics",
+	)
+	parser.add_argument(
+		"--envelope-gruen-input",
+		action="store_true",
+		help="Use the input mesh as the remeshed surface for envelope Gruen zones",
 	)
 	parser.add_argument(
 		"--gruen-bottom-sphere-radius",
@@ -3617,8 +3627,8 @@ def main() -> int:
 		raise RuntimeError("--show-convex-hull requires cut plane inputs or a seedplan.xml")
 	if (args.envelope_gruen or args.show_envelope_gruen) and (cut_plane_origin is None or cut_plane_normal is None):
 		raise RuntimeError("Envelope Gruen zones require cut plane inputs or a seedplan.xml")
-	if (args.envelope_gruen or args.show_envelope_gruen) and not args.stem_mc:
-		raise RuntimeError("Envelope Gruen zones require --stem-mc for implicit remeshing")
+	if (args.envelope_gruen or args.show_envelope_gruen) and not args.stem_mc and not args.envelope_gruen_input:
+		raise RuntimeError("Envelope Gruen zones require --stem-mc or --envelope-gruen-input")
 
 	voxel_poly = None
 	if args.voxel_zones:
@@ -3940,7 +3950,7 @@ def main() -> int:
 		if selected_hu_array is None:
 			raise RuntimeError("No scalar arrays available for Gruen HU XML export")
 		export_poly = target_poly
-		if args.gruen_hu_remesh and not args.stem_mc:
+		if args.gruen_hu_remesh and not args.stem_mc and not args.gruen_hu_remesh_input:
 			remeshed = _reconstruct_surface_mc(original_poly, args.stem_mc_spacing)
 			export_poly = _interpolate_point_arrays(original_poly, remeshed, nearest=True)
 			if args.show_envelope_gruen:

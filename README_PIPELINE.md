@@ -28,16 +28,6 @@ python batch_stem_analysis.py \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --exit-after-run
 ```
 
-## Add export to local stem
-
-```shell
-python batch_stem_analysis.py \
-       --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
-       --planning-root  /media/developer/Storage1/HFRStudy-RUN2/images/H002 \
-       --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-      --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --exit-after-run
-```
-
 > Tip: when a `seedplan.xml` contains multiple femoral stem configurations (active plus histories), the batch driver now processes every configuration automatically. Each configuration gets its own subfolder under the case’s `Slicer-exports/` directory with screenshots, VTP, and metrics XML, so you can review every contact analysis without relaunching Slicer.
 
 ## For test to see how the stem is inserted, do it for each participants, H001 is for Corail, H002 ..., H003 for the Amistem.
@@ -242,4 +232,35 @@ python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/
 
 ```shell
 python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/Mediplan3D/Slicer-exports/active_03/1.3.46.670589.33.1.63828549743236925000003.4985465118747613432_stem_local.vtp  --batch-remesh-input /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan/ --batch-remesh-output /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplanv3/   --remesh-iso --remesh-target-factor 2.0  --batch-remesh-verbose 
+```
+
+## using the remeshed surface directly
+
+```shell
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/Mediplan3D/Slicer-exports/active_03/1.3.46.670589.33.1.63828549743236925000003.4985465118747613432_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --zone-only 1 --envelope-hu-viewports
+
+
+# Corail right
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/Mediplan3D/Slicer-exports/active_03/1.3.46.670589.33.1.63828549743236925000003.4985465118747613432_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --zone-only 1 --envelope-hu-viewports
+
+# Corail left
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/009-F-83/Mediplan3D/Slicer-exports/active_03/1.2.840.113619.2.416.280121663397063837067761677027928059628_stack_03_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --zone-only 1 --envelope-hu-viewports
+
+
+# Mathys left
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H002/001-M-30/Mediplan3D/Slicer-exports/active_07/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --zone-only 1 --envelope-hu-viewports
+
+
+# Mathys right
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H002/014-M-65/Mediplan3D/Slicer-exports/history_53/1.3.46.670589.33.1.63827950255467861600004.4736978582790340532_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --zone-only 1 --envelope-hu-viewports
+
+
+# Medacta AMISTEM right
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H003/002-F-36/Mediplan3D/Slicer-exports/history_120/1.2.840.114356.296552157972175411287775520654979109463_stack_03_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --zone-only 1 --envelope-hu-viewports
+
+# Medacta AMISTEM left
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H003/002-F-36/Mediplan3D/Slicer-exports/history_89/1.2.840.114356.296552157972175411287775520654979109463_stack_03_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --zone-only 1 --envelope-hu-viewports
+
+# Actis right
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H003/001-M-30/Mediplan3D/Slicer-exports/history_126/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --zone-only 1 --envelope-hu-viewports
 ```
