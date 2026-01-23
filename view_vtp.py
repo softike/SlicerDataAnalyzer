@@ -349,6 +349,12 @@ def _parse_args() -> argparse.Namespace:
 		help="Target number of points for isotropic remesh (default: 30000)",
 	)
 	parser.add_argument(
+		"--remesh-target-factor",
+		type=float,
+		default=1.0,
+		help="Multiplier applied to remesh target (default: 1.0)",
+	)
+	parser.add_argument(
 		"--remesh-subdivide",
 		type=int,
 		default=2,
@@ -2330,6 +2336,7 @@ def _batch_remesh_vtps(
 	pattern: str,
 	remesh_iso: bool,
 	remesh_target: int,
+	remesh_target_factor: float,
 	remesh_subdivide: int,
 	stem_mc: bool,
 	stem_mc_spacing: float,
@@ -2390,7 +2397,8 @@ def _batch_remesh_vtps(
 			reconstructed = _reconstruct_surface_mc(poly, stem_mc_spacing)
 			poly = _interpolate_point_arrays(poly, reconstructed, nearest=True)
 		if remesh_iso:
-			poly = _remesh_isotropic(poly, remesh_target, remesh_subdivide)
+			effective_target = _effective_remesh_target(poly, remesh_target, remesh_target_factor)
+			poly = _remesh_isotropic(poly, effective_target, remesh_subdivide)
 		_write_polydata_output(poly, dst_path)
 		processed += 1
 	print(
@@ -2482,6 +2490,19 @@ def _remesh_isotropic(
 	if not isinstance(sampled, pv.PolyData):
 		sampled = sampled.extract_surface()
 	return sampled
+
+
+def _effective_remesh_target(
+	poly: vtk.vtkPolyData,
+	target_points: int,
+	factor: float,
+) -> int:
+	base = target_points
+	if base <= 0:
+		base = max(1, poly.GetNumberOfPoints())
+	if factor <= 0:
+		factor = 1.0
+	return max(1, int(round(base * factor)))
 
 
 def _build_voxel_shell_polydata(
@@ -3310,6 +3331,7 @@ def main() -> int:
 			args.batch_remesh_glob,
 			args.remesh_iso,
 			args.remesh_target,
+			args.remesh_target_factor,
 			args.remesh_subdivide,
 			args.stem_mc,
 			args.stem_mc_spacing,
