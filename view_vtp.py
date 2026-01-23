@@ -376,6 +376,11 @@ def _parse_args() -> argparse.Namespace:
 		help="Overwrite existing outputs in batch remesh",
 	)
 	parser.add_argument(
+		"--batch-remesh-verbose",
+		action="store_true",
+		help="Verbose progress output for batch remesh",
+	)
+	parser.add_argument(
 		"--show-convex-hull",
 		action="store_true",
 		help="Render the convex envelope of the stem (clipped to cut plane when available)",
@@ -2183,6 +2188,7 @@ def _batch_remesh_vtps(
 	stem_mc: bool,
 	stem_mc_spacing: float,
 	overwrite: bool,
+	verbose: bool,
 ) -> int:
 	if not input_root.exists():
 		raise FileNotFoundError(str(input_root))
@@ -2194,19 +2200,24 @@ def _batch_remesh_vtps(
 	if not inputs and pattern == "**/*.vtp":
 		inputs = sorted(path for path in input_root.glob("**/*.stl") if path.is_file())
 	if not inputs:
-		print("No input VTP files found for batch remesh.")
+		print("No input mesh files found for batch remesh.")
 		return 0
 	processed = 0
 	skipped = 0
-	for src_path in inputs:
+	total = len(inputs)
+	for idx, src_path in enumerate(inputs, start=1):
 		try:
 			rel_path = src_path.relative_to(input_root)
 		except ValueError:
 			continue
 		dst_path = output_root / rel_path
 		if dst_path.exists() and not overwrite:
+			if verbose:
+				print(f"[{idx}/{total}] skip {rel_path}")
 			skipped += 1
 			continue
+		if verbose:
+			print(f"[{idx}/{total}] remesh {rel_path}")
 		poly = _load_polydata_any(str(src_path))
 		if stem_mc:
 			reconstructed = _reconstruct_surface_mc(poly, stem_mc_spacing)
@@ -3136,6 +3147,7 @@ def main() -> int:
 			args.stem_mc,
 			args.stem_mc_spacing,
 			args.batch_remesh_overwrite,
+			args.batch_remesh_verbose,
 		)
 		return 0
 	if not args.vtp:
