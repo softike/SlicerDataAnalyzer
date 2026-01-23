@@ -231,3 +231,15 @@ python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/
 ```shell
 python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/Mediplan3D/Slicer-exports/active_03/1.3.46.670589.33.1.63828549743236925000003.4985465118747613432_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label  --stem-mc --stem-mc-spacing 0.5  --show-axes  --cache-remesh --show-envelope-gruen  --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal  --gruen-remapped --envelope-hu-viewports --opacity 1 --envelope-hu-cortical 
 ```
+
+## remesh with implicit modelling
+
+```shell
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/Mediplan3D/Slicer-exports/active_03/1.3.46.670589.33.1.63828549743236925000003.4985465118747613432_stem_local.vtp  --batch-remesh-input /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan/ --batch-remesh-output /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplanv3/ --pre-mc-fill-holes --normal-ray-filter --normal-ray-auto-orient --normal-ray-eps 0.1  --remesh-iso --remesh-target 30000  --stem-mc --stem-mc-spacing 0.5   --batch-remesh-verbose --batch-export-normal-ray
+```
+
+## remesh with pyacvd
+
+```shell
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/Mediplan3D/Slicer-exports/active_03/1.3.46.670589.33.1.63828549743236925000003.4985465118747613432_stem_local.vtp  --batch-remesh-input /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan/ --batch-remesh-output /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplanv3/   --remesh-iso --remesh-target-factor 2.0  --batch-remesh-verbose 
+```
