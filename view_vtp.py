@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import random
 import sys
 import xml.etree.ElementTree as ET
 from importlib import import_module
@@ -882,26 +883,16 @@ def _build_ezplan_transfer_function() -> vtk.vtkColorTransferFunction:
 def _build_gruen_lookup_table() -> vtk.vtkLookupTable:
 	lut = vtk.vtkLookupTable()
 	lut.SetNumberOfTableValues(15)
+	lut.SetRange(1.0, 14.0)
 	lut.Build()
-	colors = [
-		(0.6, 0.6, 0.6),
-		(0.9, 0.2, 0.2),
-		(0.9, 0.5, 0.2),
-		(0.9, 0.8, 0.2),
-		(0.6, 0.6, 0.6),
-		(0.2, 0.8, 0.2),
-		(0.2, 0.8, 0.6),
-		(0.2, 0.8, 0.9),
-		(0.2, 0.2, 0.9),
-		(0.2, 0.5, 0.9),
-		(0.2, 0.8, 0.9),
-		(0.6, 0.6, 0.6),
-		(0.9, 0.2, 0.6),
-		(0.9, 0.2, 0.9),
-		(0.6, 0.2, 0.9),
-	]
-	for idx in range(15):
-		r, g, b = colors[idx]
+	rng = random.Random(42)
+	colors = [(0.6, 0.6, 0.6)]
+	for _ in range(14):
+		colors.append((rng.random(), rng.random(), rng.random()))
+	# Ensure zones 5 and 6 are clearly distinct.
+	colors[5] = (0.95, 0.15, 0.15)
+	colors[6] = (0.15, 0.15, 0.95)
+	for idx, (r, g, b) in enumerate(colors):
 		lut.SetTableValue(idx, r, g, b, 1.0)
 	return lut
 
@@ -909,6 +900,7 @@ def _build_gruen_lookup_table() -> vtk.vtkLookupTable:
 def _build_partition_lookup_table() -> vtk.vtkLookupTable:
 	lut = vtk.vtkLookupTable()
 	lut.SetNumberOfTableValues(5)
+	lut.SetRange(1.0, 4.0)
 	lut.Build()
 	colors = [
 		(0.6, 0.6, 0.6),
