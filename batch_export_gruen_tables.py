@@ -75,6 +75,11 @@ def _parse_args() -> argparse.Namespace:
         help="Use remeshed surface (with interpolated scalars) for Gruen HU stats.",
     )
     parser.add_argument(
+        "--use-input-remesh",
+        action="store_true",
+        help="Treat the input mesh as already remeshed for Gruen/envelope stats.",
+    )
+    parser.add_argument(
         "--gruen-bottom-sphere-radius",
         type=float,
         default=0.0,
@@ -138,8 +143,8 @@ def main() -> int:
     if args.verbose:
         print(f"Found {len(vtp_files)} VTP file(s) under {root}")
 
-    if args.envelope_gruen and not args.stem_mc:
-        print("Error: --envelope-gruen requires --stem-mc", file=sys.stderr)
+    if args.envelope_gruen and not args.stem_mc and not args.use_input_remesh:
+        print("Error: --envelope-gruen requires --stem-mc or --use-input-remesh", file=sys.stderr)
         return 1
 
     failures = 0
@@ -167,6 +172,8 @@ def main() -> int:
                 "--envelope-z-bands",
                 args.envelope_z_bands,
             ])
+            if args.use_input_remesh:
+                command.append("--envelope-gruen-input")
         if args.gruen_remapped:
             command.append("--gruen-remapped")
         if args.gruen_hu or args.gruen_remapped or args.envelope_gruen:
@@ -175,6 +182,8 @@ def main() -> int:
                 command.append("--gruen-zones")
             if args.gruen_hu_remesh:
                 command.append("--gruen-hu-remesh")
+            if args.use_input_remesh:
+                command.append("--gruen-hu-remesh-input")
             if args.gruen_bottom_sphere_radius > 0:
                 command.extend(["--gruen-bottom-sphere-radius", str(args.gruen_bottom_sphere_radius)])
         else:
