@@ -381,6 +381,48 @@ def _parse_args() -> argparse.Namespace:
 		help="Verbose progress output for batch remesh",
 	)
 	parser.add_argument(
+		"--normal-ray-filter",
+		action="store_true",
+		help="Filter internal faces by ray-casting along cell normals",
+	)
+	parser.add_argument(
+		"--normal-ray-length",
+		type=float,
+		default=0.0,
+		help="Ray length for normal filtering (0 uses bbox diagonal)",
+	)
+	parser.add_argument(
+		"--normal-ray-eps",
+		type=float,
+		default=0.1,
+		help="Normal offset (mm) to avoid self-intersections (default: 0.1)",
+	)
+	parser.add_argument(
+		"--normal-ray-auto-orient",
+		action="store_true",
+		help="Auto-orient normals before normal-ray filtering",
+	)
+	parser.add_argument(
+		"--export-normal-ray-mesh",
+		help="Write the normal-ray filtered mesh to this path",
+	)
+	parser.add_argument(
+		"--batch-export-normal-ray",
+		action="store_true",
+		help="Export normal-ray filtered meshes alongside batch outputs",
+	)
+	parser.add_argument(
+		"--pre-mc-fill-holes",
+		action="store_true",
+		help="Fill holes before implicit reconstruction",
+	)
+	parser.add_argument(
+		"--pre-mc-hole-size",
+		type=float,
+		default=100.0,
+		help="Maximum hole size (mm) to fill before implicit reconstruction (default: 100)",
+	)
+	parser.add_argument(
 		"--show-convex-hull",
 		action="store_true",
 		help="Render the convex envelope of the stem (clipped to cut plane when available)",
@@ -2134,6 +2176,97 @@ def _reconstruct_surface_mc(poly: vtk.vtkPolyData, spacing: float) -> vtk.vtkPol
 	return contour.GetOutput()
 
 
+def _filter_external_by_normal(
+	poly: vtk.vtkPolyData,
+	ray_length: float,
+	ray_eps: float,
+	auto_orient: bool,
+	verbose: bool = False,
+) -> vtk.vtkPolyData:
+	if poly.GetNumberOfCells() == 0:
+		return poly
+	bounds = poly.GetBounds()
+	dx = bounds[1] - bounds[0]
+	dy = bounds[3] - bounds[2]
+	dz = bounds[5] - bounds[4]
+	diag = (dx * dx + dy * dy + dz * dz) ** 0.5
+	if diag <= 0:
+		return poly
+	if ray_length <= 0:
+		ray_length = diag * 2.0
+	ray_eps = max(ray_eps, 0.0)
+	normals = vtk.vtkPolyDataNormals()
+	normals.SetInputData(poly)
+	normals.ComputePointNormalsOff()
+	normals.ComputeCellNormalsOn()
+	normals.SplittingOff()
+	normals.ConsistencyOn()
+	if auto_orient:
+		normals.AutoOrientNormalsOn()
+	normals.Update()
+	poly_norm = normals.GetOutput()
+	cell_normals = poly_norm.GetCellData().GetNormals()
+	if cell_normals is None:
+		return poly
+	obb = vtk.vtkOBBTree()
+	obb.SetDataSet(poly_norm)
+	obb.BuildLocator()
+	keep_ids = vtk.vtkIdTypeArray()
+	keep_ids.SetNumberOfComponents(1)
+	cell_count = poly_norm.GetNumberOfCells()
+	for cell_id in range(cell_count):
+		cell = poly_norm.GetCell(cell_id)
+		points = cell.GetPoints()
+		if points is None or points.GetNumberOfPoints() == 0:
+			continue
+		cx = cy = cz = 0.0
+		for idx in range(points.GetNumberOfPoints()):
+			px, py, pz = points.GetPoint(idx)
+			cx += px
+			cy += py
+			cz += pz
+		inv = 1.0 / points.GetNumberOfPoints()
+		center = (cx * inv, cy * inv, cz * inv)
+		nx, ny, nz = cell_normals.GetTuple(cell_id)
+		nx, ny, nz = _normalize((nx, ny, nz))
+		if nx == 0.0 and ny == 0.0 and nz == 0.0:
+			keep_ids.InsertNextValue(cell_id)
+			continue
+		def _count_hits(direction: tuple[float, float, float]) -> int:
+			off = _vec_scale(direction, ray_eps)
+			p0 = _vec_add(center, off)
+			p1 = _vec_add(center, _vec_scale(direction, ray_length))
+			hit_points = vtk.vtkPoints()
+			hit_ids = vtk.vtkIdList()
+			obb.IntersectWithLine(p0, p1, hit_points, hit_ids)
+			count = 0
+			for hit_idx in range(hit_ids.GetNumberOfIds()):
+				hit_id = hit_ids.GetId(hit_idx)
+				if hit_id != cell_id:
+					count += 1
+			return count
+		hits_plus = _count_hits((nx, ny, nz))
+		hits_minus = _count_hits((-nx, -ny, -nz))
+		if hits_plus == 0 or hits_minus == 0:
+			keep_ids.InsertNextValue(cell_id)
+	if verbose:
+		print(f"Normal-ray filter: kept {keep_ids.GetNumberOfTuples()} / {cell_count} cells")
+	selection_node = vtk.vtkSelectionNode()
+	selection_node.SetFieldType(vtk.vtkSelectionNode.CELL)
+	selection_node.SetContentType(vtk.vtkSelectionNode.INDICES)
+	selection_node.SetSelectionList(keep_ids)
+	selection = vtk.vtkSelection()
+	selection.AddNode(selection_node)
+	extract = vtk.vtkExtractSelection()
+	extract.SetInputData(0, poly_norm)
+	extract.SetInputData(1, selection)
+	extract.Update()
+	geom = vtk.vtkGeometryFilter()
+	geom.SetInputConnection(extract.GetOutputPort())
+	geom.Update()
+	return geom.GetOutput()
+
+
 def _read_vtp_cache(path: Path) -> vtk.vtkPolyData | None:
 	reader = vtk.vtkXMLPolyDataReader()
 	reader.SetFileName(str(path))
@@ -2178,6 +2311,19 @@ def _write_polydata_output(poly: vtk.vtkPolyData, path: Path) -> None:
 	raise RuntimeError(f"Unsupported output mesh format: {suffix}")
 
 
+def _fill_holes(poly: vtk.vtkPolyData, hole_size: float) -> vtk.vtkPolyData:
+	if hole_size <= 0:
+		return poly
+	fill = vtk.vtkFillHolesFilter()
+	fill.SetInputData(poly)
+	fill.SetHoleSize(hole_size)
+	fill.Update()
+	clean = vtk.vtkCleanPolyData()
+	clean.SetInputData(fill.GetOutput())
+	clean.Update()
+	return clean.GetOutput()
+
+
 def _batch_remesh_vtps(
 	input_root: Path,
 	output_root: Path,
@@ -2189,6 +2335,13 @@ def _batch_remesh_vtps(
 	stem_mc_spacing: float,
 	overwrite: bool,
 	verbose: bool,
+	normal_ray_filter: bool,
+	normal_ray_length: float,
+	normal_ray_eps: float,
+	normal_ray_auto_orient: bool,
+	batch_export_normal_ray: bool,
+	pre_mc_fill_holes: bool,
+	pre_mc_hole_size: float,
 ) -> int:
 	if not input_root.exists():
 		raise FileNotFoundError(str(input_root))
@@ -2219,7 +2372,21 @@ def _batch_remesh_vtps(
 		if verbose:
 			print(f"[{idx}/{total}] remesh {rel_path}")
 		poly = _load_polydata_any(str(src_path))
+		if normal_ray_filter:
+			poly = _filter_external_by_normal(
+				poly,
+				normal_ray_length,
+				normal_ray_eps,
+				normal_ray_auto_orient,
+				verbose=verbose,
+			)
+			if batch_export_normal_ray:
+				ray_path = dst_path.with_suffix("")
+				ray_path = ray_path.with_name(f"{ray_path.name}_premc").with_suffix(".stl")
+				_write_polydata_output(poly, ray_path)
 		if stem_mc:
+			if pre_mc_fill_holes:
+				poly = _fill_holes(poly, pre_mc_hole_size)
 			reconstructed = _reconstruct_surface_mc(poly, stem_mc_spacing)
 			poly = _interpolate_point_arrays(poly, reconstructed, nearest=True)
 		if remesh_iso:
@@ -3148,6 +3315,13 @@ def main() -> int:
 			args.stem_mc_spacing,
 			args.batch_remesh_overwrite,
 			args.batch_remesh_verbose,
+			args.normal_ray_filter,
+			args.normal_ray_length,
+			args.normal_ray_eps,
+			args.normal_ray_auto_orient,
+			args.batch_export_normal_ray,
+			args.pre_mc_fill_holes,
+			args.pre_mc_hole_size,
 		)
 		return 0
 	if not args.vtp:
@@ -3310,7 +3484,18 @@ def main() -> int:
 					f"mean={stats['mean']:.4f}, rms={stats['rms']:.4f}, "
 					f"p95={stats['p95']:.4f}, p99={stats['p99']:.4f}"
 				)
+	if args.normal_ray_filter:
+		poly = _filter_external_by_normal(
+			poly,
+			args.normal_ray_length,
+			args.normal_ray_eps,
+			args.normal_ray_auto_orient,
+		)
+		if args.export_normal_ray_mesh:
+			_write_polydata_output(poly, Path(args.export_normal_ray_mesh).resolve())
 	if args.stem_mc:
+		if args.pre_mc_fill_holes:
+			poly = _fill_holes(poly, args.pre_mc_hole_size)
 		reconstructed = None
 		stem_cache_path = None
 		if args.cache_remesh:
