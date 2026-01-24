@@ -19,7 +19,7 @@ EZPLAN_ZONE_DEFS = [
 	(-200.0, 100.0, (0.0, 0.0, 1.0), "Loosening"),
 	(100.0, 400.0, (1.0, 0.0, 1.0), "MicroMove"),
 	(400.0, 1000.0, (0.0, 1.0, 0.0), "Stable"),
-	(1000.0, 1500.0, (1.0, 0.0, 0.0), "Cortical"),
+	(1000.0, 2000.0, (1.0, 0.0, 0.0), "Cortical"),
 ]
 GRUEN_ZONE_ID_REMAP_LEFT = {
 	1: 3,
@@ -529,7 +529,7 @@ def _parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--envelope-hu-cortical",
 		action="store_true",
-		help="In envelope HU viewports, auto-select zones containing cortical HU (1000-1500)",
+		help="In envelope HU viewports, auto-select zones containing cortical HU (1000-2000)",
 	)
 	parser.add_argument(
 		"--envelope-hu-stable",
@@ -4026,7 +4026,7 @@ def main() -> int:
 				target_poly,
 				args.hu_array,
 				zone_array_name,
-				(1000.0, 1500.0),
+				(1000.0, 2000.0),
 			)
 			if not cortical_zones:
 				print("Warning: no cortical zones detected for the current HU range.")

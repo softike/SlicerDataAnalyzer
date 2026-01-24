@@ -230,7 +230,7 @@ def build_slicer_script(
             (-200.0, 100.0, (0.0, 0.0, 1.0), "Loosening"),
             (100.0, 400.0, (1.0, 0.0, 1.0), "MicroMove"),
             (400.0, 1000.0, (0.0, 1.0, 0.0), "Stable"),
-            (1000.0, 1500.0, (1.0, 0.0, 0.0), "Cortical"),
+            (1000.0, 2000.0, (1.0, 0.0, 0.0), "Cortical"),
         ]
         OUTPUT_DIR_CLEARED = False
 
@@ -905,7 +905,7 @@ def build_slicer_script(
                 "Loosening": (-200.0, 100.0),
                 "MicroMove": (100.0, 400.0),
                 "Stable": (400.0, 1000.0),
-                "Cortical": (1000.0, 1500.0),
+                "Cortical": (1000.0, 2000.0),
             }
             zone_counts = {name: 0 for name in zones}
             for idx in range(num_points):

@@ -18,7 +18,7 @@ else:
         'Loosening': {'range': (-200, 100), 'count': 0},
         'MicroMove': {'range': (100, 400), 'count': 0},
         'Stable': {'range': (400, 1000), 'count': 0},
-        'Cortical': {'range': (1000, 1500), 'count': 0}
+        'Cortical': {'range': (1000, 2000), 'count': 0}
     }
 
     # Classify each scalar value into the correct zone
