@@ -107,6 +107,11 @@ def _parse_args() -> argparse.Namespace:
         help="Force recompute remesh caches even if cache files exist.",
     )
     parser.add_argument(
+        "--cortical-unbounded",
+        action="store_true",
+        help="Treat all HU values >= 1000 as cortical (forwarded to view_vtp.py).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print commands without executing.",
@@ -176,6 +181,8 @@ def main() -> int:
                 command.append("--envelope-gruen-input")
         if args.gruen_remapped:
             command.append("--gruen-remapped")
+        if args.cortical_unbounded:
+            command.append("--cortical-unbounded")
         if args.gruen_hu or args.gruen_remapped or args.envelope_gruen:
             command.append("--export-gruen-hu-xml")
             if not args.envelope_gruen:

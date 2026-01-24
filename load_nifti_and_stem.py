@@ -135,6 +135,11 @@ def parse_args() -> argparse.Namespace:
         help="Export a local-frame VTP (non-hardened) with the sampled HU scalar array",
     )
     parser.add_argument(
+        "--cortical-unbounded",
+        action="store_true",
+        help="Treat all HU values >= 1000 as cortical (ignore the cortical upper bound)",
+    )
+    parser.add_argument(
         "--config-index",
         type=int,
         help=(
@@ -171,6 +176,7 @@ def build_slicer_script(
     rotation_mode: str,
     export_local_stem: bool,
     export_stem_screenshots: bool,
+    cortical_unbounded: bool,
     exit_after_run: bool,
 ) -> str:
     stl_folders_literal = "[{}]".format(
@@ -214,6 +220,7 @@ def build_slicer_script(
         CUT_PLANE_COLOR = (0.1, 0.6, 1.0)
         CUT_PLANE_OPACITY = 0.35
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
+        CORTICAL_UNBOUNDED = $CORTICAL_UNBOUNDED
         EXPORT_LOCAL_STEM = $EXPORT_LOCAL_STEM
         CONFIG_INDEX = $CONFIG_INDEX
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
@@ -901,11 +908,12 @@ def build_slicer_script(
             if num_points == 0:
                 print("Model '%s' has no points to summarize" % model_node.GetName())
                 return None
+            cortical_max = float("inf") if CORTICAL_UNBOUNDED else 2000.0
             zones = {
                 "Loosening": (-200.0, 100.0),
                 "MicroMove": (100.0, 400.0),
                 "Stable": (400.0, 1000.0),
-                "Cortical": (1000.0, 2000.0),
+                "Cortical": (1000.0, cortical_max),
             }
             zone_counts = {name: 0 for name in zones}
             for idx in range(num_points):
@@ -1467,6 +1475,7 @@ def build_slicer_script(
         SHOW_CUT_PLANE="True" if show_cut_plane else "False",
         CUT_PLANE_SIZE=f"{max(cut_plane_size, 1.0):.3f}",
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
+        CORTICAL_UNBOUNDED="True" if cortical_unbounded else "False",
         EXPORT_LOCAL_STEM="True" if export_local_stem else "False",
         CONFIG_INDEX="None" if config_index is None else str(int(config_index)),
         AUTO_ROTATION_MODE=rotation_mode,
@@ -1519,6 +1528,7 @@ def main() -> int:
         args.rotation_mode,
         args.export_local_stem,
         args.export_stem_screenshots,
+        args.cortical_unbounded,
         args.exit_after_run,
     )
     temp_script = write_temp_script(slicer_script)

@@ -100,6 +100,11 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded flag to export the local-frame stem VTP with HU scalars.",
     )
     parser.add_argument(
+        "--cortical-unbounded",
+        action="store_true",
+        help="Forwarded flag to treat all HU values >= 1000 as cortical.",
+    )
+    parser.add_argument(
         "--slicer-extra-arg",
         action="append",
         dest="extra_args",
@@ -273,6 +278,8 @@ def _build_command(
         command.append("--scalar-below-cut-plane")
     if args.export_local_stem:
         command.append("--export-local-stem")
+    if args.cortical_unbounded:
+        command.append("--cortical-unbounded")
     if args.show_neck_point:
         command.append("--show-neck-point")
     if args.show_cut_plane:

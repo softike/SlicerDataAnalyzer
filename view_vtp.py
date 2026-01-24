@@ -21,6 +21,19 @@ EZPLAN_ZONE_DEFS = [
 	(400.0, 1000.0, (0.0, 1.0, 0.0), "Stable"),
 	(1000.0, 2000.0, (1.0, 0.0, 0.0), "Cortical"),
 ]
+CORTICAL_UNBOUNDED = False
+
+
+def _iter_ezplan_zone_defs() -> list[tuple[float, float, tuple[float, float, float], str]]:
+	if not CORTICAL_UNBOUNDED:
+		return EZPLAN_ZONE_DEFS
+	zones: list[tuple[float, float, tuple[float, float, float], str]] = []
+	for zone_min, zone_max, color, label in EZPLAN_ZONE_DEFS:
+		if label.lower() == "cortical":
+			zones.append((zone_min, float("inf"), color, label))
+		else:
+			zones.append((zone_min, zone_max, color, label))
+	return zones
 GRUEN_ZONE_ID_REMAP_LEFT = {
 	1: 3,
 	5: 2,
@@ -529,7 +542,15 @@ def _parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--envelope-hu-cortical",
 		action="store_true",
-		help="In envelope HU viewports, auto-select zones containing cortical HU (1000-2000)",
+		help=(
+			"In envelope HU viewports, auto-select zones containing cortical HU "
+			"(1000-2000, or 1000+ with --cortical-unbounded)"
+		),
+	)
+	parser.add_argument(
+		"--cortical-unbounded",
+		action="store_true",
+		help="Treat all HU values >= 1000 as cortical (ignore the cortical upper bound)",
 	)
 	parser.add_argument(
 		"--envelope-hu-stable",
@@ -2954,7 +2975,7 @@ def _resolve_hu_range(label: str | None) -> tuple[float, float] | None:
 	if not label:
 		return None
 	name = label.strip().lower()
-	for zone_min, zone_max, _color, zone_label in EZPLAN_ZONE_DEFS:
+	for zone_min, zone_max, _color, zone_label in _iter_ezplan_zone_defs():
 		if zone_label.lower() == name:
 			return (zone_min, zone_max)
 	return None
@@ -3087,10 +3108,10 @@ def _compute_hu_table(array: vtk.vtkDataArray) -> list[tuple[str, float]]:
 		if value == value:
 			valid_values.append(value)
 	if not valid_values:
-		return [(zone[3], 0.0) for zone in EZPLAN_ZONE_DEFS]
-	counts = {zone[3]: 0 for zone in EZPLAN_ZONE_DEFS}
+		return [(zone[3], 0.0) for zone in _iter_ezplan_zone_defs()]
+	counts = {zone[3]: 0 for zone in _iter_ezplan_zone_defs()}
 	for value in valid_values:
-		for zone_min, zone_max, _color, label in EZPLAN_ZONE_DEFS:
+		for zone_min, zone_max, _color, label in _iter_ezplan_zone_defs():
 			if zone_min <= value <= zone_max:
 				counts[label] += 1
 				break
@@ -3150,7 +3171,7 @@ def _compute_partition_hu_summary(
 	hu_array = point_data.GetArray(hu_array_name)
 	if hu_array is None:
 		raise RuntimeError("Scalar array '%s' not found" % hu_array_name)
-	counts: dict[int, dict[str, int]] = {pid: {z[3]: 0 for z in EZPLAN_ZONE_DEFS} for pid in range(1, 5)}
+	counts: dict[int, dict[str, int]] = {pid: {z[3]: 0 for z in _iter_ezplan_zone_defs()} for pid in range(1, 5)}
 	totals: dict[int, int] = {pid: 0 for pid in range(1, 5)}
 	for idx in range(hu_array.GetNumberOfTuples()):
 		part_val = partition_array.GetTuple1(idx)
@@ -3163,7 +3184,7 @@ def _compute_partition_hu_summary(
 		if value != value:
 			continue
 		totals[part_id] += 1
-		for zone_min, zone_max, _color, label in EZPLAN_ZONE_DEFS:
+		for zone_min, zone_max, _color, label in _iter_ezplan_zone_defs():
 			if zone_min <= value <= zone_max:
 				counts[part_id][label] += 1
 				break
@@ -3191,7 +3212,7 @@ def _compute_gruen_hu_summary(
 	if hu_array is None:
 		raise RuntimeError("Scalar array '%s' not found" % hu_array_name)
 	counts: dict[int, dict[str, int]] = {
-		zone_id: {z[3]: 0 for z in EZPLAN_ZONE_DEFS} for zone_id in range(1, max_zone + 1)
+		zone_id: {z[3]: 0 for z in _iter_ezplan_zone_defs()} for zone_id in range(1, max_zone + 1)
 	}
 	totals: dict[int, int] = {zone_id: 0 for zone_id in range(1, max_zone + 1)}
 	for idx in range(hu_array.GetNumberOfTuples()):
@@ -3205,7 +3226,7 @@ def _compute_gruen_hu_summary(
 		if value != value:
 			continue
 		totals[zone_id] += 1
-		for zone_min, zone_max, _color, label in EZPLAN_ZONE_DEFS:
+		for zone_min, zone_max, _color, label in _iter_ezplan_zone_defs():
 			if zone_min <= value <= zone_max:
 				counts[zone_id][label] += 1
 				break
@@ -3213,7 +3234,7 @@ def _compute_gruen_hu_summary(
 	if bottom_point is not None and bottom_radius > 0:
 		x0, y0, z0 = bottom_point
 		r2 = bottom_radius * bottom_radius
-		bottom_counts = {z[3]: 0 for z in EZPLAN_ZONE_DEFS}
+		bottom_counts = {z[3]: 0 for z in _iter_ezplan_zone_defs()}
 		bottom_total = 0
 		points = poly.GetPoints()
 		if points is not None:
@@ -3228,7 +3249,7 @@ def _compute_gruen_hu_summary(
 				if dx * dx + dy * dy + dz * dz > r2:
 					continue
 				bottom_total += 1
-				for zone_min, zone_max, _color, label in EZPLAN_ZONE_DEFS:
+				for zone_min, zone_max, _color, label in _iter_ezplan_zone_defs():
 					if zone_min <= value <= zone_max:
 						bottom_counts[label] += 1
 						break
@@ -3322,6 +3343,8 @@ def _export_gruen_hu_xml(
 
 def main() -> int:
 	args = _parse_args()
+	global CORTICAL_UNBOUNDED
+	CORTICAL_UNBOUNDED = bool(args.cortical_unbounded)
 	if args.batch_remesh_input or args.batch_remesh_output:
 		if not args.batch_remesh_input or not args.batch_remesh_output:
 			raise RuntimeError("--batch-remesh-input and --batch-remesh-output must be provided together")
@@ -4022,11 +4045,14 @@ def main() -> int:
 		)
 		cortical_zones: list[int] | None = None
 		if args.envelope_hu_cortical:
+			cortical_range = _resolve_hu_range("cortical")
+			if cortical_range is None:
+				raise RuntimeError("Failed to resolve cortical HU range")
 			cortical_zones = _find_zones_with_hu_range_by_array(
 				target_poly,
 				args.hu_array,
 				zone_array_name,
-				(1000.0, 2000.0),
+				cortical_range,
 			)
 			if not cortical_zones:
 				print("Warning: no cortical zones detected for the current HU range.")

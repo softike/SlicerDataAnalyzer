@@ -312,21 +312,21 @@ python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN2/images/H001 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --exit-after-run
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --exit-after-run
 
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN2/images/H002 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --exit-after-run
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --exit-after-run
 
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN2/images/H003 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --exit-after-run
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --exit-after-run
 
-python batch_export_gruen_tables.py  --root /media/developer/Storage1/HFRStudy-RUN2/images/ --recursive --side auto --envelope-gruen --envelope-gruen-mode normal --use-input-remesh --envelope-z-bands 0.2,0.4,0.4 --gruen-remapped --gruen-hu-remesh --gruen-bottom-sphere-radius 10 --verbose
+python batch_export_gruen_tables.py  --root /media/developer/Storage1/HFRStudy-RUN2/images/ --recursive --side auto --envelope-gruen --envelope-gruen-mode normal --use-input-remesh --envelope-z-bands 0.2,0.4,0.4 --gruen-remapped --gruen-hu-remesh --cortical-unbounded --gruen-bottom-sphere-radius 10 --verbose
 
 python export_stem_metrics_excel.py --root /media/developer/Storage1/HFRStudy-RUN2/images/ --output /home/developer/Projects/Code/SlicerDataAnalyzer/CurrentReports/RUN2_8/stem_metrics_RUN2_CORTICAL2000.xlsx
 ```
