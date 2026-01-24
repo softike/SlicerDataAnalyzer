@@ -19,6 +19,8 @@ ROTATION_BEHAVIOR = {
     "johnson": (True, True),  # pre, post
     "mathys": (False, True),
     "medacta": (False, True),
+    "ecofit": (True, True),
+    "fit": (True, True),
 }
 
 
@@ -98,6 +100,16 @@ def parse_args() -> argparse.Namespace:
         "--export-local-stem",
         action="store_true",
         help="Forwarded flag to export the local-frame stem VTP with HU scalars.",
+    )
+    parser.add_argument(
+        "--export-scene",
+        action="store_true",
+        help="Forwarded flag to export a per-configuration MRML scene.",
+    )
+    parser.add_argument(
+        "--preserve-exports",
+        action="store_true",
+        help="Forwarded flag to keep existing Slicer-exports outputs when re-running a single config.",
     )
     parser.add_argument(
         "--cortical-unbounded",
@@ -250,6 +262,14 @@ def _detect_rotation_mode(seedplan_path: Path, case_id: str | None = None) -> st
                 for token in tokens
             ):
                 return "johnson"
+            if any(
+                token
+                and ("ecofit" in token or "implantcast" in token or "icast" in token)
+                for token in tokens
+            ):
+                return "ecofit"
+            if any(token and ("lima" in token or "fit" in token) for token in tokens):
+                return "fit"
     return "auto"
 
 
@@ -278,6 +298,10 @@ def _build_command(
         command.append("--scalar-below-cut-plane")
     if args.export_local_stem:
         command.append("--export-local-stem")
+    if args.export_scene:
+        command.append("--export-scene")
+    if args.preserve_exports:
+        command.append("--preserve-exports")
     if args.cortical_unbounded:
         command.append("--cortical-unbounded")
     if args.show_neck_point:

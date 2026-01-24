@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
 """
-
-
-
-
-
-
-
-
-
-
-
-
-
 # and supports more advanced formatting options# Note: openpyxl is preferred as it allows both reading and writing Excel files# xlsxwriter>=1.3.0# Option 2: xlsxwriter (alternative - creates .xlsx files, good performance)openpyxl>=3.0.0# Option 1: openpyxl (recommended - supports .xlsx files with formatting)# Excel file format engines (install at least one)pandas>=1.0.0# Core dependency for Excel exportBatch comparison script for medical planning data across multiple testers.
 This script automatically finds corresponding case folders across H001, H002, H003 directories
 and generates a consolidated HTML report with all case comparisons.

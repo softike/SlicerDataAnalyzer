@@ -117,7 +117,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--rotation-mode",
-        choices=["auto", "mathys", "medacta", "johnson", "none"],
+        choices=["auto", "mathys", "medacta", "johnson", "ecofit", "fit", "none"],
         default="auto",
         help="Override automatic manufacturer-based rotation handling",
     )
@@ -130,9 +130,19 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--export-scene",
+        action="store_true",
+        help="Export a per-configuration MRML scene containing the volume and stem",
+    )
+    parser.add_argument(
         "--export-local-stem",
         action="store_true",
         help="Export a local-frame VTP (non-hardened) with the sampled HU scalar array",
+    )
+    parser.add_argument(
+        "--preserve-exports",
+        action="store_true",
+        help="Do not clear existing Slicer-exports output before writing new configuration outputs",
     )
     parser.add_argument(
         "--cortical-unbounded",
@@ -176,7 +186,9 @@ def build_slicer_script(
     rotation_mode: str,
     export_local_stem: bool,
     export_stem_screenshots: bool,
+    export_scene: bool,
     cortical_unbounded: bool,
+    preserve_exports: bool,
     exit_after_run: bool,
 ) -> str:
     stl_folders_literal = "[{}]".format(
@@ -220,7 +232,9 @@ def build_slicer_script(
         CUT_PLANE_COLOR = (0.1, 0.6, 1.0)
         CUT_PLANE_OPACITY = 0.35
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
+        EXPORT_SCENE = $EXPORT_SCENE
         CORTICAL_UNBOUNDED = $CORTICAL_UNBOUNDED
+        PRESERVE_EXPORTS = $PRESERVE_EXPORTS
         EXPORT_LOCAL_STEM = $EXPORT_LOCAL_STEM
         CONFIG_INDEX = $CONFIG_INDEX
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
@@ -229,6 +243,8 @@ def build_slicer_script(
             "johnson": (True, True, False),
             "mathys": (True, True, True),
             "medacta": (True, True, False),
+            "ecofit": (True, True, False),
+            "fit": (True, True, False),
         }
         SCREENSHOT_DIR = os.path.join(os.path.dirname(SEEDPLAN_PATH), "Slicer-exports")
         EZPLAN_LUT_NAME = "EZplan HU Zones"
@@ -544,6 +560,13 @@ def build_slicer_script(
                 return "medacta"
             if any("actis" in marker or "corail" in marker for marker in markers):
                 return "johnson"
+            if any(
+                "ecofit" in marker or "implantcast" in marker or "icast" in marker
+                for marker in markers
+            ):
+                return "ecofit"
+            if any("lima" in marker or "fit" in marker or "lc fit" in marker for marker in markers):
+                return "fit"
             return "none"
 
         def _ensure_ezplan_lut():
@@ -652,7 +675,7 @@ def build_slicer_script(
             if not os.path.isdir(SCREENSHOT_DIR):
                 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
                 print("Created screenshot directory: %s" % SCREENSHOT_DIR)
-            if clear_dir and not OUTPUT_DIR_CLEARED:
+            if clear_dir and not OUTPUT_DIR_CLEARED and not PRESERVE_EXPORTS:
                 print("Clearing existing exports in: %s" % SCREENSHOT_DIR)
                 for entry in os.listdir(SCREENSHOT_DIR):
                     path = os.path.join(SCREENSHOT_DIR, entry)
@@ -768,6 +791,16 @@ def build_slicer_script(
                 pixmap = view.grab()
                 pixmap.save(file_path)
                 print("Saved screenshot: %s" % file_path)
+
+        def _export_scene(suffix=None, clear_exports=False):
+            prefix = _stem_output_prefix(clear_dir=clear_exports, suffix=suffix)
+            scene_path = prefix + "_scene.mrml"
+            try:
+                slicer.util.saveScene(scene_path)
+            except Exception as exc:
+                print("Warning: unable to save MRML scene to '%s' (%s)" % (scene_path, exc))
+            else:
+                print("Saved scene to %s" % scene_path)
 
         def _export_original_stem(model_node, suffix=None, clear_exports=False):
             poly = model_node.GetPolyData()
@@ -1384,6 +1417,9 @@ def build_slicer_script(
                     clear_exports=export_prefix_cleared,
                 )
                 export_prefix_cleared = False
+            if EXPORT_SCENE:
+                _export_scene(suffix=suffix, clear_exports=export_prefix_cleared)
+                export_prefix_cleared = False
 
             print("Loaded volume '%s'" % (volume_node.GetName() or VOLUME_PATH))
             print("Added implant stem UID %s for configuration '%s'" % (stem_info.get("uid"), config_label))
@@ -1395,7 +1431,7 @@ def build_slicer_script(
             if (info.get("hip_config_pretty_name") or "").strip()
         ]
         if not filtered_stem_infos:
-            _stem_output_prefix(clear_dir=True)
+            _stem_output_prefix(clear_dir=not PRESERVE_EXPORTS)
             print(
                 "Warning: no hipImplantConfig entries expose <prettyName>; skipping exports for this case."
             )
@@ -1405,7 +1441,7 @@ def build_slicer_script(
             print("Skipping %d configuration(s) without hip config pretty names" % skipped_configs)
         stem_infos = filtered_stem_infos
 
-        _stem_output_prefix(clear_dir=True)
+        _stem_output_prefix(clear_dir=not PRESERVE_EXPORTS)
 
         volume_node = loadVolume(VOLUME_PATH)
         if volume_node is None:
@@ -1438,7 +1474,7 @@ def build_slicer_script(
                 volume_node=volume_node,
                 base_pre_rotate=base_pre_rotate,
                 base_post_rotate=base_post_rotate,
-                clear_exports=(idx == 0),
+                clear_exports=(idx == 0 and not PRESERVE_EXPORTS),
             )
 
         if EXIT_AFTER_RUN:
@@ -1477,7 +1513,9 @@ def build_slicer_script(
         SHOW_CUT_PLANE="True" if show_cut_plane else "False",
         CUT_PLANE_SIZE=f"{max(cut_plane_size, 1.0):.3f}",
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
+        EXPORT_SCENE="True" if export_scene else "False",
         CORTICAL_UNBOUNDED="True" if cortical_unbounded else "False",
+        PRESERVE_EXPORTS="True" if preserve_exports else "False",
         EXPORT_LOCAL_STEM="True" if export_local_stem else "False",
         CONFIG_INDEX="None" if config_index is None else str(int(config_index)),
         AUTO_ROTATION_MODE=rotation_mode,
@@ -1530,7 +1568,9 @@ def main() -> int:
         args.rotation_mode,
         args.export_local_stem,
         args.export_stem_screenshots,
+        args.export_scene,
         args.cortical_unbounded,
+        args.preserve_exports,
         args.exit_after_run,
     )
     temp_script = write_temp_script(slicer_script)

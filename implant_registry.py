@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 import amedacta_complete as mdca_amistem_implants
+import implancast_ecofit_complete as icast_ecofit_implants
 import johnson_actis_complete as jj_actis_implants
 import johnson_corail_complete as jj_corail_implants
+import lima_fit_complete as lima_fit_implants
 import legacy_implants.mathys_implants as mys_implants
 
 
@@ -39,6 +41,8 @@ def resolve_stem_uid(uid: Optional[int]) -> Optional[StemLookupResult]:
         ("Mathys", mys_implants.S3UID, mys_implants.get_rcc_id),
         ("Johnson & Johnson (Corail)", jj_corail_implants.S3UID, jj_corail_implants.get_rcc_id),
         ("Johnson & Johnson (Actis)", jj_actis_implants.S3UID, jj_actis_implants.get_rcc_id),
+        ("Implantcast (Ecofit)", icast_ecofit_implants.S3UID, icast_ecofit_implants.get_rcc_id),
+        ("Lima (FIT)", lima_fit_implants.S3UID, lima_fit_implants.get_rcc_id),
     )
 
     for manufacturer, enum_cls, get_rcc in lookup_table:
