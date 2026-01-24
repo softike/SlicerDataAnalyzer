@@ -301,6 +301,8 @@ def build_slicer_script(
                 "mathys_optimys_complete",
                 "johnson_corail_complete",
                 "johnson_actis_complete",
+                "implancast_ecofit_complete",
+                "lima_fit_complete",
             )
             for module_name in module_names:
                 try:
