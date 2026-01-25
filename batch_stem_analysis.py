@@ -112,6 +112,11 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded flag to keep existing Slicer-exports outputs when re-running a single config.",
     )
     parser.add_argument(
+        "--allow-missing-pretty-name",
+        action="store_true",
+        help="Forwarded flag to export configs even if hipImplantConfig prettyName is missing.",
+    )
+    parser.add_argument(
         "--cortical-unbounded",
         action="store_true",
         help="Forwarded flag to treat all HU values >= 1000 as cortical.",
@@ -302,6 +307,8 @@ def _build_command(
         command.append("--export-scene")
     if args.preserve_exports:
         command.append("--preserve-exports")
+    if args.allow_missing_pretty_name:
+        command.append("--allow-missing-pretty-name")
     if args.cortical_unbounded:
         command.append("--cortical-unbounded")
     if args.show_neck_point:

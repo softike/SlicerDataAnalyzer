@@ -135,6 +135,11 @@ def parse_args() -> argparse.Namespace:
         help="Export a per-configuration MRML scene containing the volume and stem",
     )
     parser.add_argument(
+        "--allow-missing-pretty-name",
+        action="store_true",
+        help="Export configurations even when hipImplantConfig prettyName is missing",
+    )
+    parser.add_argument(
         "--export-local-stem",
         action="store_true",
         help="Export a local-frame VTP (non-hardened) with the sampled HU scalar array",
@@ -189,6 +194,7 @@ def build_slicer_script(
     export_scene: bool,
     cortical_unbounded: bool,
     preserve_exports: bool,
+    allow_missing_pretty_name: bool,
     exit_after_run: bool,
 ) -> str:
     stl_folders_literal = "[{}]".format(
@@ -235,6 +241,7 @@ def build_slicer_script(
         EXPORT_SCENE = $EXPORT_SCENE
         CORTICAL_UNBOUNDED = $CORTICAL_UNBOUNDED
         PRESERVE_EXPORTS = $PRESERVE_EXPORTS
+        ALLOW_MISSING_PRETTY_NAME = $ALLOW_MISSING_PRETTY_NAME
         EXPORT_LOCAL_STEM = $EXPORT_LOCAL_STEM
         CONFIG_INDEX = $CONFIG_INDEX
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
@@ -1430,16 +1437,17 @@ def build_slicer_script(
             for info in stem_infos
             if (info.get("hip_config_pretty_name") or "").strip()
         ]
-        if not filtered_stem_infos:
+        if not filtered_stem_infos and not ALLOW_MISSING_PRETTY_NAME:
             _stem_output_prefix(clear_dir=not PRESERVE_EXPORTS)
             print(
                 "Warning: no hipImplantConfig entries expose <prettyName>; skipping exports for this case."
             )
             raise SystemExit(0)
-        skipped_configs = len(stem_infos) - len(filtered_stem_infos)
-        if skipped_configs:
-            print("Skipping %d configuration(s) without hip config pretty names" % skipped_configs)
-        stem_infos = filtered_stem_infos
+        if filtered_stem_infos:
+            skipped_configs = len(stem_infos) - len(filtered_stem_infos)
+            if skipped_configs:
+                print("Skipping %d configuration(s) without hip config pretty names" % skipped_configs)
+            stem_infos = filtered_stem_infos
 
         _stem_output_prefix(clear_dir=not PRESERVE_EXPORTS)
 
@@ -1516,6 +1524,7 @@ def build_slicer_script(
         EXPORT_SCENE="True" if export_scene else "False",
         CORTICAL_UNBOUNDED="True" if cortical_unbounded else "False",
         PRESERVE_EXPORTS="True" if preserve_exports else "False",
+        ALLOW_MISSING_PRETTY_NAME="True" if allow_missing_pretty_name else "False",
         EXPORT_LOCAL_STEM="True" if export_local_stem else "False",
         CONFIG_INDEX="None" if config_index is None else str(int(config_index)),
         AUTO_ROTATION_MODE=rotation_mode,
@@ -1571,6 +1580,7 @@ def main() -> int:
         args.export_scene,
         args.cortical_unbounded,
         args.preserve_exports,
+        args.allow_missing_pretty_name,
         args.exit_after_run,
     )
     temp_script = write_temp_script(slicer_script)
