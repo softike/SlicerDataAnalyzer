@@ -303,6 +303,21 @@ python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H003/002-F-36/
 
 # Actis right
 python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H003/001-M-30/Mediplan3D/Slicer-exports/history_126/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --preserve-exports
+
+# Ecofit Left
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN3/images/H003/002-F-36/Mediplan3D/Slicer-exports/active_21/1.2.840.114356.296552157972175411287775520654979109463_stack_03_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --preserve-exports
+
+# Ecofit Right
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN3/images/H003/001-M-30/Mediplan3D/Slicer-exports/active_16/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --preserve-exports
+
+# Fit Right
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN3/images/H002/017-F-81/Mediplan3D/Slicer-exports/history_45/1.2.840.113619.2.416.271784315531619414068681057291616558552_stem_local.vtp  --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --preserve-exports
+
+
+# FIT left
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN3/images/H002/019-F-54/Mediplan3D/Slicer-exports/history_56/1.2.840.113619.2.416.81709775698183917206599124984821901551_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes --show-envelope-gruen --gruen-hu-remesh-input --envelope-gruen-input --envelope-z-bands 0.2,0.4,0.4 --envelope-gruen-mode normal --gruen-remapped --preserve-exports
+
+
 ```
 
 ## Test a specific case in Slicer
@@ -313,6 +328,13 @@ python batch_stem_analysis.py \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H001 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 001-M-30 --config-index 34   --preserve-exports  --export-scene 
+
+python batch_stem_analysis.py \
+   --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H001 \
+   --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 001-M-30 --config-index 34   --preserve-exports  --export-scene 
+
 ```
 
 ## Full process

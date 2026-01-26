@@ -1060,6 +1060,26 @@ def _rotate_x_vector(vec: tuple[float, float, float] | None, degrees: float) -> 
 	return _normalize((x, y * cos_v - z * sin_v, y * sin_v + z * cos_v))
 
 
+def _rotate_y_point(point: tuple[float, float, float] | None, degrees: float) -> tuple[float, float, float] | None:
+	if point is None:
+		return None
+	rad = math.radians(degrees)
+	cos_v = math.cos(rad)
+	sin_v = math.sin(rad)
+	x, y, z = point
+	return (x * cos_v + z * sin_v, y, -x * sin_v + z * cos_v)
+
+
+def _rotate_y_vector(vec: tuple[float, float, float] | None, degrees: float) -> tuple[float, float, float] | None:
+	if vec is None:
+		return None
+	rad = math.radians(degrees)
+	cos_v = math.cos(rad)
+	sin_v = math.sin(rad)
+	x, y, z = vec
+	return _normalize((x * cos_v + z * sin_v, y, -x * sin_v + z * cos_v))
+
+
 def _rotate_x_180_point(point: tuple[float, float, float] | None) -> tuple[float, float, float] | None:
 	if point is None:
 		return None
@@ -3459,6 +3479,11 @@ def main() -> int:
 	amistem_rotation_deg = 0.0
 	actis_rotation_deg = 0.0
 	mathys_rotation_x_deg = 0.0
+	ecofit_rotation_x_deg = 0.0
+	ecofit_side_rotation_z_deg = 0.0
+	fit_rotation_x_deg = 0.0
+	fit_rotation_y_deg = 0.0
+	fit_rotation_z_deg = 0.0
 	gruen_cut_plane_mode = "below"
 	stem_info = _resolve_stem_info(args.vtp, args.seedplan, args.config_index)
 	if stem_info:
@@ -3513,6 +3538,23 @@ def main() -> int:
 			cut_plane_normal = _rotate_x_vector(cut_plane_normal, mathys_rotation_x_deg)
 			cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], -cut_plane_normal[2])
 			gruen_cut_plane_mode = "above"
+		if auto_module is not None and getattr(auto_module, "__name__", "") == "implancast_ecofit_complete":
+			ecofit_rotation_x_deg = -90.0
+			neck_point = _rotate_x_point(neck_point, ecofit_rotation_x_deg)
+			cut_plane_origin = _rotate_x_point(cut_plane_origin, ecofit_rotation_x_deg)
+			cut_plane_normal = _rotate_x_vector(cut_plane_normal, ecofit_rotation_x_deg)
+			if args.side == "right":
+				ecofit_side_rotation_z_deg = 180.0
+			if args.side == "left":
+				ecofit_side_rotation_z_deg = 180.0
+			if cut_plane_normal is not None:
+				cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], -cut_plane_normal[2])
+		if auto_module is not None and getattr(auto_module, "__name__", "") == "lima_fit_complete":
+			fit_rotation_x_deg = -90.0
+			fit_rotation_y_deg = 45.0
+			fit_rotation_z_deg = 180.0
+			cut_plane_origin = _rotate_y_point(cut_plane_origin, -135.0)
+			cut_plane_normal = _rotate_y_vector(cut_plane_normal, -135.0)
 
 	effective_rotate_z_180 = args.rotate_z_180 or args.side == "left"
 	if amistem_rotation_deg:
@@ -3537,6 +3579,51 @@ def main() -> int:
 		transform = vtk.vtkTransform()
 		transform.Identity()
 		transform.RotateX(mathys_rotation_x_deg)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
+	if ecofit_rotation_x_deg:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateX(ecofit_rotation_x_deg)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
+	if fit_rotation_x_deg:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateX(fit_rotation_x_deg)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
+	if fit_rotation_y_deg:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateY(fit_rotation_y_deg)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
+	if fit_rotation_z_deg:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateZ(fit_rotation_z_deg)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
+	if ecofit_side_rotation_z_deg:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateZ(ecofit_side_rotation_z_deg)
 		transformer = vtk.vtkTransformPolyDataFilter()
 		transformer.SetTransform(transform)
 		transformer.SetInputData(poly)
@@ -3667,6 +3754,8 @@ def main() -> int:
 				offset_point = _rotate_z_point(offset_point, actis_rotation_deg)
 			if mathys_rotation_x_deg:
 				offset_point = _rotate_x_point(offset_point, mathys_rotation_x_deg)
+			if ecofit_rotation_x_deg:
+				offset_point = _rotate_x_point(offset_point, ecofit_rotation_x_deg)
 		if args.show_all_offsets:
 			head_uids = getattr(module, "HEAD_UIDS", None)
 			if head_uids:
@@ -3684,6 +3773,8 @@ def main() -> int:
 						point = _rotate_z_point(point, actis_rotation_deg)
 					if mathys_rotation_x_deg:
 						point = _rotate_x_point(point, mathys_rotation_x_deg)
+					if ecofit_rotation_x_deg:
+						point = _rotate_x_point(point, ecofit_rotation_x_deg)
 					all_offset_points.append((label, point))
 		offset_point = _apply_side_rotation_point(offset_point, args.side, effective_rotate_z_180)
 	if all_offset_points:
