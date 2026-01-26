@@ -320,6 +320,11 @@ def _parse_args() -> argparse.Namespace:
 		help="Export HU tag summary per Gruen zone to XML in the VTP folder",
 	)
 	parser.add_argument(
+		"--preserve-exports",
+		action="store_true",
+		help="Do not overwrite existing export XML files; useful for view-only runs",
+	)
+	parser.add_argument(
 		"--gruen-hu-remesh",
 		action="store_true",
 		help="Use a remeshed surface (with interpolated scalars) for Gruen HU statistics",
@@ -665,6 +670,10 @@ def _derive_config_labels(source_label: str, ordinal: int, *candidates: str | No
 
 
 def _extract_stem_infos(xml_path: Path) -> list[dict[str, object]]:
+	try:
+		from implant_registry import resolve_stem_uid
+	except Exception:
+		resolve_stem_uid = None
 	tree = ET.parse(xml_path)
 	root = tree.getroot()
 	hip_configs = root.findall(".//hipImplantConfig")
@@ -704,6 +713,13 @@ def _extract_stem_infos(xml_path: Path) -> list[dict[str, object]]:
 					uid_val = None
 				else:
 					info["uid"] = uid_val
+					if resolve_stem_uid:
+						lookup = resolve_stem_uid(uid_val)
+						if lookup:
+							info["manufacturer"] = lookup.manufacturer
+							info["stem_enum_name"] = lookup.enum_name
+							info["stem_friendly_name"] = lookup.friendly_name
+							info["rcc_id"] = lookup.rcc_id
 			entries.append(info)
 	if not entries:
 		raise RuntimeError("Unable to locate femoral stem definition in seedplan")
@@ -893,6 +909,36 @@ def _resolve_stem_annotation_defaults(
 			cut_origin = None
 			cut_normal = None
 	return neck_point, cut_origin, cut_normal, inferred_side, module, uid_member
+
+
+def _resolve_stem_info(
+	vtp_path: str,
+	seedplan: str | None,
+	config_index: int | None,
+) -> dict[str, object] | None:
+	seedplan_path, inferred_index, _inferred_side = _find_seedplan_for_vtp(vtp_path, seedplan)
+	if config_index is None:
+		config_index = inferred_index
+	if seedplan_path is None or not seedplan_path.exists():
+		return None
+	try:
+		stem_infos = _extract_stem_infos(seedplan_path)
+	except Exception:
+		return None
+	selected_info: dict[str, object] | None = None
+	if config_index is not None:
+		idx = max(config_index - 1, 0)
+		if idx < len(stem_infos):
+			selected_info = stem_infos[idx]
+	else:
+		parent_name = Path(vtp_path).resolve().parent.name
+		for info in stem_infos:
+			if info.get("config_folder") == parent_name:
+				selected_info = info
+				break
+	if selected_info is None and stem_infos:
+		selected_info = stem_infos[0]
+	return selected_info
 
 
 def _build_ezplan_transfer_function() -> vtk.vtkColorTransferFunction:
@@ -3272,6 +3318,7 @@ def _export_partition_hu_xml(
 	vtp_path: str,
 	poly: vtk.vtkPolyData,
 	hu_array_name: str,
+	preserve_exports: bool = False,
 ) -> str:
 	partition_array = poly.GetPointData().GetArray("GruenZonePartition")
 	if partition_array is None:
@@ -3298,6 +3345,8 @@ def _export_partition_hu_xml(
 			)
 	file_path = Path(vtp_path).with_suffix("").name + "_hu_summary.xml"
 	output_path = Path(vtp_path).resolve().parent / file_path
+	if preserve_exports and output_path.exists():
+		return str(output_path)
 	tree = ET.ElementTree(root)
 	tree.write(output_path, encoding="utf-8", xml_declaration=True)
 	return str(output_path)
@@ -3311,6 +3360,7 @@ def _export_gruen_hu_xml(
 	max_zone: int = 14,
 	bottom_point: tuple[float, float, float] | None = None,
 	bottom_radius: float = 0.0,
+	preserve_exports: bool = False,
 ) -> str:
 	zone_array = poly.GetPointData().GetArray(zone_array_name)
 	if zone_array is None:
@@ -3338,6 +3388,8 @@ def _export_gruen_hu_xml(
 			)
 	file_path = Path(vtp_path).with_suffix("").name + "_stem_local_gruen_hu_summary.xml"
 	output_path = Path(vtp_path).resolve().parent / file_path
+	if preserve_exports and output_path.exists():
+		return str(output_path)
 	tree = ET.ElementTree(root)
 	tree.write(output_path, encoding="utf-8", xml_declaration=True)
 	return str(output_path)
@@ -3408,6 +3460,13 @@ def main() -> int:
 	actis_rotation_deg = 0.0
 	mathys_rotation_x_deg = 0.0
 	gruen_cut_plane_mode = "below"
+	stem_info = _resolve_stem_info(args.vtp, args.seedplan, args.config_index)
+	if stem_info:
+		manufacturer = stem_info.get("manufacturer") or "unknown"
+		type_label = stem_info.get("stem_friendly_name") or stem_info.get("stem_enum_name") or "unknown"
+		uid_label = stem_info.get("uid")
+		uid_label = str(uid_label) if uid_label is not None else "unknown"
+		print(f"Stem: {manufacturer} | {type_label} (uid {uid_label})")
 	if args.local_frame and (
 		neck_point is None
 		or cut_plane_origin is None
@@ -3955,7 +4014,12 @@ def main() -> int:
 			selected_hu_array = _pick_scalar_array(target_poly, metrics_array)
 		if selected_hu_array is None:
 			raise RuntimeError("No scalar arrays available for HU XML export")
-		path = _export_partition_hu_xml(args.vtp, target_poly, selected_hu_array)
+		path = _export_partition_hu_xml(
+			args.vtp,
+			target_poly,
+			selected_hu_array,
+			preserve_exports=args.preserve_exports,
+		)
 		print(f"Saved HU summary XML: {path}")
 	if args.export_gruen_hu_xml:
 		if args.partitioned_gruen or args.composite_gruen:
@@ -4019,6 +4083,7 @@ def main() -> int:
 			max_zone=max_zone,
 			bottom_point=bottom_point_export,
 			bottom_radius=args.gruen_bottom_sphere_radius,
+			preserve_exports=args.preserve_exports,
 		)
 		print(f"Saved Gruen HU summary XML: {path}")
 	dominant_zone = None

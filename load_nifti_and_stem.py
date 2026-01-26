@@ -1170,9 +1170,10 @@ def build_slicer_script(
             manufacturer = stem_info.get("manufacturer")
             friendly_name = stem_info.get("stem_friendly_name")
             enum_name = stem_info.get("stem_enum_name")
-            if manufacturer or friendly_name or enum_name:
-                type_label = friendly_name or enum_name or "unknown"
-                print("Stem: %s | %s" % (manufacturer or "unknown", type_label))
+            type_label = friendly_name or enum_name or "unknown"
+            uid_label = stem_info.get("uid")
+            uid_label = str(uid_label) if uid_label is not None else "unknown"
+            print("Stem: %s | %s (uid %s)" % (manufacturer or "unknown", type_label, uid_label))
 
             matrix_raw = stem_info.get("matrix_raw")
             if not matrix_raw:
