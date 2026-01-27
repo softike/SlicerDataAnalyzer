@@ -25,5 +25,13 @@ python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/001-M-30/
 python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/001-M-30/Mediplan3D/Slicer-exports/active_44/1.2.840.114356.244508491381643176892307433054188885352_stack_03_stem_local.vtp  --local-frame --show-gruen-zones --show-cut-plane --show-neck-point --opacity 1 --base-color 0.7,0.7,0.7 --side auto --show-axes --show-side-label --partitioned-gruen   --hu-table --export-hu-xml  --gruen-hu-zones top
 
 
+EZplan heatmap 
 
-can we setup a batch that use view_vtp headless and export all gruen zones in xml based on the remeshed surface, mainly using : 
+Color : HU interval
+Black :   HU < -24
+Purple :  -24 < HU < 70
+Blue : 70 < HU < 200
+Green :  200 < HU < 300
+Yellow : 300 <  HU < 376
+Red : HU > 376 
+

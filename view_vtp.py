@@ -21,19 +21,60 @@ EZPLAN_ZONE_DEFS = [
 	(400.0, 1000.0, (0.0, 1.0, 0.0), "Stable"),
 	(1000.0, 2000.0, (1.0, 0.0, 0.0), "Cortical"),
 ]
+EZPLAN_HEATMAP_2024 = [
+	(-1000.0, -24.0, (0.0, 0.0, 0.0), "Black"),
+	(-24.0, 70.0, (0.5, 0.0, 0.5), "Purple"),
+	(70.0, 200.0, (0.0, 0.0, 1.0), "Blue"),
+	(200.0, 300.0, (0.0, 1.0, 0.0), "Green"),
+	(300.0, 376.0, (1.0, 1.0, 0.0), "Yellow"),
+	(376.0, 2000.0, (1.0, 0.0, 0.0), "Red"),
+]
+HEATMAP_DEFS = {
+	"ezplan": EZPLAN_ZONE_DEFS,
+	"ezplan-2024": EZPLAN_HEATMAP_2024,
+}
+ACTIVE_HEATMAP = "ezplan"
+ACTIVE_ZONE_DEFS = HEATMAP_DEFS[ACTIVE_HEATMAP]
 CORTICAL_UNBOUNDED = False
 
 
 def _iter_ezplan_zone_defs() -> list[tuple[float, float, tuple[float, float, float], str]]:
 	if not CORTICAL_UNBOUNDED:
-		return EZPLAN_ZONE_DEFS
+		return ACTIVE_ZONE_DEFS
 	zones: list[tuple[float, float, tuple[float, float, float], str]] = []
-	for zone_min, zone_max, color, label in EZPLAN_ZONE_DEFS:
+	for zone_min, zone_max, color, label in ACTIVE_ZONE_DEFS:
 		if label.lower() == "cortical":
 			zones.append((zone_min, float("inf"), color, label))
 		else:
 			zones.append((zone_min, zone_max, color, label))
 	return zones
+
+
+def _set_heatmap(name: str) -> None:
+	global ACTIVE_HEATMAP
+	global ACTIVE_ZONE_DEFS
+	if name not in HEATMAP_DEFS:
+		raise ValueError(f"Unknown HU heatmap '{name}'. Available: {', '.join(sorted(HEATMAP_DEFS))}")
+	ACTIVE_HEATMAP = name
+	ACTIVE_ZONE_DEFS = HEATMAP_DEFS[name]
+
+
+def _get_zone_range() -> tuple[float, float]:
+	if not ACTIVE_ZONE_DEFS:
+		return (0.0, 1.0)
+	return (ACTIVE_ZONE_DEFS[0][0], ACTIVE_ZONE_DEFS[-1][1])
+
+
+def _get_zone_count() -> int:
+	return len(ACTIVE_ZONE_DEFS)
+
+
+def _heatmap_label() -> str:
+	if ACTIVE_HEATMAP == "ezplan":
+		return "HU (EZplan LUT)"
+	if ACTIVE_HEATMAP == "ezplan-2024":
+		return "HU (EZplan 2024 LUT)"
+	return f"HU ({ACTIVE_HEATMAP} LUT)"
 GRUEN_ZONE_ID_REMAP_LEFT = {
 	1: 3,
 	5: 2,
@@ -277,8 +318,20 @@ def _parse_args() -> argparse.Namespace:
 		help="Show 4 viewports for partitioned Gruen zones (top/mediumtop/mediumbottom/bottom)",
 	)
 	parser.add_argument(
+		"--hu-heatmap",
+		choices=sorted(HEATMAP_DEFS.keys()),
+		default="ezplan",
+		help=(
+			"HU heatmap to use for coloring and summaries (default: %(default)s). "
+			"ezplan = loosening/micromove/stable/cortical, ezplan-2024 = Black/Purple/Blue/Green/Yellow/Red."
+		),
+	)
+	parser.add_argument(
 		"--hu-range",
-		help="Filter HU values to a named range: loosening, micromove, stable, cortical",
+		help=(
+			"Filter HU values to a named range from the selected heatmap "
+			"(e.g., loosening/micromove/stable/cortical for ezplan, or black/purple/blue/green/yellow/red for ezplan-2024)."
+		),
 	)
 	parser.add_argument(
 		"--show-hu-summary",
@@ -292,7 +345,10 @@ def _parse_args() -> argparse.Namespace:
 	)
 	parser.add_argument(
 		"--dominant-hu-zone",
-		help="Report the Gruen zone with the most values for a HU tag (loosening, micromove, stable, cortical)",
+		help=(
+			"Report the Gruen zone with the most values for a HU tag from the selected heatmap "
+			"(e.g., loosening/micromove/stable/cortical or black/purple/blue/green/yellow/red)."
+		),
 	)
 	parser.add_argument(
 		"--show-dominant-hu-zone",
@@ -943,7 +999,7 @@ def _resolve_stem_info(
 
 def _build_ezplan_transfer_function() -> vtk.vtkColorTransferFunction:
 	tf = vtk.vtkColorTransferFunction()
-	for zone_min, zone_max, (r, g, b), _label in EZPLAN_ZONE_DEFS:
+	for zone_min, zone_max, (r, g, b), _label in _iter_ezplan_zone_defs():
 		tf.AddRGBPoint(zone_min, r, g, b)
 		tf.AddRGBPoint(zone_max, r, g, b)
 	return tf
@@ -1881,7 +1937,7 @@ def _configure_mapper(
 	if scalar_range:
 		mapper.SetScalarRange(*scalar_range)
 	else:
-		mapper.SetScalarRange(EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
+		mapper.SetScalarRange(*_get_zone_range())
 	if lookup_table is not None:
 		mapper.SetLookupTable(lookup_table)
 		mapper.UseLookupTableScalarRangeOn()
@@ -3419,6 +3475,7 @@ def main() -> int:
 	args = _parse_args()
 	global CORTICAL_UNBOUNDED
 	CORTICAL_UNBOUNDED = bool(args.cortical_unbounded)
+	_set_heatmap(args.hu_heatmap)
 	if args.batch_remesh_input or args.batch_remesh_output:
 		if not args.batch_remesh_input or not args.batch_remesh_output:
 			raise RuntimeError("--batch-remesh-input and --batch-remesh-output must be provided together")
@@ -3492,6 +3549,9 @@ def main() -> int:
 		uid_label = stem_info.get("uid")
 		uid_label = str(uid_label) if uid_label is not None else "unknown"
 		print(f"Stem: {manufacturer} | {type_label} (uid {uid_label})")
+		pretty_name = stem_info.get("hip_config_pretty_name")
+		if pretty_name:
+			print(f"Hip config: {pretty_name}")
 	if args.local_frame and (
 		neck_point is None
 		or cut_plane_origin is None
@@ -3905,10 +3965,10 @@ def main() -> int:
 		args.hu_array = selected_hu_array
 
 	active_array = args.array
-	color_label = "HU (EZplan LUT)"
+	color_label = _heatmap_label()
 	lookup_table: vtk.vtkScalarsToColors
 	scalar_range: tuple[float, float]
-	label_count = len(EZPLAN_ZONE_DEFS) + 1
+	label_count = _get_zone_count() + 1
 	if args.gruen_hu_zones:
 		if args.partitioned_gruen:
 			zones = _parse_partition_zones(args.gruen_hu_zones)
@@ -3959,7 +4019,7 @@ def main() -> int:
 				zone_view_map,
 			)
 		lookup_table = _build_ezplan_transfer_function()
-		scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
+		scalar_range = _get_zone_range()
 	elif args.show_gruen_zones:
 		if args.partitioned_gruen:
 			active_array = "GruenZonePartition"
@@ -4007,9 +4067,9 @@ def main() -> int:
 					[args.zone_only],
 				)
 			lookup_table = _build_ezplan_transfer_function()
-			scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
-			color_label = "HU (EZplan LUT)"
-			label_count = len(EZPLAN_ZONE_DEFS) + 1
+			scalar_range = _get_zone_range()
+			color_label = _heatmap_label()
+			label_count = _get_zone_count() + 1
 		elif args.gruen_remapped:
 			active_array = "EnvelopeZoneRemap"
 			lookup_table = _build_gruen_lookup_table()
@@ -4024,7 +4084,7 @@ def main() -> int:
 			label_count = 12
 	else:
 		lookup_table = _build_ezplan_transfer_function()
-		scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
+		scalar_range = _get_zone_range()
 	if args.merge_zone_islands and (args.show_gruen_zones or args.show_envelope_gruen):
 		active_array = _merge_zone_islands(target_poly, active_array, args.merge_zone_min_points)
 	if args.zone_only is not None and (args.show_gruen_zones or args.show_envelope_gruen):
@@ -4225,7 +4285,7 @@ def main() -> int:
 			if not stable_zones:
 				print("Warning: no stable zones detected for the current HU range.")
 		full_lookup = _build_ezplan_transfer_function()
-		full_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
+		full_range = _get_zone_range()
 		zone_lookup = full_lookup
 		zone_range = full_range
 		full_nan_color = None
@@ -4297,8 +4357,8 @@ def main() -> int:
 			_add_scalar_bar(
 				renderer,
 				lookup,
-				"HU (EZplan LUT)",
-				len(EZPLAN_ZONE_DEFS) + 1,
+				_heatmap_label(),
+				_get_zone_count() + 1,
 				position_x=0.82,
 				position_y=0.20,
 				title_separation=12,
@@ -4344,7 +4404,7 @@ def main() -> int:
 		if selected_hu_array is None:
 			raise RuntimeError("No scalar arrays available for HU heatmap")
 		viewport_lookup = _build_ezplan_transfer_function()
-		viewport_scalar_range = (EZPLAN_ZONE_DEFS[0][0], EZPLAN_ZONE_DEFS[-1][1])
+		viewport_scalar_range = _get_zone_range()
 		viewport_nan_color = None
 		if base_color is not None:
 			viewport_nan_color = (base_color[0], base_color[1], base_color[2], 1.0)
