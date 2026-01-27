@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
@@ -36,6 +37,14 @@ def _parse_args() -> argparse.Namespace:
         help="Destination .xlsx path (default: %(default)s).",
     )
     parser.add_argument(
+        "--anteversion-excel",
+        help=(
+            "Optional path to a batchCompareStudies Excel file. When provided, the "
+            "Femoral_Anteversion_Angles sheet and its anteversion_angle_deg column are "
+            "joined into the GruenHU sheet by case id."
+        ),
+    )
+    parser.add_argument(
         "--pattern",
         default="**/*_stem_metrics.xml",
         help="Glob pattern (relative to --root) used to discover per-case XML exports.",
@@ -66,6 +75,25 @@ def _to_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _normalize_case_id(value: str) -> str:
+    clean = value.replace("\\", "/").strip()
+    clean = clean.strip("/")
+    if not clean:
+        return ""
+    return clean.split("/")[-1]
+
+
+def _extract_case_id_from_path(path_value: str) -> str:
+    if not path_value:
+        return ""
+    parts = path_value.replace("\\", "/").split("/")
+    pattern = re.compile(r"\d{3}-[A-Z]-\d{2,}")
+    for part in parts:
+        if pattern.fullmatch(part):
+            return part
+    return ""
 
 
 def _parse_metric_file(path: Path) -> dict[str, Any]:
@@ -184,6 +212,138 @@ def _autosize_columns(sheet) -> None:
                 continue
             max_length = max(max_length, len(str(value)))
         sheet.column_dimensions[column_letter].width = min(max_length + 2, 60)
+
+
+def _load_anteversion_angles(path: Path | None) -> dict[str, dict[str, float]]:
+    if path is None:
+        return {}
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        return {}
+    if not path.exists():
+        return {}
+    try:
+        workbook = load_workbook(path, data_only=True)
+    except Exception:
+        return {}
+    def _parse_sheet(rows: list[tuple[object, ...]], headers: list[str]) -> dict[str, dict[str, float]]:
+        angles: dict[str, dict[str, float]] = {}
+        header_lookup = {name.lower(): idx for idx, name in enumerate(headers) if name}
+        angle_idx = header_lookup.get("anteversion_angle_deg")
+        case_key_candidates = (
+            "case_id",
+            "case",
+            "caseid",
+            "case id",
+            "patient_id",
+            "patient id",
+        )
+        case_idx = None
+        for key in case_key_candidates:
+            idx = header_lookup.get(key)
+            if idx is not None:
+                case_idx = idx
+                break
+        if case_idx is None:
+            for name, idx in header_lookup.items():
+                if "case" in name and "id" in name:
+                    case_idx = idx
+                    break
+        if angle_idx is not None and case_idx is not None:
+            for row in rows[1:]:
+                if case_idx >= len(row) or angle_idx >= len(row):
+                    continue
+                case_val = row[case_idx]
+                angle_val = row[angle_idx]
+                if case_val is None or angle_val is None:
+                    continue
+                case_id = _normalize_case_id(str(case_val))
+                if not case_id:
+                    continue
+                try:
+                    angle = float(angle_val)
+                except (TypeError, ValueError):
+                    continue
+                angles.setdefault(case_id, {})["value"] = angle
+            return angles
+        # Fallback: case-per-row layout (Case in first column, values in remaining columns)
+        if headers and headers[0].strip().lower() == "case":
+            for row in rows[1:]:
+                if not row:
+                    continue
+                case_id = _normalize_case_id(str(row[0]))
+                if not case_id:
+                    continue
+                for idx, cell in enumerate(row[1:], start=1):
+                    if cell is None:
+                        continue
+                    header = headers[idx] if idx < len(headers) else ""
+                    header_lower = header.lower()
+                    if not header_lower:
+                        continue
+                    if header_lower.startswith("left_"):
+                        side = "Left"
+                        user = header[5:]
+                    elif header_lower.startswith("right_"):
+                        side = "Right"
+                        user = header[6:]
+                    else:
+                        continue
+                    user = user.strip().upper()
+                    if not user:
+                        continue
+                    try:
+                        angle = float(cell)
+                    except (TypeError, ValueError):
+                        continue
+                    angles.setdefault(case_id, {})[f"{side}_{user}"] = angle
+            return angles
+        # Fallback: look for a row keyed by anteversion_angle_deg
+        if headers:
+            for row in rows[1:]:
+                row_key = str(row[0]).strip().lower() if row and row[0] is not None else ""
+                if row_key != "anteversion_angle_deg":
+                    continue
+                for idx, header in enumerate(headers[1:], start=1):
+                    case_id = _normalize_case_id(str(header))
+                    if not case_id:
+                        continue
+                    if idx >= len(row):
+                        continue
+                    val = row[idx]
+                    if val is None:
+                        continue
+                    try:
+                        angle = float(val)
+                    except (TypeError, ValueError):
+                        continue
+                    angles[case_id] = angle
+                return angles
+        return angles
+
+    angles: dict[str, dict[str, float]] = {}
+    primary_sheet = "Femoral_Anteversion_Angles"
+    sheets_to_scan = [primary_sheet] if primary_sheet in workbook.sheetnames else list(workbook.sheetnames)
+    if primary_sheet not in workbook.sheetnames:
+        print("Anteversion sheet not found. Scanning all sheets.")
+    for name in sheets_to_scan:
+        sheet = workbook[name]
+        rows = list(sheet.iter_rows(values_only=True))
+        if not rows:
+            continue
+        headers = [str(value).strip() if value is not None else "" for value in rows[0]]
+        angles = _parse_sheet(rows, headers)
+        if angles:
+            return angles
+    if not angles:
+        print("No anteversion values parsed; sample rows:")
+        for name in sheets_to_scan[:1]:
+            sheet = workbook[name]
+            rows = list(sheet.iter_rows(values_only=True))
+            for sample in rows[0:6]:
+                print(f"  {sample}")
+    return angles
 
 
 def _populate_cases_sheet(
@@ -343,8 +503,10 @@ def _populate_gruen_sheet(
     rows: list[dict[str, Any]],
     gruen_zone_ids: list[int],
     gruen_tags: list[str],
+    anteversion_angles: dict[str, dict[str, float]] | None = None,
 ) -> None:
     sheet.title = "GruenHU"
+    anteversion_angles = anteversion_angles or {}
     headers = [
         "User",
         "Case",
@@ -352,6 +514,8 @@ def _populate_gruen_sheet(
         "Config Source",
         "Config Index",
         "Hip Config Name",
+        "Hip Config Pretty Name",
+        "Anteversion Angle (deg)",
         "Stem UID",
         "Requested Side",
         "Configured Side",
@@ -375,13 +539,40 @@ def _populate_gruen_sheet(
             zone_tags = gruen_summary.get(zone_id, {})
             for tag_name in gruen_tags:
                 count, percent = zone_tags.get(tag_name, (0, 0.0))
+                case_id_value = _normalize_case_id(str(entry.get("case_id", "")))
+                if not case_id_value:
+                    case_id_value = _extract_case_id_from_path(str(entry.get("path", "")))
+                case_key = case_id_value
+                side_value = stem.get("configuredSide") or stem.get("requestedSide") or ""
+                side_value = str(side_value).strip().lower()
+                if side_value.startswith("l"):
+                    side_label = "Left"
+                elif side_value.startswith("r"):
+                    side_label = "Right"
+                else:
+                    side_label = ""
+                user_value = str(entry.get("user_id", "")).strip().upper()
+                anteversion_key = f"{side_label}_{user_value}" if side_label and user_value else ""
+                case_angles = anteversion_angles.get(case_key, {})
+                anteversion_value = case_angles.get(anteversion_key, "") if anteversion_key else ""
+                if anteversion_value == "" and side_label:
+                    side_prefix = f"{side_label}_"
+                    side_values = [
+                        val for key, val in case_angles.items() if key.startswith(side_prefix)
+                    ]
+                    if side_values:
+                        anteversion_value = sum(side_values) / len(side_values)
+                elif anteversion_value == "" and case_angles:
+                    anteversion_value = next(iter(case_angles.values()), "")
                 row = [
                     entry.get("user_id", ""),
-                    entry.get("case_id", ""),
+                    case_id_value,
                     entry.get("config_label", ""),
                     entry.get("config_source", ""),
                     config_index_value,
                     entry.get("hip_config_name", ""),
+                    entry.get("hip_config_description", ""),
+                    anteversion_value,
                     stem.get("uid", ""),
                     stem.get("requestedSide", ""),
                     stem.get("configuredSide", ""),
@@ -403,6 +594,20 @@ def main() -> int:
         print(f"Error: root directory '{root}' does not exist", file=sys.stderr)
         return 1
     output_path = Path(args.output).expanduser().resolve()
+    anteversion_angles = _load_anteversion_angles(
+        Path(args.anteversion_excel).expanduser().resolve() if args.anteversion_excel else None
+    )
+    if args.anteversion_excel:
+        print("Anteversion angles loaded from Excel:")
+        if not anteversion_angles:
+            print("  (none found)")
+        else:
+            for case_id in sorted(anteversion_angles.keys()):
+                case_angles = anteversion_angles[case_id]
+                pairs = ", ".join(
+                    f"{key}={case_angles[key]:.4f}" for key in sorted(case_angles.keys())
+                )
+                print(f"  {case_id}: {pairs}")
 
     xml_files = _collect_metric_files(root, args.pattern)
     if not xml_files:
@@ -459,11 +664,23 @@ def main() -> int:
     _populate_summary_sheet(summary_sheet, rows, zone_name_list)
     if gruen_zone_list and gruen_tag_list:
         gruen_sheet = workbook.create_sheet(title="GruenHU")
-        _populate_gruen_sheet(gruen_sheet, rows, gruen_zone_list, gruen_tag_list)
+        _populate_gruen_sheet(
+            gruen_sheet,
+            rows,
+            gruen_zone_list,
+            gruen_tag_list,
+            anteversion_angles,
+        )
     else:
         if any(entry.get("gruen_xml_found") for entry in rows):
             gruen_sheet = workbook.create_sheet(title="GruenHU")
-            _populate_gruen_sheet(gruen_sheet, rows, gruen_zone_list, gruen_tag_list)
+            _populate_gruen_sheet(
+                gruen_sheet,
+                rows,
+                gruen_zone_list,
+                gruen_tag_list,
+                anteversion_angles,
+            )
     workbook.save(output_path)
     print(f"Wrote Excel workbook: {output_path}")
     return 0
