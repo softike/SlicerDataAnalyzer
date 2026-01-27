@@ -269,9 +269,35 @@ def _load_anteversion_angles(path: Path | None) -> dict[str, dict[str, float]]:
             return angles
         # Fallback: case-per-row layout (Case in first column, values in remaining columns)
         if headers and headers[0].strip().lower() == "case":
+            angle_columns = [
+                idx
+                for idx, header in enumerate(headers)
+                if header and header.lower().startswith(("left_", "right_"))
+            ]
+            def _is_numeric(value: object) -> bool:
+                try:
+                    float(value)
+                except (TypeError, ValueError):
+                    return False
+                return True
             for row in rows[1:]:
                 if not row:
                     continue
+                if angle_columns:
+                    has_angle_value = False
+                    valid_row = True
+                    for idx in angle_columns:
+                        if idx >= len(row):
+                            continue
+                        cell = row[idx]
+                        if cell is None:
+                            continue
+                        has_angle_value = True
+                        if not _is_numeric(cell):
+                            valid_row = False
+                            break
+                    if not has_angle_value or not valid_row:
+                        continue
                 case_id = _normalize_case_id(str(row[0]))
                 if not case_id:
                     continue
@@ -297,7 +323,11 @@ def _load_anteversion_angles(path: Path | None) -> dict[str, dict[str, float]]:
                         angle = float(cell)
                     except (TypeError, ValueError):
                         continue
-                    angles.setdefault(case_id, {})[f"{side}_{user}"] = angle
+                    per_case = angles.setdefault(case_id, {})
+                    key = f"{side}_{user}"
+                    if key in per_case:
+                        continue
+                    per_case[key] = angle
             return angles
         # Fallback: look for a row keyed by anteversion_angle_deg
         if headers:
@@ -527,6 +557,37 @@ def _populate_gruen_sheet(
     ]
     sheet.append(headers)
 
+    def _normalize_side(value: object) -> str:
+        if value is None:
+            return ""
+        text = str(value).strip().lower()
+        if text.startswith("l"):
+            return "Left"
+        if text.startswith("r"):
+            return "Right"
+        return ""
+
+    def _infer_side_label(entry: dict[str, Any]) -> str:
+        stem = entry.get("stem", {}) or {}
+        side_label = _normalize_side(stem.get("configuredSide")) or _normalize_side(stem.get("requestedSide"))
+        if side_label:
+            return side_label
+        candidates = (
+            entry.get("config_label"),
+            entry.get("hip_config_name"),
+            entry.get("hip_config_description"),
+            entry.get("config_source"),
+        )
+        for candidate in candidates:
+            if not candidate:
+                continue
+            text = str(candidate).lower()
+            if re.search(r"\bleft\b|\(l\)", text):
+                return "Left"
+            if re.search(r"\bright\b|\(r\)", text):
+                return "Right"
+        return ""
+
     for entry in rows:
         gruen_summary = entry.get("gruen_summary") or {}
         if not gruen_summary:
@@ -543,14 +604,7 @@ def _populate_gruen_sheet(
                 if not case_id_value:
                     case_id_value = _extract_case_id_from_path(str(entry.get("path", "")))
                 case_key = case_id_value
-                side_value = stem.get("configuredSide") or stem.get("requestedSide") or ""
-                side_value = str(side_value).strip().lower()
-                if side_value.startswith("l"):
-                    side_label = "Left"
-                elif side_value.startswith("r"):
-                    side_label = "Right"
-                else:
-                    side_label = ""
+                side_label = _infer_side_label(entry)
                 user_value = str(entry.get("user_id", "")).strip().upper()
                 anteversion_key = f"{side_label}_{user_value}" if side_label and user_value else ""
                 case_angles = anteversion_angles.get(case_key, {})
@@ -562,8 +616,8 @@ def _populate_gruen_sheet(
                     ]
                     if side_values:
                         anteversion_value = sum(side_values) / len(side_values)
-                elif anteversion_value == "" and case_angles:
-                    anteversion_value = next(iter(case_angles.values()), "")
+                if anteversion_value == "" and "value" in case_angles:
+                    anteversion_value = case_angles.get("value", "")
                 row = [
                     entry.get("user_id", ""),
                     case_id_value,

@@ -9,3 +9,5 @@ planning_data_*
 *.tar.gz
 *.ods
 *.xlsx
+*.txt
+.gitignore
