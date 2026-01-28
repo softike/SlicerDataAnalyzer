@@ -27,11 +27,17 @@ python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/001-M-30/
 
 EZplan heatmap 
 
-Color : HU interval
-Black :   HU < -24
-Purple :  -24 < HU < 70
-Blue : 70 < HU < 200
-Green :  200 < HU < 300
-Yellow : 300 <  HU < 376
-Red : HU > 376 
+Color           HU interval
+Black           HU < -24  "High Loosening"
+Purple    -24 < HU < 70   "Medium Loosening"
+Blue       70 < HU < 200  "Light Loosening" + "High Micromove" 
+Green     200 < HU < 300  "Very light Loosening" + "Medium MicroMove"
+Yellow   300 <  HU < 376  "Light MicroMove"
+Red             HU > 376  "Stable"  + "Cortical"
+
+Study heatmap
+Blue        -200.0 < HU <  100.0  "Loosening"
+Magenta      100.0 < HU <  400.0  "MicroMove"
+Green        400.0 < HU < 1000.0  "Stable"
+Red         1000.0 < HU < 2000.0  "Cortical"
 
