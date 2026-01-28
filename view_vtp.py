@@ -75,6 +75,11 @@ def _heatmap_label() -> str:
 	if ACTIVE_HEATMAP == "ezplan-2024":
 		return "HU (EZplan 2024 LUT)"
 	return f"HU ({ACTIVE_HEATMAP} LUT)"
+
+
+def _heatmap_suffix() -> str:
+	clean = ACTIVE_HEATMAP.replace("-", "_")
+	return f"_{clean}"
 GRUEN_ZONE_ID_REMAP_LEFT = {
 	1: 3,
 	5: 2,
@@ -3406,7 +3411,7 @@ def _export_partition_hu_xml(
 		3: "mediumbottom",
 		4: "bottom",
 	}
-	root = ET.Element("huSummary", attrib={"array": hu_array_name})
+	root = ET.Element("huSummary", attrib={"array": hu_array_name, "heatmap": ACTIVE_HEATMAP})
 	for part_id in range(1, 5):
 		zone_elem = ET.SubElement(root, "zone", attrib={"id": str(part_id), "name": zone_labels[part_id]})
 		for label, (count, percent) in summary.get(part_id, {}).items():
@@ -3419,7 +3424,12 @@ def _export_partition_hu_xml(
 					"percent": f"{percent:.4f}",
 				},
 			)
-	file_path = Path(vtp_path).with_suffix("").name + "_hu_summary.xml"
+	file_path = (
+		Path(vtp_path).with_suffix("").name
+		+ "_hu_summary"
+		+ _heatmap_suffix()
+		+ ".xml"
+	)
 	output_path = Path(vtp_path).resolve().parent / file_path
 	if preserve_exports and output_path.exists():
 		return str(output_path)
@@ -3449,7 +3459,14 @@ def _export_gruen_hu_xml(
 		bottom_point=bottom_point,
 		bottom_radius=bottom_radius,
 	)
-	root = ET.Element("huSummary", attrib={"array": hu_array_name, "zoneArray": zone_array_name})
+	root = ET.Element(
+		"huSummary",
+		attrib={
+			"array": hu_array_name,
+			"zoneArray": zone_array_name,
+			"heatmap": ACTIVE_HEATMAP,
+		},
+	)
 	for zone_id in range(1, max_zone + 1):
 		zone_elem = ET.SubElement(root, "zone", attrib={"id": str(zone_id)})
 		for label, (count, percent) in summary.get(zone_id, {}).items():
@@ -3462,7 +3479,12 @@ def _export_gruen_hu_xml(
 					"percent": f"{percent:.4f}",
 				},
 			)
-	file_path = Path(vtp_path).with_suffix("").name + "_stem_local_gruen_hu_summary.xml"
+	file_path = (
+		Path(vtp_path).with_suffix("").name
+		+ "_stem_local_gruen_hu_summary"
+		+ _heatmap_suffix()
+		+ ".xml"
+	)
 	output_path = Path(vtp_path).resolve().parent / file_path
 	if preserve_exports and output_path.exists():
 		return str(output_path)

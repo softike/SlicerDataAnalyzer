@@ -112,6 +112,12 @@ def _parse_args() -> argparse.Namespace:
         help="Treat all HU values >= 1000 as cortical (forwarded to view_vtp.py).",
     )
     parser.add_argument(
+        "--hu-heatmap",
+        choices=("ezplan", "ezplan-2024"),
+        default="ezplan",
+        help="HU heatmap to use for Gruen HU export (forwarded to view_vtp.py).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print commands without executing.",
@@ -163,6 +169,8 @@ def main() -> int:
             "--side",
             args.side,
         ]
+        if args.hu_heatmap:
+            command.extend(["--hu-heatmap", args.hu_heatmap])
         if args.stem_mc:
             command.extend(["--stem-mc", "--stem-mc-spacing", str(args.stem_mc_spacing)])
             if args.cache_remesh:

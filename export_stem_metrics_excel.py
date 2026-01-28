@@ -29,7 +29,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--root",
         required=True,
-        help="Root directory that contains user folders (H001, H002, H003, ...).",
     )
     parser.add_argument(
         "--output",
@@ -42,6 +41,15 @@ def _parse_args() -> argparse.Namespace:
             "Optional path to a batchCompareStudies Excel file. When provided, the "
             "Femoral_Anteversion_Angles sheet and its anteversion_angle_deg column are "
             "joined into the GruenHU sheet by case id."
+        ),
+    )
+    parser.add_argument(
+        "--hu-heatmap",
+        choices=("auto", "ezplan", "ezplan-2024"),
+        default="auto",
+        help=(
+            "Select which HU heatmap XML to read for Gruen summaries. "
+            "auto uses the default export if present, otherwise any available heatmap."
         ),
     )
     parser.add_argument(
@@ -96,7 +104,57 @@ def _extract_case_id_from_path(path_value: str) -> str:
     return ""
 
 
-def _parse_metric_file(path: Path) -> dict[str, Any]:
+def _heatmap_suffix(value: str | None) -> str:
+    if not value or value == "auto":
+        return ""
+    return "_" + value.replace("-", "_")
+
+
+def _select_gruen_xml(candidate_dir: Path, base_prefix: str, heatmap: str | None) -> Path | None:
+    suffix = _heatmap_suffix(heatmap)
+    if suffix:
+        preferred = candidate_dir / f"{base_prefix}_stem_local_gruen_hu_summary{suffix}.xml"
+        if preferred.is_file():
+            return preferred
+    default_path = candidate_dir / f"{base_prefix}_stem_local_gruen_hu_summary.xml"
+    if default_path.is_file():
+        return default_path
+    pattern = f"{base_prefix}_stem_local_gruen_hu_summary*.xml"
+    matches = sorted(candidate_dir.glob(pattern))
+    if not matches:
+        matches = sorted(candidate_dir.glob("*_stem_local_gruen_hu_summary*.xml"))
+    if not matches:
+        return None
+    if suffix:
+        for match in matches:
+            if suffix in match.stem:
+                return match
+    return matches[0]
+
+
+def _select_partition_xml(candidate_dir: Path, base_prefix: str, heatmap: str | None) -> Path | None:
+    suffix = _heatmap_suffix(heatmap)
+    if suffix:
+        preferred = candidate_dir / f"{base_prefix}_hu_summary{suffix}.xml"
+        if preferred.is_file():
+            return preferred
+    default_path = candidate_dir / f"{base_prefix}_hu_summary.xml"
+    if default_path.is_file():
+        return default_path
+    pattern = f"{base_prefix}_hu_summary*.xml"
+    matches = sorted(candidate_dir.glob(pattern))
+    if not matches:
+        matches = sorted(candidate_dir.glob("*_hu_summary*.xml"))
+    if not matches:
+        return None
+    if suffix:
+        for match in matches:
+            if suffix in match.stem:
+                return match
+    return matches[0]
+
+
+def _parse_metric_file(path: Path, hu_heatmap: str | None = None) -> dict[str, Any]:
     tree = ET.parse(path)
     root = tree.getroot()
     stem_elem = root.find("stem")
@@ -123,8 +181,8 @@ def _parse_metric_file(path: Path) -> dict[str, Any]:
         }
     partition_summary: dict[str, dict[str, float | int]] = {}
     base_prefix = path.name.replace("_stem_metrics.xml", "")
-    partition_xml = path.with_name(f"{base_prefix}_stem_local_hu_summary.xml")
-    if partition_xml.is_file():
+    partition_xml = _select_partition_xml(path.parent, base_prefix, hu_heatmap)
+    if partition_xml is not None and partition_xml.is_file():
         try:
             part_tree = ET.parse(partition_xml)
             part_root = part_tree.getroot()
@@ -137,7 +195,6 @@ def _parse_metric_file(path: Path) -> dict[str, Any]:
         except Exception:
             partition_summary = {}
     gruen_summary: dict[int, dict[str, tuple[int, float]]] = {}
-    gruen_xml = path.with_name(f"{base_prefix}_stem_local_gruen_hu_summary.xml")
     gruen_candidates: list[Path] = [path.parent]
     original_vtp_value = root.get("stemOriginalVtp")
     if original_vtp_value:
@@ -145,16 +202,14 @@ def _parse_metric_file(path: Path) -> dict[str, Any]:
     screenshot_dir = root.get("screenshotDir")
     if screenshot_dir:
         gruen_candidates.append(Path(screenshot_dir))
+    gruen_xml: Path | None = None
     gruen_xml_found = False
     for candidate_dir in gruen_candidates:
         if not candidate_dir:
             continue
         candidate_dir = Path(candidate_dir)
-        candidate_path = candidate_dir / f"{base_prefix}_stem_local_gruen_hu_summary.xml"
-        if not candidate_path.is_file():
-            alt_matches = sorted(candidate_dir.glob("*_stem_local_gruen_hu_summary.xml"))
-            candidate_path = alt_matches[0] if alt_matches else candidate_path
-        if candidate_path.is_file():
+        candidate_path = _select_gruen_xml(candidate_dir, base_prefix, hu_heatmap)
+        if candidate_path is not None and candidate_path.is_file():
             gruen_xml = candidate_path
             gruen_xml_found = True
             break
@@ -534,6 +589,7 @@ def _populate_gruen_sheet(
     gruen_zone_ids: list[int],
     gruen_tags: list[str],
     anteversion_angles: dict[str, dict[str, float]] | None = None,
+    include_anteversion: bool = False,
 ) -> None:
     sheet.title = "GruenHU"
     anteversion_angles = anteversion_angles or {}
@@ -545,7 +601,6 @@ def _populate_gruen_sheet(
         "Config Index",
         "Hip Config Name",
         "Hip Config Pretty Name",
-        "Anteversion Angle (deg)",
         "Stem UID",
         "Requested Side",
         "Configured Side",
@@ -555,6 +610,8 @@ def _populate_gruen_sheet(
         "Count",
         "Percent (%)",
     ]
+    if include_anteversion:
+        headers.insert(7, "Anteversion Angle (deg)")
     sheet.append(headers)
 
     def _normalize_side(value: object) -> str:
@@ -606,18 +663,6 @@ def _populate_gruen_sheet(
                 case_key = case_id_value
                 side_label = _infer_side_label(entry)
                 user_value = str(entry.get("user_id", "")).strip().upper()
-                anteversion_key = f"{side_label}_{user_value}" if side_label and user_value else ""
-                case_angles = anteversion_angles.get(case_key, {})
-                anteversion_value = case_angles.get(anteversion_key, "") if anteversion_key else ""
-                if anteversion_value == "" and side_label:
-                    side_prefix = f"{side_label}_"
-                    side_values = [
-                        val for key, val in case_angles.items() if key.startswith(side_prefix)
-                    ]
-                    if side_values:
-                        anteversion_value = sum(side_values) / len(side_values)
-                if anteversion_value == "" and "value" in case_angles:
-                    anteversion_value = case_angles.get("value", "")
                 row = [
                     entry.get("user_id", ""),
                     case_id_value,
@@ -626,7 +671,6 @@ def _populate_gruen_sheet(
                     config_index_value,
                     entry.get("hip_config_name", ""),
                     entry.get("hip_config_description", ""),
-                    anteversion_value,
                     stem.get("uid", ""),
                     stem.get("requestedSide", ""),
                     stem.get("configuredSide", ""),
@@ -636,6 +680,28 @@ def _populate_gruen_sheet(
                     count,
                     percent,
                 ]
+                if include_anteversion:
+                    anteversion_key = f"{side_label}_{user_value}" if side_label and user_value else ""
+                    case_angles = anteversion_angles.get(case_key, {})
+                    anteversion_value = case_angles.get(anteversion_key, "") if anteversion_key else ""
+                    if anteversion_value == "" and user_value:
+                        user_matches = [
+                            val
+                            for key, val in case_angles.items()
+                            if key.endswith(f"_{user_value}")
+                        ]
+                        if len(user_matches) == 1:
+                            anteversion_value = user_matches[0]
+                    if anteversion_value == "" and side_label:
+                        side_prefix = f"{side_label}_"
+                        side_values = [
+                            val for key, val in case_angles.items() if key.startswith(side_prefix)
+                        ]
+                        if side_values:
+                            anteversion_value = sum(side_values) / len(side_values)
+                    if anteversion_value == "" and "value" in case_angles:
+                        anteversion_value = case_angles.get("value", "")
+                    row.insert(7, anteversion_value)
                 sheet.append(row)
 
     _autosize_columns(sheet)
@@ -676,7 +742,7 @@ def main() -> int:
     gruen_tag_names: set[str] = set()
     for xml_file in xml_files:
         try:
-            entry = _parse_metric_file(xml_file)
+            entry = _parse_metric_file(xml_file, args.hu_heatmap)
         except Exception as exc:
             print(f"Warning: failed to parse '{xml_file}': {exc}")
             continue
@@ -724,6 +790,7 @@ def main() -> int:
             gruen_zone_list,
             gruen_tag_list,
             anteversion_angles,
+            include_anteversion=bool(args.anteversion_excel),
         )
     else:
         if any(entry.get("gruen_xml_found") for entry in rows):
@@ -734,6 +801,7 @@ def main() -> int:
                 gruen_zone_list,
                 gruen_tag_list,
                 anteversion_angles,
+                include_anteversion=bool(args.anteversion_excel),
             )
     workbook.save(output_path)
     print(f"Wrote Excel workbook: {output_path}")
