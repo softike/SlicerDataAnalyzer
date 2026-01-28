@@ -155,6 +155,12 @@ def parse_args() -> argparse.Namespace:
         help="Treat all HU values >= 1000 as cortical (ignore the cortical upper bound)",
     )
     parser.add_argument(
+        "--heatmap",
+        choices=["ezplan", "ezplan-2024"],
+        default="ezplan",
+        help="HU heatmap LUT to apply for stem visualization (default: ezplan)",
+    )
+    parser.add_argument(
         "--config-index",
         type=int,
         help=(
@@ -196,6 +202,7 @@ def build_slicer_script(
     preserve_exports: bool,
     allow_missing_pretty_name: bool,
     exit_after_run: bool,
+    heatmap: str,
 ) -> str:
     stl_folders_literal = "[{}]".format(
         ", ".join(f"r\"{folder}\"" for folder in stl_folders)
@@ -246,6 +253,7 @@ def build_slicer_script(
         CONFIG_INDEX = $CONFIG_INDEX
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
         EXIT_AFTER_RUN = $EXIT_AFTER_RUN
+        HEATMAP = r"$HEATMAP"
         ROTATION_BEHAVIOR = {
             "johnson": (True, True, False),
             "mathys": (True, True, True),
@@ -254,7 +262,6 @@ def build_slicer_script(
             "fit": (True, True, False),
         }
         SCREENSHOT_DIR = os.path.join(os.path.dirname(SEEDPLAN_PATH), "Slicer-exports")
-        EZPLAN_LUT_NAME = "EZplan HU Zones"
         EZPLAN_LUT_CATEGORY = "Implant Scalars"
         EZPLAN_ZONE_DEFS = [
             (-200.0, 100.0, (0.0, 0.0, 1.0), "Loosening"),
@@ -262,7 +269,39 @@ def build_slicer_script(
             (400.0, 1000.0, (0.0, 1.0, 0.0), "Stable"),
             (1000.0, 2000.0, (1.0, 0.0, 0.0), "Cortical"),
         ]
+        EZPLAN_HEATMAP_2024 = [
+            (-1000.0, -24.0, (0.0, 0.0, 0.0), "Black"),
+            (-24.0, 70.0, (0.5, 0.0, 0.5), "Purple"),
+            (70.0, 200.0, (0.0, 0.0, 1.0), "Blue"),
+            (200.0, 300.0, (0.0, 1.0, 0.0), "Green"),
+            (300.0, 376.0, (1.0, 1.0, 0.0), "Yellow"),
+            (376.0, 2000.0, (1.0, 0.0, 0.0), "Red"),
+        ]
+        HEATMAP_DEFS = {
+            "ezplan": EZPLAN_ZONE_DEFS,
+            "ezplan-2024": EZPLAN_HEATMAP_2024,
+        }
+        ACTIVE_HEATMAP = HEATMAP
+        if ACTIVE_HEATMAP not in HEATMAP_DEFS:
+            ACTIVE_HEATMAP = "ezplan"
+        ACTIVE_ZONE_DEFS = HEATMAP_DEFS[ACTIVE_HEATMAP]
+        EZPLAN_LUT_NAME = (
+            "EZplan HU Zones"
+            if ACTIVE_HEATMAP == "ezplan"
+            else f"EZplan HU Zones ({ACTIVE_HEATMAP})"
+        )
         OUTPUT_DIR_CLEARED = False
+
+        def _iter_active_zone_defs():
+            if not CORTICAL_UNBOUNDED:
+                return ACTIVE_ZONE_DEFS
+            zones = []
+            for zone_min, zone_max, color, label in ACTIVE_ZONE_DEFS:
+                if label.lower() == "cortical":
+                    zones.append((zone_min, float("inf"), color, label))
+                else:
+                    zones.append((zone_min, zone_max, color, label))
+            return zones
 
         def _derive_case_and_user_ids():
             try:
@@ -586,11 +625,27 @@ def build_slicer_script(
             if hasattr(color_node, "SetSaveWithScene"):
                 color_node.SetSaveWithScene(True)
             color_tf = vtk.vtkColorTransferFunction()
-            for zone_min, zone_max, (r, g, b), label in EZPLAN_ZONE_DEFS:
+            if hasattr(color_tf, "SetColorSpaceToRGB"):
+                color_tf.SetColorSpaceToRGB()
+            if hasattr(color_tf, "SetScaleToLinear"):
+                color_tf.SetScaleToLinear()
+            if hasattr(color_tf, "ClampingOn"):
+                color_tf.ClampingOn()
+            if hasattr(color_tf, "AllowDuplicateScalarsOn"):
+                color_tf.AllowDuplicateScalarsOn()
+            zone_range = _iter_active_zone_defs()
+            if zone_range:
+                range_min = zone_range[0][0]
+                range_max = zone_range[-1][1]
+                if range_max != float("inf") and hasattr(color_tf, "SetRange"):
+                    color_tf.SetRange(range_min, range_max)
+            for zone_min, zone_max, (r, g, b), label in _iter_active_zone_defs():
                 color_tf.AddRGBPoint(zone_min, r, g, b)
-                color_tf.AddRGBPoint(zone_max, r, g, b)
+                if zone_max != float("inf"):
+                    color_tf.AddRGBPoint(zone_max, r, g, b)
             color_node.SetAndObserveColorTransferFunction(color_tf)
             color_node.SetAttribute("lut.source", "load_nifti_and_stem")
+            color_node.SetAttribute("lut.heatmap", ACTIVE_HEATMAP)
             slicer.mrmlScene.AddNode(color_node)
             print("Registered color node '%s' for stem scalar visualization" % EZPLAN_LUT_NAME)
             return color_node
@@ -612,11 +667,14 @@ def build_slicer_script(
                     display.SetActiveScalarLocation(slicer.vtkMRMLModelDisplayNode.PointData)
                 except Exception:
                     pass
-            zone_min = EZPLAN_ZONE_DEFS[0][0]
-            zone_max = EZPLAN_ZONE_DEFS[-1][1]
+            zone_min = ACTIVE_ZONE_DEFS[0][0]
+            zone_max = ACTIVE_ZONE_DEFS[-1][1]
             display.SetScalarRange(zone_min, zone_max)
-            if hasattr(display, "SetScalarRangeFlag") and hasattr(display, "UseManualScalarRange"):
-                display.SetScalarRangeFlag(display.UseManualScalarRange)
+            if hasattr(display, "SetScalarRangeFlag"):
+                if hasattr(display, "UseColorNodeScalarRange"):
+                    display.SetScalarRangeFlag(display.UseColorNodeScalarRange)
+                elif hasattr(display, "UseManualScalarRange"):
+                    display.SetScalarRangeFlag(display.UseManualScalarRange)
             poly_data = model_node.GetPolyData()
             if poly_data:
                 point_data = poly_data.GetPointData()
@@ -1130,17 +1188,11 @@ def build_slicer_script(
             if num_points == 0:
                 print("Model '%s' has no points to summarize" % model_node.GetName())
                 return None
-            cortical_max = float("inf") if CORTICAL_UNBOUNDED else 2000.0
-            zones = {
-                "Loosening": (-200.0, 100.0),
-                "MicroMove": (100.0, 400.0),
-                "Stable": (400.0, 1000.0),
-                "Cortical": (1000.0, cortical_max),
-            }
-            zone_counts = {name: 0 for name in zones}
+            zones = [(label, low, high) for low, high, _, label in _iter_active_zone_defs()]
+            zone_counts = {label: 0 for label, _, _ in zones}
             for idx in range(num_points):
                 value = array.GetTuple1(idx)
-                for zone_name, (low, high) in zones.items():
+                for zone_name, low, high in zones:
                     if low <= value < high:
                         zone_counts[zone_name] += 1
                         break
@@ -1152,12 +1204,12 @@ def build_slicer_script(
                 "zones": [
                     {
                         "name": zone_name,
-                        "low": float(bounds[0]),
-                        "high": float(bounds[1]),
+                        "low": float(low),
+                        "high": float(high),
                         "count": zone_counts[zone_name],
                         "percent": (zone_counts[zone_name] / num_points * 100.0) if num_points else 0.0,
                     }
-                    for zone_name, bounds in zones.items()
+                    for zone_name, low, high in zones
                 ],
             }
             return summary
@@ -1727,6 +1779,7 @@ def build_slicer_script(
         CONFIG_INDEX="None" if config_index is None else str(int(config_index)),
         AUTO_ROTATION_MODE=rotation_mode,
         EXIT_AFTER_RUN="True" if exit_after_run else "False",
+        HEATMAP=heatmap,
     )
 
 
@@ -1780,6 +1833,7 @@ def main() -> int:
         args.preserve_exports,
         args.allow_missing_pretty_name,
         args.exit_after_run,
+        args.heatmap,
     )
     temp_script = write_temp_script(slicer_script)
 

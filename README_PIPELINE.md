@@ -320,6 +320,16 @@ python view_vtp.py /media/developer/Storage1/HFRStudy-RUN3/images/H002/019-F-54/
 
 ```
 
+## Show EZplan heatmap
+
+```shell
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/Mediplan3D/Slicer-exports/active_03/1.3.46.670589.33.1.63828549743236925000003.4985465118747613432_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes  --gruen-hu-remesh-input --gruen-remapped  --solid-zones  --hu-heatmap ezplan-2024
+
+# FIT right
+python view_vtp.py /media/developer/Storage1/HFRStudy-RUN3/images/H002/006-M-63/Mediplan3D/Slicer-exports/active_05/1.2.840.113619.2.416.323108426829918732464075286489137100165_stack_03_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes  --gruen-hu-remesh-input --gruen-remapped  --solid-zones  --hu-heatmap ezplan-2024
+
+```
+
 ## Test a specific case in Slicer
 
 ```shell
