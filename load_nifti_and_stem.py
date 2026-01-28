@@ -588,6 +588,26 @@ def build_slicer_script(
             )
             return [marker.lower() for marker in markers if marker]
 
+        def _normalize_side_label(value):
+            if not value:
+                return None
+            cleaned = str(value).strip().lower()
+            if cleaned in {"left", "l", "sideleft"}:
+                return "left"
+            if cleaned in {"right", "r", "sideright"}:
+                return "right"
+            return cleaned or None
+
+        def _clean_text_for_console(value):
+            if value is None:
+                return None
+            text = str(value)
+            text = text.replace("\ufffd", "")
+            text = text.replace("\u2192", "->")
+            text = text.replace("\u21d2", "=>")
+            text = text.replace("\u27a4", "->")
+            return text.strip()
+
         def _needs_mathys_flip(info):
             for marker in _lower_markers(info):
                 if "mathys" in marker:
@@ -1406,6 +1426,17 @@ def build_slicer_script(
             uid_label = stem_info.get("uid")
             uid_label = str(uid_label) if uid_label is not None else "unknown"
             print("Stem: %s | %s (uid %s)" % (manufacturer or "unknown", type_label, uid_label))
+            pretty_name = stem_info.get("hip_config_pretty_name") or stem_info.get("hip_config_name")
+            pretty_name = _clean_text_for_console(pretty_name)
+            if pretty_name:
+                print("Hip config: %s" % pretty_name)
+            resolved_side = (
+                stem_info.get("configured_side") or stem_info.get("requested_side")
+            )
+            resolved_side = _normalize_side_label(resolved_side)
+            if resolved_side:
+                print("")
+                print("Resolved side: %s" % resolved_side)
 
             matrix_raw = stem_info.get("matrix_raw")
             if not matrix_raw:
