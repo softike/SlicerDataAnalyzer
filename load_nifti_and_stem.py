@@ -852,10 +852,35 @@ def build_slicer_script(
                 pixmap.save(file_path)
                 print("Saved screenshot: %s" % file_path)
 
-        def _export_scene(suffix=None, clear_exports=False):
+        def _export_scene(
+            suffix=None,
+            clear_exports=False,
+            config_label=None,
+            implant_type=None,
+            implant_size=None,
+            implant_side=None,
+        ):
             prefix = _stem_output_prefix(clear_dir=clear_exports, suffix=suffix)
             target_dir = os.path.dirname(prefix)
-            scene_dir = os.path.join(target_dir, "slicer-scene")
+            def _sanitize_filename(value):
+                cleaned = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in value)
+                return cleaned.strip("_") or "node"
+            scene_folder = "slicer-scene"
+            def _ancestor(path, levels):
+                current = path
+                for _ in range(levels):
+                    current = os.path.dirname(current) if current else ""
+                return current
+            parent3 = os.path.basename(_ancestor(target_dir, 3)) if target_dir else ""
+            parent4 = os.path.basename(_ancestor(target_dir, 4)) if target_dir else ""
+            config_part = _sanitize_filename(str(config_label)) if config_label else "config"
+            type_part = _sanitize_filename(str(implant_type)) if implant_type else ""
+            size_part = _sanitize_filename(str(implant_size)) if implant_size else ""
+            side_part = _sanitize_filename(str(implant_side)) if implant_side else ""
+            suffix_parts = [part for part in (parent4, parent3, config_part, type_part, size_part, side_part) if part]
+            if suffix_parts:
+                scene_folder = f"{scene_folder}_{_sanitize_filename('_'.join(suffix_parts))}"
+            scene_dir = os.path.join(target_dir, scene_folder)
             if not os.path.isdir(scene_dir):
                 os.makedirs(scene_dir, exist_ok=True)
                 print("Created scene directory: %s" % scene_dir)
@@ -866,9 +891,6 @@ def build_slicer_script(
                 previous_root = slicer.mrmlScene.GetRootDirectory()
             if hasattr(slicer.mrmlScene, "SetRootDirectory"):
                 slicer.mrmlScene.SetRootDirectory(scene_dir)
-            def _sanitize_filename(value):
-                cleaned = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in value)
-                return cleaned.strip("_") or "node"
             def _collect_scene_nodes():
                 nodes = []
                 try:
@@ -1590,7 +1612,15 @@ def build_slicer_script(
                 )
                 export_prefix_cleared = False
             if EXPORT_SCENE:
-                _export_scene(suffix=suffix, clear_exports=export_prefix_cleared)
+                print("Exporting scene for configuration '%s'" % config_label)
+                _export_scene(
+                    suffix=suffix,
+                    clear_exports=export_prefix_cleared,
+                    config_label=config_label,
+                    implant_type=type_label,
+                    implant_size=stem_info.get("rcc_id"),
+                    implant_side=stem_info.get("configured_side") or stem_info.get("requested_side"),
+                )
                 export_prefix_cleared = False
 
             print("Loaded volume '%s'" % (volume_node.GetName() or VOLUME_PATH))
