@@ -583,6 +583,8 @@ def build_slicer_script(
             color_node = slicer.vtkMRMLProceduralColorNode()
             color_node.SetName(EZPLAN_LUT_NAME)
             color_node.SetAttribute("Category", EZPLAN_LUT_CATEGORY)
+            if hasattr(color_node, "SetSaveWithScene"):
+                color_node.SetSaveWithScene(True)
             color_tf = vtk.vtkColorTransferFunction()
             for zone_min, zone_max, (r, g, b), label in EZPLAN_ZONE_DEFS:
                 color_tf.AddRGBPoint(zone_min, r, g, b)
@@ -603,9 +605,18 @@ def build_slicer_script(
                 return
             display.SetScalarVisibility(True)
             display.SetAndObserveColorNodeID(color_node.GetID())
+            if hasattr(display, "SetActiveScalarName"):
+                display.SetActiveScalarName(array_name)
+            if hasattr(display, "SetActiveScalarLocation"):
+                try:
+                    display.SetActiveScalarLocation(slicer.vtkMRMLModelDisplayNode.PointData)
+                except Exception:
+                    pass
             zone_min = EZPLAN_ZONE_DEFS[0][0]
             zone_max = EZPLAN_ZONE_DEFS[-1][1]
             display.SetScalarRange(zone_min, zone_max)
+            if hasattr(display, "SetScalarRangeFlag") and hasattr(display, "UseManualScalarRange"):
+                display.SetScalarRangeFlag(display.UseManualScalarRange)
             poly_data = model_node.GetPolyData()
             if poly_data:
                 point_data = poly_data.GetPointData()
@@ -843,13 +854,118 @@ def build_slicer_script(
 
         def _export_scene(suffix=None, clear_exports=False):
             prefix = _stem_output_prefix(clear_dir=clear_exports, suffix=suffix)
-            scene_path = prefix + "_scene.mrml"
+            target_dir = os.path.dirname(prefix)
+            scene_dir = os.path.join(target_dir, "slicer-scene")
+            if not os.path.isdir(scene_dir):
+                os.makedirs(scene_dir, exist_ok=True)
+                print("Created scene directory: %s" % scene_dir)
+            base_name = os.path.basename(prefix)
+            scene_path = os.path.join(scene_dir, base_name + "_scene.mrml")
+            previous_root = None
+            if hasattr(slicer.mrmlScene, "GetRootDirectory"):
+                previous_root = slicer.mrmlScene.GetRootDirectory()
+            if hasattr(slicer.mrmlScene, "SetRootDirectory"):
+                slicer.mrmlScene.SetRootDirectory(scene_dir)
+            def _sanitize_filename(value):
+                cleaned = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in value)
+                return cleaned.strip("_") or "node"
+            def _collect_scene_nodes():
+                nodes = []
+                try:
+                    model_nodes = slicer.util.getNodesByClass("vtkMRMLModelNode")
+                except Exception:
+                    model_nodes = []
+                for node in model_nodes:
+                    if not node:
+                        continue
+                    if node.GetAttribute("stem.uid") or node.GetAttribute("stem.clone") or node.GetAttribute("stem.overlay"):
+                        nodes.append(node)
+                        continue
+                    name = (node.GetName() or "").lower()
+                    if "stem" in name:
+                        nodes.append(node)
+                try:
+                    volume_nodes = slicer.util.getNodesByClass("vtkMRMLScalarVolumeNode")
+                except Exception:
+                    volume_nodes = []
+                for node in volume_nodes:
+                    if node and node.GetAttribute("stem.sourceVolume") == "true":
+                        nodes.append(node)
+                try:
+                    color_nodes = slicer.util.getNodesByClass("vtkMRMLProceduralColorNode")
+                except Exception:
+                    color_nodes = []
+                for node in color_nodes:
+                    if not node:
+                        continue
+                    if (node.GetAttribute("lut.source") or "") == "load_nifti_and_stem":
+                        nodes.append(node)
+                return nodes
+            export_nodes = _collect_scene_nodes()
+            try:
+                color_table_nodes = slicer.util.getNodesByClass("vtkMRMLColorTableNode")
+            except Exception:
+                color_table_nodes = []
+            for node in color_table_nodes:
+                if node and hasattr(node, "SetSaveWithScene"):
+                    node.SetSaveWithScene(False)
+            try:
+                storable_nodes = export_nodes
+            except Exception:
+                storable_nodes = []
+            for node in storable_nodes:
+                if node is None:
+                    continue
+                if hasattr(node, "SetSaveWithScene"):
+                    node.SetSaveWithScene(True)
+                storage = node.GetStorageNode() if hasattr(node, "GetStorageNode") else None
+                if storage is None and hasattr(node, "CreateDefaultStorageNode"):
+                    try:
+                        storage = node.CreateDefaultStorageNode()
+                        if storage is not None:
+                            slicer.mrmlScene.AddNode(storage)
+                            node.SetAndObserveStorageNodeID(storage.GetID())
+                    except Exception:
+                        storage = None
+                if storage is None:
+                    continue
+                if hasattr(storage, "SetSaveWithScene"):
+                    storage.SetSaveWithScene(True)
+                existing = storage.GetFileName() if hasattr(storage, "GetFileName") else None
+                in_scene_dir = bool(existing) and os.path.abspath(existing).startswith(os.path.abspath(scene_dir))
+                if in_scene_dir:
+                    continue
+                ext = None
+                if hasattr(storage, "GetDefaultWriteFileExtension"):
+                    try:
+                        ext = storage.GetDefaultWriteFileExtension()
+                    except Exception:
+                        ext = None
+                if ext:
+                    ext = ext.lstrip(".")
+                name = node.GetName() if hasattr(node, "GetName") else "node"
+                unique_tag = node.GetID() if hasattr(node, "GetID") else None
+                file_name = _sanitize_filename(name)
+                if unique_tag:
+                    file_name = f"{file_name}_{_sanitize_filename(unique_tag)}"
+                if ext:
+                    file_name = f"{file_name}.{ext}"
+                storage_path = os.path.join(scene_dir, file_name)
+                if hasattr(storage, "SetFileName"):
+                    storage.SetFileName(storage_path)
+                try:
+                    storage.WriteData(node)
+                except Exception as exc:
+                    print("Warning: unable to write node '%s' data to '%s' (%s)" % (node.GetName(), storage_path, exc))
             try:
                 slicer.util.saveScene(scene_path)
             except Exception as exc:
                 print("Warning: unable to save MRML scene to '%s' (%s)" % (scene_path, exc))
             else:
                 print("Saved scene to %s" % scene_path)
+            finally:
+                if previous_root is not None and hasattr(slicer.mrmlScene, "SetRootDirectory"):
+                    slicer.mrmlScene.SetRootDirectory(previous_root)
 
         def _export_original_stem(model_node, suffix=None, clear_exports=False):
             poly = model_node.GetPolyData()
@@ -1503,6 +1619,8 @@ def build_slicer_script(
         volume_node = loadVolume(VOLUME_PATH)
         if volume_node is None:
             raise RuntimeError("Failed to load volume: {}".format(VOLUME_PATH))
+        if hasattr(volume_node, "SetAttribute"):
+            volume_node.SetAttribute("stem.sourceVolume", "true")
         setSliceViewerLayers(background=volume_node)
         layout_manager = slicer.app.layoutManager()
         if layout_manager:
