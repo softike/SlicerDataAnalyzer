@@ -627,6 +627,36 @@ def build_slicer_script(
             elif hasattr(display_node, "SetLineWidth"):
                 display_node.SetLineWidth(thickness)
 
+        def _show_ap_slice_in_3d():
+            layout_manager = slicer.app.layoutManager()
+            if not layout_manager:
+                return
+            target_node = None
+            try:
+                view_names = list(layout_manager.sliceViewNames())
+            except Exception:
+                view_names = ["Green", "Red", "Yellow"]
+            for name in view_names:
+                widget = layout_manager.sliceWidget(name)
+                if not widget:
+                    continue
+                slice_node = widget.mrmlSliceNode()
+                if not slice_node:
+                    continue
+                orientation = (slice_node.GetOrientationString() or "").lower()
+                if orientation in ("coronal", "frontal"):
+                    target_node = slice_node
+                    break
+                if name.lower() == "green" and target_node is None:
+                    target_node = slice_node
+            if not target_node:
+                return
+            if hasattr(target_node, "SetSliceVisible"):
+                target_node.SetSliceVisible(True)
+            display_node = target_node.GetSliceDisplayNode() if hasattr(target_node, "GetSliceDisplayNode") else None
+            if display_node and hasattr(display_node, "SetOpacity"):
+                display_node.SetOpacity(0.6)
+
         def _apply_below_cut_plane_mask(model_node, array_name, stem_info, transform_node, pre_rotate):
             if not SCALAR_BELOW_CUT_PLANE:
                 return array_name
@@ -1477,6 +1507,7 @@ def build_slicer_script(
         layout_manager = slicer.app.layoutManager()
         if layout_manager:
             layout_manager.resetSliceViews()
+            _show_ap_slice_in_3d()
         else:
             print("Info: layout manager unavailable (likely headless mode); skipping slice reset")
 
