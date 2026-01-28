@@ -615,6 +615,18 @@ def build_slicer_script(
                         point_data.SetActiveScalars(array_name)
                         poly_data.Modified()
 
+        def _configure_stem_slice_contours(display_node, thickness=2):
+            if not display_node:
+                return
+            if hasattr(display_node, "SetVisibility2D"):
+                display_node.SetVisibility2D(True)
+            if hasattr(display_node, "SetSliceIntersectionVisibility"):
+                display_node.SetSliceIntersectionVisibility(True)
+            if hasattr(display_node, "SetSliceIntersectionThickness"):
+                display_node.SetSliceIntersectionThickness(thickness)
+            elif hasattr(display_node, "SetLineWidth"):
+                display_node.SetLineWidth(thickness)
+
         def _apply_below_cut_plane_mask(model_node, array_name, stem_info, transform_node, pre_rotate):
             if not SCALAR_BELOW_CUT_PLANE:
                 return array_name
@@ -1315,6 +1327,11 @@ def build_slicer_script(
                 display.SetColor(0.85, 0.33, 0.1)
                 display.SetOpacity(0.7)
 
+            if not model_node.GetDisplayNode():
+                model_node.CreateDefaultDisplayNodes()
+            display = model_node.GetDisplayNode()
+            _configure_stem_slice_contours(display, thickness=2)
+
             model_node.SetAndObserveTransformNodeID(transform_node.GetID())
             _build_neck_point_model(stem_info, transform_node, pre_rotate)
             _build_cut_plane_model(stem_info, transform_node, pre_rotate)
@@ -1333,6 +1350,7 @@ def build_slicer_script(
             clone_display = hardened_clone.GetDisplayNode()
             if source_display and clone_display:
                 clone_display.Copy(source_display)
+            _configure_stem_slice_contours(clone_display, thickness=2)
             hardened_clone.SetAndObserveTransformNodeID(transform_node.GetID())
             hardened_clone.HardenTransform()
             hardened_clone.SetAndObserveTransformNodeID(None)

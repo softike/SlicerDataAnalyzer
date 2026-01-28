@@ -364,4 +364,3 @@ python batch_export_gruen_tables.py  --root /media/developer/Storage1/HFRStudy-R
 
 python export_stem_metrics_excel.py --root /media/developer/Storage1/HFRStudy-RUN3/images/ --output /home/developer/Projects/Code/SlicerDataAnalyzer/CurrentReports/RUN3_9/stem_metrics_RUN3_EZPLAN_LUT_2.xlsx --anteversion-excel  /home/developer/Projects/Code/SlicerDataAnalyzer/CurrentReports/RUN3_9/batch_report_RUN3_raw_data.xlsx  --hu-heatmap ezplan-2024  
 ```
-
