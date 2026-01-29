@@ -151,6 +151,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--stem-rcc-id",
+        action="append",
+        dest="stem_rcc_ids",
+        default=[],
+        help=(
+            "Forwarded filter to inject only stems whose RCC identifier matches this value. "
+            "Repeat to add more RCC IDs."
+        ),
+    )
+    parser.add_argument(
         "--export-aggregate-scene",
         action="store_true",
         help="Forwarded flag to export a single MRML scene containing all injected stems.",
@@ -353,6 +363,9 @@ def _build_command(
     for size in args.stem_sizes:
         if size:
             command.extend(["--stem-size", str(size)])
+    for rcc_id in args.stem_rcc_ids:
+        if rcc_id:
+            command.extend(["--stem-rcc-id", str(rcc_id)])
     if args.export_aggregate_scene:
         command.append("--export-aggregate-scene")
     if args.show_neck_point:

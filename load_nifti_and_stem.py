@@ -185,6 +185,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--stem-rcc-id",
+        dest="stem_rcc_ids",
+        action="append",
+        default=[],
+        help=(
+            "Only inject stems whose RCC identifier matches this value. "
+            "Repeat to add more IDs."
+        ),
+    )
+    parser.add_argument(
         "--config-index",
         type=int,
         help=(
@@ -1923,6 +1933,19 @@ def build_slicer_script(
 
         if not selected_infos:
             print("Warning: no stem configurations matched the requested filters.")
+            if STEM_MODEL_FILTERS or STEM_SIZE_FILTERS:
+                print("Available stem configurations for filtering:")
+                for info in stem_infos:
+                    print(
+                        "  uid=%s | model=%s | enum=%s | rcc_id=%s | pretty=%s"
+                        % (
+                            info.get("uid"),
+                            info.get("stem_friendly_name"),
+                            info.get("stem_enum_name"),
+                            info.get("rcc_id"),
+                            info.get("hip_config_pretty_name"),
+                        )
+                    )
             raise SystemExit(0)
 
         for idx, stem_info in enumerate(selected_infos):
@@ -2066,7 +2089,7 @@ def main() -> int:
         args.exit_after_run,
         args.heatmap,
         args.stem_models,
-        args.stem_sizes,
+        (args.stem_sizes or []) + (args.stem_rcc_ids or []),
         args.export_aggregate_scene,
     )
     temp_script = write_temp_script(slicer_script)
