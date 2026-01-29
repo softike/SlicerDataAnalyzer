@@ -3635,6 +3635,7 @@ def main() -> int:
 			fit_rotation_x_deg = -90.0
 			fit_rotation_y_deg = 45.0
 			fit_rotation_z_deg = 180.0
+			neck_point = _rotate_y_point(neck_point, -135.0)
 			cut_plane_origin = _rotate_y_point(cut_plane_origin, -135.0)
 			cut_plane_normal = _rotate_y_vector(cut_plane_normal, -135.0)
 
@@ -3867,6 +3868,23 @@ def main() -> int:
 		]
 
 	print(f"Resolved side: {args.side}")
+	if neck_point is not None and cut_plane_origin is not None and cut_plane_normal is not None:
+		norm_len = _vector_length(cut_plane_normal)
+		if norm_len > 1e-6:
+			normal_unit = _normalize(cut_plane_normal)
+			adjusted = False
+			if offset_point is not None:
+				axis_dir = _vec_sub(offset_point, neck_point)
+				axis_len = _vector_length(axis_dir)
+				if axis_len > 1e-6:
+					denom = _dot(normal_unit, axis_dir)
+					if abs(denom) > 1e-6:
+						t = _dot(normal_unit, _vec_sub(cut_plane_origin, neck_point)) / denom
+						neck_point = _vec_add(neck_point, _vec_scale(axis_dir, t))
+						adjusted = True
+			if not adjusted:
+				distance = _dot(_vec_sub(neck_point, cut_plane_origin), normal_unit)
+				neck_point = _vec_sub(neck_point, _vec_scale(normal_unit, distance))
 
 	if args.show_neck_point and neck_point is None:
 		raise RuntimeError("--show-neck-point requires --neck-point or a seedplan.xml")

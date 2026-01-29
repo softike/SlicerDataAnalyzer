@@ -123,9 +123,37 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--heatmap",
-        choices=["ezplan", "ezplan-2024"],
+        choices=["standard", "ezplan", "ezplan-2024"],
         default="ezplan",
-        help="Forwarded HU heatmap LUT to apply for stem visualization (default: ezplan).",
+        help=(
+            "Forwarded HU heatmap LUT to apply for stem visualization (default: ezplan). "
+            "Use 'standard' for a grayscale HU ramp."
+        ),
+    )
+    parser.add_argument(
+        "--stem-model",
+        action="append",
+        dest="stem_models",
+        default=[],
+        help=(
+            "Forwarded filter to inject only stems whose model metadata matches this value "
+            "(case-insensitive substring match). Repeat to add more model filters."
+        ),
+    )
+    parser.add_argument(
+        "--stem-size",
+        action="append",
+        dest="stem_sizes",
+        default=[],
+        help=(
+            "Forwarded filter to inject only stems whose registry size (rcc_id) matches this value. "
+            "Repeat to add more sizes."
+        ),
+    )
+    parser.add_argument(
+        "--export-aggregate-scene",
+        action="store_true",
+        help="Forwarded flag to export a single MRML scene containing all injected stems.",
     )
     parser.add_argument(
         "--slicer-extra-arg",
@@ -319,6 +347,14 @@ def _build_command(
         command.append("--cortical-unbounded")
     if args.heatmap:
         command.extend(["--heatmap", args.heatmap])
+    for model in args.stem_models:
+        if model:
+            command.extend(["--stem-model", str(model)])
+    for size in args.stem_sizes:
+        if size:
+            command.extend(["--stem-size", str(size)])
+    if args.export_aggregate_scene:
+        command.append("--export-aggregate-scene")
     if args.show_neck_point:
         command.append("--show-neck-point")
     if args.show_cut_plane:

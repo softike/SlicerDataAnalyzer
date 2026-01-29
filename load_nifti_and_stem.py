@@ -156,9 +156,33 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--heatmap",
-        choices=["ezplan", "ezplan-2024"],
+        choices=["standard", "ezplan", "ezplan-2024"],
         default="ezplan",
-        help="HU heatmap LUT to apply for stem visualization (default: ezplan)",
+        help=(
+            "HU heatmap LUT to apply for stem visualization (default: ezplan). "
+            "Use 'standard' for a grayscale HU ramp."
+        ),
+    )
+    parser.add_argument(
+        "--stem-model",
+        dest="stem_models",
+        action="append",
+        default=[],
+        help=(
+            "Only inject stems whose model metadata matches this value (case-insensitive substring match). "
+            "Matches against registry model/friendly name, enum name, manufacturer, and hip config labels. "
+            "Repeat to add more model filters."
+        ),
+    )
+    parser.add_argument(
+        "--stem-size",
+        dest="stem_sizes",
+        action="append",
+        default=[],
+        help=(
+            "Only inject stems whose registry size (rcc_id) matches this value. "
+            "Repeat to add more sizes."
+        ),
     )
     parser.add_argument(
         "--config-index",
@@ -166,6 +190,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Only process the hip implant configuration at this 1-based index (default processes all "
             "entries that expose a pretty name)."
+        ),
+    )
+    parser.add_argument(
+        "--export-aggregate-scene",
+        action="store_true",
+        help=(
+            "Export a single MRML scene containing all injected stems (useful with --stem-model/--stem-size). "
+            "When enabled, per-configuration scene exports are skipped."
         ),
     )
     parser.add_argument(
@@ -203,9 +235,18 @@ def build_slicer_script(
     allow_missing_pretty_name: bool,
     exit_after_run: bool,
     heatmap: str,
+    stem_model_filters: list[str],
+    stem_size_filters: list[str],
+    export_aggregate_scene: bool,
 ) -> str:
     stl_folders_literal = "[{}]".format(
         ", ".join(f"r\"{folder}\"" for folder in stl_folders)
+    )
+    model_filters_literal = "[{}]".format(
+        ", ".join(repr(item) for item in stem_model_filters)
+    )
+    size_filters_literal = "[{}]".format(
+        ", ".join(repr(item) for item in stem_size_filters)
     )
     template = Template(textwrap.dedent(
         """
@@ -254,6 +295,10 @@ def build_slicer_script(
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
         EXIT_AFTER_RUN = $EXIT_AFTER_RUN
         HEATMAP = r"$HEATMAP"
+        SCALAR_STYLE = r"$SCALAR_STYLE"
+        STEM_MODEL_FILTERS = $STEM_MODEL_FILTERS
+        STEM_SIZE_FILTERS = $STEM_SIZE_FILTERS
+        EXPORT_AGGREGATE_SCENE = $EXPORT_AGGREGATE_SCENE
         ROTATION_BEHAVIOR = {
             "johnson": (True, True, False),
             "mathys": (True, True, True),
@@ -290,6 +335,8 @@ def build_slicer_script(
             if ACTIVE_HEATMAP == "ezplan"
             else f"EZplan HU Zones ({ACTIVE_HEATMAP})"
         )
+        STANDARD_LUT_NAME = "Standard HU"
+        STANDARD_HU_RANGE = (-1000.0, 2000.0)
         OUTPUT_DIR_CLEARED = False
 
         def _iter_active_zone_defs():
@@ -454,6 +501,16 @@ def build_slicer_script(
                 neck_point = get_neck_origin(uid_member)
             except Exception:
                 return None
+            if module is not None and getattr(module, "__name__", "") == "lima_fit_complete":
+                get_cut_plane = getattr(module, "get_cut_plane", None)
+                if callable(get_cut_plane):
+                    try:
+                        plane = get_cut_plane(uid_member)
+                        origin = getattr(plane, "origin", None)
+                        if origin is not None and len(origin) >= 3:
+                            neck_point = (float(origin[0]), float(origin[1]), float(origin[2]))
+                    except Exception:
+                        pass
             if neck_point is None or len(neck_point) < 3:
                 return None
             sphere = vtk.vtkSphereSource()
@@ -635,6 +692,60 @@ def build_slicer_script(
                 return "fit"
             return "none"
 
+        def _normalize_filter_token(value):
+            if value is None:
+                return ""
+            return str(value).strip().lower()
+
+        def _matches_model_filter(info):
+            if not STEM_MODEL_FILTERS:
+                return True
+            candidates = [
+                info.get("stem_friendly_name"),
+                info.get("stem_enum_name"),
+                info.get("manufacturer"),
+                info.get("rcc_id"),
+                info.get("uid"),
+                info.get("hip_config_pretty_name"),
+                info.get("hip_config_name"),
+                info.get("config_label"),
+            ]
+            candidate_values = [
+                _normalize_filter_token(value)
+                for value in candidates
+                if value is not None
+            ]
+            for pattern in STEM_MODEL_FILTERS:
+                token = _normalize_filter_token(pattern)
+                if not token:
+                    continue
+                for candidate in candidate_values:
+                    if token in candidate:
+                        return True
+            return False
+
+        def _matches_size_filter(info):
+            if not STEM_SIZE_FILTERS:
+                return True
+            rcc_id = info.get("rcc_id")
+            if rcc_id is None:
+                return False
+            rcc_token = _normalize_filter_token(rcc_id)
+            for size in STEM_SIZE_FILTERS:
+                size_token = _normalize_filter_token(size)
+                if size_token and size_token == rcc_token:
+                    return True
+            return False
+
+        def _filter_stem_infos(infos):
+            if not STEM_MODEL_FILTERS and not STEM_SIZE_FILTERS:
+                return infos
+            filtered = []
+            for info in infos:
+                if _matches_model_filter(info) and _matches_size_filter(info):
+                    filtered.append(info)
+            return filtered
+
         def _ensure_ezplan_lut():
             existing = slicer.mrmlScene.GetFirstNodeByName(EZPLAN_LUT_NAME)
             if existing and existing.IsA("vtkMRMLColorNode"):
@@ -670,7 +781,34 @@ def build_slicer_script(
             print("Registered color node '%s' for stem scalar visualization" % EZPLAN_LUT_NAME)
             return color_node
 
-        def _apply_scalar_display(model_node, array_name, color_node):
+        def _ensure_standard_lut():
+            existing = slicer.mrmlScene.GetFirstNodeByName(STANDARD_LUT_NAME)
+            if existing and existing.IsA("vtkMRMLColorNode"):
+                return existing
+            color_node = slicer.vtkMRMLProceduralColorNode()
+            color_node.SetName(STANDARD_LUT_NAME)
+            color_node.SetAttribute("Category", EZPLAN_LUT_CATEGORY)
+            if hasattr(color_node, "SetSaveWithScene"):
+                color_node.SetSaveWithScene(True)
+            color_tf = vtk.vtkColorTransferFunction()
+            if hasattr(color_tf, "SetColorSpaceToRGB"):
+                color_tf.SetColorSpaceToRGB()
+            if hasattr(color_tf, "SetScaleToLinear"):
+                color_tf.SetScaleToLinear()
+            if hasattr(color_tf, "ClampingOn"):
+                color_tf.ClampingOn()
+            if hasattr(color_tf, "SetRange"):
+                color_tf.SetRange(STANDARD_HU_RANGE[0], STANDARD_HU_RANGE[1])
+            color_tf.AddRGBPoint(STANDARD_HU_RANGE[0], 0.0, 0.0, 0.0)
+            color_tf.AddRGBPoint(STANDARD_HU_RANGE[1], 1.0, 1.0, 1.0)
+            color_node.SetAndObserveColorTransferFunction(color_tf)
+            color_node.SetAttribute("lut.source", "load_nifti_and_stem")
+            color_node.SetAttribute("lut.heatmap", "standard")
+            slicer.mrmlScene.AddNode(color_node)
+            print("Registered color node '%s' for stem scalar visualization" % STANDARD_LUT_NAME)
+            return color_node
+
+        def _apply_scalar_display(model_node, array_name, color_node, scalar_range=None):
             if not model_node or not color_node:
                 return
             if not model_node.GetDisplayNode():
@@ -687,9 +825,11 @@ def build_slicer_script(
                     display.SetActiveScalarLocation(slicer.vtkMRMLModelDisplayNode.PointData)
                 except Exception:
                     pass
-            zone_min = ACTIVE_ZONE_DEFS[0][0]
-            zone_max = ACTIVE_ZONE_DEFS[-1][1]
-            display.SetScalarRange(zone_min, zone_max)
+            if scalar_range is None:
+                zone_min = ACTIVE_ZONE_DEFS[0][0]
+                zone_max = ACTIVE_ZONE_DEFS[-1][1]
+                scalar_range = (zone_min, zone_max)
+            display.SetScalarRange(scalar_range[0], scalar_range[1])
             if hasattr(display, "SetScalarRangeFlag"):
                 if hasattr(display, "UseColorNodeScalarRange"):
                     display.SetScalarRangeFlag(display.UseColorNodeScalarRange)
@@ -1633,13 +1773,29 @@ def build_slicer_script(
                         pre_rotate,
                     )
                     _print_scalar_percentages(target_node, array_name=scalar_name)
-                    lut_node = _ensure_ezplan_lut()
-                    _apply_scalar_display(target_node, array_name=scalar_name, color_node=lut_node)
+                    if (SCALAR_STYLE or "").strip().lower() == "standard":
+                        lut_node = _ensure_standard_lut()
+                        scalar_range = STANDARD_HU_RANGE
+                    else:
+                        lut_node = _ensure_ezplan_lut()
+                        scalar_range = (ACTIVE_ZONE_DEFS[0][0], ACTIVE_ZONE_DEFS[-1][1])
+                    _apply_scalar_display(
+                        target_node,
+                        array_name=scalar_name,
+                        color_node=lut_node,
+                        scalar_range=scalar_range,
+                    )
                     if target_node is not model_node:
                         _copy_scalar_array(target_node, model_node, scalar_name)
-                        _apply_scalar_display(model_node, array_name=scalar_name, color_node=lut_node)
+                        _apply_scalar_display(
+                            model_node,
+                            array_name=scalar_name,
+                            color_node=lut_node,
+                            scalar_range=scalar_range,
+                        )
+                    lut_name = lut_node.GetName() if lut_node and hasattr(lut_node, "GetName") else "LUT"
                     print("Stored sampled scalars on '{}' and applied '{}' LUT".format(
-                        target_node.GetName(), EZPLAN_LUT_NAME
+                        target_node.GetName(), lut_name
                     ))
                     summary_for_xml = _summarize_scalar_percentages(model_node, array_name=scalar_name)
                     export_node = target_node or hardened_clone or model_node
@@ -1694,7 +1850,7 @@ def build_slicer_script(
                     clear_exports=export_prefix_cleared,
                 )
                 export_prefix_cleared = False
-            if EXPORT_SCENE:
+            if EXPORT_SCENE and not EXPORT_AGGREGATE_SCENE:
                 print("Exporting scene for configuration '%s'" % config_label)
                 _export_scene(
                     suffix=suffix,
@@ -1757,6 +1913,18 @@ def build_slicer_script(
                 )
                 selected_infos = []
 
+        filtered_infos = _filter_stem_infos(selected_infos)
+        if filtered_infos is not selected_infos:
+            print(
+                "Filtered stem configurations: %d/%d"
+                % (len(filtered_infos), len(selected_infos))
+            )
+        selected_infos = filtered_infos
+
+        if not selected_infos:
+            print("Warning: no stem configurations matched the requested filters.")
+            raise SystemExit(0)
+
         for idx, stem_info in enumerate(selected_infos):
             _process_stem_configuration(
                 stem_info,
@@ -1764,6 +1932,34 @@ def build_slicer_script(
                 base_pre_rotate=base_pre_rotate,
                 base_post_rotate=base_post_rotate,
                 clear_exports=(idx == 0 and not PRESERVE_EXPORTS),
+            )
+
+        if EXPORT_AGGREGATE_SCENE and selected_infos:
+            label_parts = ["aggregate"]
+            if STEM_MODEL_FILTERS:
+                label_parts.append("model")
+                label_parts.extend(STEM_MODEL_FILTERS)
+            if STEM_SIZE_FILTERS:
+                label_parts.append("size")
+                label_parts.extend(STEM_SIZE_FILTERS)
+            aggregate_label = "_".join(str(part) for part in label_parts if part)
+            size_label = None
+            type_label = None
+            if len(selected_infos) == 1:
+                size_label = selected_infos[0].get("rcc_id")
+                type_label = selected_infos[0].get("stem_friendly_name") or selected_infos[0].get("stem_enum_name")
+            else:
+                if STEM_SIZE_FILTERS:
+                    size_label = ",".join(str(val) for val in STEM_SIZE_FILTERS if val)
+                if STEM_MODEL_FILTERS:
+                    type_label = ",".join(str(val) for val in STEM_MODEL_FILTERS if val)
+            print("Exporting aggregate scene for %d stem(s)" % len(selected_infos))
+            _export_scene(
+                suffix="aggregate",
+                clear_exports=False,
+                config_label=aggregate_label,
+                implant_type=type_label,
+                implant_size=size_label,
             )
 
         if EXIT_AFTER_RUN:
@@ -1811,6 +2007,10 @@ def build_slicer_script(
         AUTO_ROTATION_MODE=rotation_mode,
         EXIT_AFTER_RUN="True" if exit_after_run else "False",
         HEATMAP=heatmap,
+        SCALAR_STYLE=heatmap,
+        STEM_MODEL_FILTERS=model_filters_literal,
+        STEM_SIZE_FILTERS=size_filters_literal,
+        EXPORT_AGGREGATE_SCENE="True" if export_aggregate_scene else "False",
     )
 
 
@@ -1865,6 +2065,9 @@ def main() -> int:
         args.allow_missing_pretty_name,
         args.exit_after_run,
         args.heatmap,
+        args.stem_models,
+        args.stem_sizes,
+        args.export_aggregate_scene,
     )
     temp_script = write_temp_script(slicer_script)
 
