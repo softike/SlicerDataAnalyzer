@@ -195,6 +195,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--stem-side",
+        dest="stem_sides",
+        action="append",
+        default=[],
+        help=(
+            "Only inject stems matching the requested/configured side (L/R/left/right). "
+            "Repeat to add more side filters."
+        ),
+    )
+    parser.add_argument(
         "--config-index",
         type=int,
         help=(
@@ -247,6 +257,7 @@ def build_slicer_script(
     heatmap: str,
     stem_model_filters: list[str],
     stem_size_filters: list[str],
+    stem_side_filters: list[str],
     export_aggregate_scene: bool,
 ) -> str:
     stl_folders_literal = "[{}]".format(
@@ -257,6 +268,9 @@ def build_slicer_script(
     )
     size_filters_literal = "[{}]".format(
         ", ".join(repr(item) for item in stem_size_filters)
+    )
+    side_filters_literal = "[{}]".format(
+        ", ".join(repr(item) for item in stem_side_filters)
     )
     template = Template(textwrap.dedent(
         """
@@ -309,6 +323,7 @@ def build_slicer_script(
         SCALAR_STYLE = r"$SCALAR_STYLE"
         STEM_MODEL_FILTERS = $STEM_MODEL_FILTERS
         STEM_SIZE_FILTERS = $STEM_SIZE_FILTERS
+        STEM_SIDE_FILTERS = $STEM_SIDE_FILTERS
         EXPORT_AGGREGATE_SCENE = $EXPORT_AGGREGATE_SCENE
         ROTATION_BEHAVIOR = {
             "johnson": (True, True, False),
@@ -748,12 +763,33 @@ def build_slicer_script(
                     return True
             return False
 
+        def _normalize_side_token(value):
+            token = _normalize_filter_token(value)
+            if token in ("l", "left"):
+                return "left"
+            if token in ("r", "right"):
+                return "right"
+            return token
+
+        def _matches_side_filter(info):
+            if not STEM_SIDE_FILTERS:
+                return True
+            requested = _normalize_side_token(info.get("requested_side"))
+            configured = _normalize_side_token(info.get("configured_side"))
+            for side in STEM_SIDE_FILTERS:
+                side_token = _normalize_side_token(side)
+                if not side_token:
+                    continue
+                if side_token in (requested, configured):
+                    return True
+            return False
+
         def _filter_stem_infos(infos):
-            if not STEM_MODEL_FILTERS and not STEM_SIZE_FILTERS:
+            if not STEM_MODEL_FILTERS and not STEM_SIZE_FILTERS and not STEM_SIDE_FILTERS:
                 return infos
             filtered = []
             for info in infos:
-                if _matches_model_filter(info) and _matches_size_filter(info):
+                if _matches_model_filter(info) and _matches_size_filter(info) and _matches_side_filter(info):
                     filtered.append(info)
             return filtered
 
@@ -1108,7 +1144,11 @@ def build_slicer_script(
             size_part = _sanitize_filename(str(implant_size)) if implant_size else ""
             side_part = _sanitize_filename(str(implant_side)) if implant_side else ""
             if str(config_label).lower().startswith("aggregate"):
-                aggregate_parts = [part for part in (parent3, parent2, "multi_config") if part]
+                aggregate_parts = [
+                    part
+                    for part in (parent3, parent2, "multi_config", type_part, size_part, side_part)
+                    if part
+                ]
                 if aggregate_parts:
                     scene_folder = f"{scene_folder}_{_sanitize_filename('_'.join(aggregate_parts))}"
             else:
@@ -1621,12 +1661,27 @@ def build_slicer_script(
                         return f"(A={sign}{magnitude})"
                 return ""
 
+            def _extract_size_token(label):
+                if not label:
+                    return ""
+                text = str(label)
+                angle_match = None
+                for match in re.finditer(r"\(([^)]*A[^)]*)\)", text, re.IGNORECASE):
+                    angle_match = match
+                if angle_match:
+                    prefix = text[: angle_match.start()]
+                    numbers = re.findall(r"\d+(?:[\.,]\d+)?", prefix)
+                    if numbers:
+                        return numbers[-1].replace(",", ".")
+                return ""
+
+            pretty_size = _extract_size_token(config_name)
             stem_parts = [stem_brand, stem_model]
             if stem_size:
                 size_token = _normalized_token(stem_size)
                 model_token = _normalized_token(stem_model)
                 if size_token and size_token not in model_token:
-                    stem_parts.append(stem_size)
+                    stem_parts.append(pretty_size or stem_size)
             if configured_side or requested_side:
                 stem_parts.append(f"side={configured_side}/{requested_side}")
             angle_token = _extract_angle_token(config_name)
@@ -2025,6 +2080,20 @@ def build_slicer_script(
             )
 
         if EXPORT_AGGREGATE_SCENE and selected_infos:
+            def _extract_pretty_size(label):
+                if not label:
+                    return ""
+                text = str(label)
+                angle_match = None
+                for match in re.finditer(r"\(([^)]*A[^)]*)\)", text, re.IGNORECASE):
+                    angle_match = match
+                if angle_match:
+                    prefix = text[: angle_match.start()]
+                    numbers = re.findall(r"\d+(?:[\.,]\d+)?", prefix)
+                    if numbers:
+                        return numbers[-1].replace(",", ".")
+                return ""
+
             label_parts = ["aggregate"]
             if STEM_MODEL_FILTERS:
                 label_parts.append("model")
@@ -2035,21 +2104,29 @@ def build_slicer_script(
             aggregate_label = "_".join(str(part) for part in label_parts if part)
             size_label = None
             type_label = None
+            brand_label = None
+            side_label = None
             if len(selected_infos) == 1:
-                size_label = selected_infos[0].get("rcc_id")
+                size_label = _extract_pretty_size(selected_infos[0].get("hip_config_pretty_name")) or None
                 type_label = selected_infos[0].get("stem_friendly_name") or selected_infos[0].get("stem_enum_name")
+                brand_label = selected_infos[0].get("manufacturer")
+                side_label = selected_infos[0].get("requested_side")
             else:
-                if STEM_SIZE_FILTERS:
-                    size_label = ",".join(str(val) for val in STEM_SIZE_FILTERS if val)
+                if selected_infos:
+                    size_label = _extract_pretty_size(selected_infos[0].get("hip_config_pretty_name")) or None
                 if STEM_MODEL_FILTERS:
                     type_label = ",".join(str(val) for val in STEM_MODEL_FILTERS if val)
+                if selected_infos:
+                    brand_label = selected_infos[0].get("manufacturer")
+                    side_label = selected_infos[0].get("requested_side")
             print("Exporting aggregate scene for %d stem(s)" % len(selected_infos))
             _export_scene(
                 suffix="aggregate",
                 clear_exports=False,
                 config_label=aggregate_label,
-                implant_type=type_label,
+                implant_type=brand_label or type_label,
                 implant_size=size_label,
+                implant_side=side_label,
             )
 
         if EXIT_AFTER_RUN:
@@ -2100,6 +2177,7 @@ def build_slicer_script(
         SCALAR_STYLE=heatmap,
         STEM_MODEL_FILTERS=model_filters_literal,
         STEM_SIZE_FILTERS=size_filters_literal,
+        STEM_SIDE_FILTERS=side_filters_literal,
         EXPORT_AGGREGATE_SCENE="True" if export_aggregate_scene else "False",
     )
 
@@ -2157,6 +2235,7 @@ def main() -> int:
         args.heatmap,
         args.stem_models,
         (args.stem_sizes or []) + (args.stem_rcc_ids or []),
+        args.stem_sides,
         args.export_aggregate_scene,
     )
     temp_script = write_temp_script(slicer_script)

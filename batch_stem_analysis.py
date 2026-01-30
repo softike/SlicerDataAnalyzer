@@ -161,6 +161,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--stem-side",
+        action="append",
+        dest="stem_sides",
+        default=[],
+        help=(
+            "Forwarded filter to inject only stems matching the requested/configured side (L/R/left/right). "
+            "Repeat to add more side filters."
+        ),
+    )
+    parser.add_argument(
         "--export-aggregate-scene",
         action="store_true",
         help="Forwarded flag to export a single MRML scene containing all injected stems.",
@@ -366,6 +376,9 @@ def _build_command(
     for rcc_id in args.stem_rcc_ids:
         if rcc_id:
             command.extend(["--stem-rcc-id", str(rcc_id)])
+    for side in args.stem_sides:
+        if side:
+            command.extend(["--stem-side", str(side)])
     if args.export_aggregate_scene:
         command.append("--export-aggregate-scene")
     if args.show_neck_point:
