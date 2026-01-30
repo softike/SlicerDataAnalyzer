@@ -405,7 +405,7 @@ python batch_stem_analysis.py \
 # Case 014 CORAIL
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
-   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H003 \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H001 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 014-M-65  --preserve-exports  --stem-rcc-id 103427630_1  --export-aggregate-scene  --heatmap ezplan-2024
 
