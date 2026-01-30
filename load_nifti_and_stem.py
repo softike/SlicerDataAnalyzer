@@ -1099,15 +1099,21 @@ def build_slicer_script(
                 for _ in range(levels):
                     current = os.path.dirname(current) if current else ""
                 return current
+            parent2 = os.path.basename(_ancestor(target_dir, 2)) if target_dir else ""
             parent3 = os.path.basename(_ancestor(target_dir, 3)) if target_dir else ""
             parent4 = os.path.basename(_ancestor(target_dir, 4)) if target_dir else ""
             config_part = _sanitize_filename(str(config_label)) if config_label else "config"
             type_part = _sanitize_filename(str(implant_type)) if implant_type else ""
             size_part = _sanitize_filename(str(implant_size)) if implant_size else ""
             side_part = _sanitize_filename(str(implant_side)) if implant_side else ""
-            suffix_parts = [part for part in (parent4, parent3, config_part, type_part, size_part, side_part) if part]
-            if suffix_parts:
-                scene_folder = f"{scene_folder}_{_sanitize_filename('_'.join(suffix_parts))}"
+            if str(config_label).lower().startswith("aggregate"):
+                aggregate_parts = [part for part in (parent3, parent2, "multi_config") if part]
+                if aggregate_parts:
+                    scene_folder = f"{scene_folder}_{_sanitize_filename('_'.join(aggregate_parts))}"
+            else:
+                suffix_parts = [part for part in (parent4, parent3, config_part, type_part, size_part, side_part) if part]
+                if suffix_parts:
+                    scene_folder = f"{scene_folder}_{_sanitize_filename('_'.join(suffix_parts))}"
             scene_dir = os.path.join(target_dir, scene_folder)
             if not os.path.isdir(scene_dir):
                 os.makedirs(scene_dir, exist_ok=True)
@@ -1575,6 +1581,36 @@ def build_slicer_script(
             type_label = friendly_name or enum_name or "unknown"
             uid_label = stem_info.get("uid")
             uid_label = str(uid_label) if uid_label is not None else "unknown"
+            stem_size = stem_info.get("rcc_id") or "unknown"
+            stem_side = (
+                stem_info.get("configured_side")
+                or stem_info.get("requested_side")
+                or "unknown"
+            )
+            stem_brand = manufacturer or "unknown"
+            stem_model = type_label
+
+            def _normalized_token(value):
+                return "".join(ch.lower() for ch in str(value) if ch.isalnum())
+
+            def _sanitize_node_name(value):
+                cleaned = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in str(value))
+                return cleaned.strip("_") or "unknown"
+
+            stem_parts = [stem_brand, stem_model]
+            if stem_size:
+                size_token = _normalized_token(stem_size)
+                model_token = _normalized_token(stem_model)
+                if size_token and size_token not in model_token:
+                    stem_parts.append(stem_size)
+            if stem_side:
+                stem_parts.append(stem_side)
+
+            stem_suffix = "_".join(
+                _sanitize_node_name(part)
+                for part in stem_parts
+                if part
+            )
             print("Stem: %s | %s (uid %s)" % (manufacturer or "unknown", type_label, uid_label))
             pretty_name = stem_info.get("hip_config_pretty_name") or stem_info.get("hip_config_name")
             pretty_name = _clean_text_for_console(pretty_name)
@@ -1738,6 +1774,10 @@ def build_slicer_script(
             _build_cut_plane_model(stem_info, transform_node, pre_rotate)
 
             base_name = model_node.GetName() or "Stem"
+            if stem_suffix:
+                model_name = slicer.mrmlScene.GenerateUniqueName(stem_suffix)
+                model_node.SetName(model_name)
+                base_name = model_name
             hardened_name = slicer.mrmlScene.GenerateUniqueName(f"{base_name} (Hardened)")
             hardened_clone = slicer.mrmlScene.AddNewNodeByClass(
                 "vtkMRMLModelNode",
