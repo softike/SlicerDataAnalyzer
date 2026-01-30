@@ -261,6 +261,7 @@ def build_slicer_script(
     template = Template(textwrap.dedent(
         """
         import os
+        import re
         import sys
         import xml.etree.ElementTree as ET
         import slicer
@@ -1587,15 +1588,38 @@ def build_slicer_script(
                 or stem_info.get("requested_side")
                 or "unknown"
             )
+            requested_side = stem_info.get("requested_side") or "unknown"
+            configured_side = stem_info.get("configured_side") or "unknown"
             stem_brand = manufacturer or "unknown"
             stem_model = type_label
+            config_name = stem_info.get("hip_config_pretty_name") or stem_info.get("hip_config_name") or ""
 
             def _normalized_token(value):
                 return "".join(ch.lower() for ch in str(value) if ch.isalnum())
 
             def _sanitize_node_name(value):
-                cleaned = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in str(value))
+                cleaned = "".join(
+                    ch if ch.isalnum() or ch in "-_.()=+" else "_" for ch in str(value)
+                )
                 return cleaned.strip("_") or "unknown"
+
+            def _extract_angle_token(label):
+                if not label:
+                    return ""
+                for content in re.findall(r"\(([^)]*)\)", str(label)):
+                    if "a" not in content.lower():
+                        continue
+                    match = re.search(r"A\s*=?\s*([+-]?\d+(?:\.\d+)?)", content, re.IGNORECASE)
+                    if match:
+                        raw_value = match.group(1)
+                        try:
+                            value = float(raw_value)
+                        except ValueError:
+                            return f"(A={raw_value})"
+                        sign = "+" if value >= 0 else "-"
+                        magnitude = raw_value.lstrip("+-")
+                        return f"(A={sign}{magnitude})"
+                return ""
 
             stem_parts = [stem_brand, stem_model]
             if stem_size:
@@ -1603,8 +1627,11 @@ def build_slicer_script(
                 model_token = _normalized_token(stem_model)
                 if size_token and size_token not in model_token:
                     stem_parts.append(stem_size)
-            if stem_side:
-                stem_parts.append(stem_side)
+            if configured_side or requested_side:
+                stem_parts.append(f"side={configured_side}/{requested_side}")
+            angle_token = _extract_angle_token(config_name)
+            if angle_token:
+                stem_parts.append(angle_token)
 
             stem_suffix = "_".join(
                 _sanitize_node_name(part)

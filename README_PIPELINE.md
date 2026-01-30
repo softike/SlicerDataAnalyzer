@@ -358,18 +358,43 @@ python batch_stem_analysis.py \
 ## Export a scene with all stems of a specific model and size
 
 ```shell
+#Case 006
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 006-M-63  --preserve-exports  --stem-rcc-id 4211_25_110  --export-aggregate-scene  --heatmap ezplan-2024
 
-
+# Case 008
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 008-F-40  --preserve-exports  --stem-rcc-id 52_34_0203_10092343_V01  --export-aggregate-scene  --heatmap ezplan-2024
+
+# Case 009
+python batch_stem_analysis.py \
+   --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
+   --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 009-F-83  --preserve-exports  --stem-rcc-id 52_34_0202_10092342_V01  --export-aggregate-scene  --heatmap ezplan-2024
+
+
+# Case 011
+python batch_stem_analysis.py \
+   --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
+   --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 011-F-54  --preserve-exports  --stem-rcc-id 52_34_1166_50028325_V03  --export-aggregate-scene  --heatmap ezplan-2024
+
+
+# Case 014
+python batch_stem_analysis.py \
+   --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
+   --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 014-M-65  --preserve-exports  --stem-rcc-id 4211_25_160  --export-aggregate-scene  --heatmap ezplan-2024
+
 
 
 ```
