@@ -1071,6 +1071,11 @@ def build_slicer_script(
                     view_node.SetOrientationMarkerType(view_node.OrientationMarkerTypeNone)
                 except AttributeError:
                     pass
+            if hasattr(view_node, "SetAxisLabelsVisible"):
+                try:
+                    view_node.SetAxisLabelsVisible(False)
+                except AttributeError:
+                    pass
             if hasattr(view_node, "SetBoxVisible"):
                 view_node.SetBoxVisible(False)
 
