@@ -130,6 +130,20 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--export-scalar-animation",
+        action="store_true",
+        help=(
+            "Generate ordered PNG frames showing the stem's scalar field across configurations, "
+            "sorted by anteversion A=<angle> from the hipImplantConfig prettyName."
+        ),
+    )
+    parser.add_argument(
+        "--scalar-animation-view",
+        choices=["AP_front", "AP_back", "SAG_left", "SAG_right"],
+        default="AP_front",
+        help="3D view orientation used for scalar animation frames (default: AP_front).",
+    )
+    parser.add_argument(
         "--export-scene",
         action="store_true",
         help="Export a per-configuration MRML scene containing the volume and stem",
@@ -249,6 +263,8 @@ def build_slicer_script(
     rotation_mode: str,
     export_local_stem: bool,
     export_stem_screenshots: bool,
+    export_scalar_animation: bool,
+    scalar_animation_view: str,
     export_scene: bool,
     cortical_unbounded: bool,
     preserve_exports: bool,
@@ -311,6 +327,8 @@ def build_slicer_script(
         CUT_PLANE_COLOR = (0.1, 0.6, 1.0)
         CUT_PLANE_OPACITY = 0.35
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
+        EXPORT_SCALAR_ANIMATION = $EXPORT_SCALAR_ANIMATION
+        SCALAR_ANIMATION_VIEW = r"$SCALAR_ANIMATION_VIEW"
         EXPORT_SCENE = $EXPORT_SCENE
         CORTICAL_UNBOUNDED = $CORTICAL_UNBOUNDED
         PRESERVE_EXPORTS = $PRESERVE_EXPORTS
@@ -1603,6 +1621,103 @@ def build_slicer_script(
                 raise RuntimeError("Unable to locate femoral stem definition in seedplan")
             return entries
 
+        def _extract_anteversion_value(label):
+            if not label:
+                return None
+            match = re.search(r"A\s*=?\s*([+-]?\d+(?:\.\d+)?)", str(label), re.IGNORECASE)
+            if not match:
+                return None
+            raw_value = match.group(1)
+            try:
+                return float(raw_value)
+            except ValueError:
+                return None
+
+        def _sort_stem_infos_by_anteversion(infos):
+            def _key(info):
+                label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or ""
+                value = _extract_anteversion_value(label)
+                return (value is None, value if value is not None else 0.0)
+            return sorted(infos, key=_key)
+
+        def _capture_scalar_animation_frame(model_node, frame_index, config_label=None, clear_exports=False):
+            poly = model_node.GetPolyData()
+            if poly is None:
+                print("Model has no polydata; skipping animation frame")
+                return
+            layout_manager = slicer.app.layoutManager()
+            if layout_manager is None:
+                raise RuntimeError(
+                    "Scalar animation capture requires a GUI session (layout manager unavailable; run without --no-main-window)"
+                )
+            widget = layout_manager.threeDWidget(0)
+            if widget is None:
+                print("No 3D widget available; skipping animation frame")
+                return
+            view = widget.threeDView()
+            view_node = view.mrmlViewNode()
+            _configure_view_background(view_node)
+            cameras_logic = slicer.modules.cameras.logic()
+            camera_node = None
+            if hasattr(cameras_logic, "GetCameraNode"):
+                camera_node = cameras_logic.GetCameraNode(view_node)
+            if camera_node is None and hasattr(cameras_logic, "GetViewActiveCameraNode"):
+                camera_node = cameras_logic.GetViewActiveCameraNode(view_node)
+            if camera_node is None:
+                try:
+                    camera_node = slicer.modules.cameras.logic().GetActiveCameraNode()
+                except AttributeError:
+                    camera_node = None
+            if camera_node is None:
+                print("Unable to locate camera node; creating temporary camera")
+                camera_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLCameraNode", "AnimationCamera")
+                if camera_node:
+                    camera_node.SetAndObserveViewNodeID(view_node.GetID())
+                else:
+                    print("Failed to create camera node; skipping animation frame")
+                    return
+            camera = camera_node.GetCamera()
+            if camera is None:
+                print("Camera node missing vtkCamera; skipping animation frame")
+                return
+            camera.ParallelProjectionOn()
+            bounds = [0.0] * 6
+            poly.GetBounds(bounds)
+            center = [
+                0.5 * (bounds[0] + bounds[1]),
+                0.5 * (bounds[2] + bounds[3]),
+                0.5 * (bounds[4] + bounds[5]),
+            ]
+            max_extent = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+            if max_extent <= 0:
+                max_extent = 100.0
+            distance = max_extent * 2.5
+            half_extent = max_extent * 0.5
+            orientations = {
+                "AP_front": ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+                "AP_back": ((0.0, -1.0, 0.0), (0.0, 0.0, 1.0)),
+                "SAG_left": ((-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+                "SAG_right": ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+            }
+            axis, up = orientations.get(SCALAR_ANIMATION_VIEW, orientations["AP_front"])
+            position = [center[i] + axis[i] * distance for i in range(3)]
+            camera.SetFocalPoint(*center)
+            camera.SetPosition(*position)
+            camera.SetViewUp(*up)
+            camera.SetParallelScale(max(half_extent, 1.0))
+            camera.Modified()
+            view.renderWindow().Render()
+            qt.QApplication.processEvents()
+            prefix = _stem_output_prefix(clear_dir=clear_exports, suffix="scalar_animation")
+            def _sanitize_filename(value):
+                cleaned = "".join(ch if ch.isalnum() or ch in "-_.()=+" else "_" for ch in str(value))
+                return cleaned.strip("_") or "frame"
+            label_part = _sanitize_filename(config_label) if config_label else f"{frame_index:03d}"
+            file_path = "{}_anim_{:03d}_{}.png".format(prefix, frame_index, label_part)
+            pixmap = view.grab()
+            pixmap.save(file_path)
+            print("Saved animation frame: %s" % file_path)
+
         def _process_stem_configuration(
             stem_info,
             *,
@@ -1997,6 +2112,263 @@ def build_slicer_script(
             print("Loaded volume '%s'" % (volume_node.GetName() or VOLUME_PATH))
             print("Added implant stem UID %s for configuration '%s'" % (stem_info.get("uid"), config_label))
 
+        def _build_stem_model_for_animation(stem_info, base_pre_rotate=False, base_post_rotate=False):
+            config_index = stem_info.get("config_index", 0)
+            config_label = stem_info.get("config_label") or f"Configuration {config_index + 1}"
+            matrix_raw = stem_info.get("matrix_raw")
+            if not matrix_raw:
+                print("Warning: configuration '%s' has no stem matrix; skipping" % config_label)
+                return None
+            try:
+                matrix_vals = _parse_matrix(matrix_raw)
+            except ValueError as exc:
+                print("Warning: invalid stem matrix for '%s' (%s); skipping" % (config_label, exc))
+                return None
+
+            local_matrix_raw = stem_info.get("local_matrix_raw")
+            if local_matrix_raw:
+                try:
+                    local_matrix_vals = _parse_matrix(local_matrix_raw)
+                except ValueError:
+                    local_matrix_vals = IDENTITY_4X4
+            else:
+                local_matrix_vals = IDENTITY_4X4
+
+            matrix_global = vtk.vtkMatrix4x4()
+            for row in range(4):
+                for col in range(4):
+                    matrix_global.SetElement(row, col, matrix_vals[col * 4 + row])
+
+            matrix_local = vtk.vtkMatrix4x4()
+            for row in range(4):
+                for col in range(4):
+                    matrix_local.SetElement(row, col, local_matrix_vals[col * 4 + row])
+
+            matrix = vtk.vtkMatrix4x4()
+            vtk.vtkMatrix4x4.Multiply4x4(matrix_global, matrix_local, matrix)
+
+            rotation_mode = _resolve_rotation_mode(stem_info)
+            pre_rotate = bool(base_pre_rotate)
+            post_rotate = bool(base_post_rotate)
+            auto_pre, auto_post, auto_pre_transform = ROTATION_BEHAVIOR.get(
+                rotation_mode,
+                (False, False, False),
+            )
+            if auto_pre and not pre_rotate:
+                pre_rotate = True
+            if auto_post and not post_rotate:
+                post_rotate = True
+            if rotation_mode == "medacta" and not post_rotate:
+                post_rotate = True
+            pre_transform = bool(PRE_TRANSFORM_LPS_TO_RAS)
+            if auto_pre_transform and not pre_transform:
+                pre_transform = True
+
+            if pre_transform:
+                flip = vtk.vtkMatrix4x4()
+                flip.Identity()
+                flip.SetElement(0, 0, -1)
+                flip.SetElement(1, 1, -1)
+                _right_multiply(matrix, flip)
+
+            if pre_rotate:
+                rot = vtk.vtkMatrix4x4()
+                rot.Identity()
+                rot.SetElement(0, 0, -1)
+                rot.SetElement(1, 1, -1)
+                _right_multiply(matrix, rot)
+
+            if post_rotate:
+                rot_post = vtk.vtkMatrix4x4()
+                rot_post.Identity()
+                rot_post.SetElement(0, 0, -1)
+                rot_post.SetElement(1, 1, -1)
+                _left_multiply(matrix, rot_post)
+
+            transform_name = slicer.mrmlScene.GenerateUniqueName(f"StemTransform_{config_index + 1:02d}")
+            transform_node = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLLinearTransformNode",
+                transform_name,
+            )
+            transform_node.SetMatrixTransformToParent(matrix)
+
+            model_node = None
+            search_folders = []
+            if STL_ROOTS:
+                for root_path in STL_ROOTS:
+                    if not root_path:
+                        continue
+                    if not os.path.isdir(root_path):
+                        continue
+                    for dirpath, _, _ in os.walk(root_path):
+                        search_folders.append(dirpath)
+
+            if search_folders:
+                try:
+                    import view_implant
+                except Exception:
+                    view_implant = None
+                if view_implant:
+                    tokens = [
+                        stem_info.get("rcc_id"),
+                        stem_info.get("stem_enum_name"),
+                        str(stem_info.get("uid")) if stem_info.get("uid") is not None else None,
+                    ]
+                    tokens = [token for token in tokens if token]
+                    if tokens:
+                        try:
+                            stl_path, _ = view_implant.find_matching_stl(search_folders, tokens)
+                        except Exception:
+                            stl_path = None
+                        if stl_path:
+                            model_node = loadModel(str(stl_path))
+                            if model_node and _needs_mathys_flip(stem_info):
+                                flipped = _flip_polydata_lps_to_ras(model_node.GetPolyData())
+                                if flipped:
+                                    model_node.SetAndObservePolyData(flipped)
+                                    model_node.SetAttribute("stem.geometryCoordinateSystem", "RAS (Mathys)")
+
+            if model_node is None:
+                cylinder = vtk.vtkCylinderSource()
+                cylinder.SetRadius(STEM_RADIUS)
+                cylinder.SetHeight(STEM_LENGTH)
+                cylinder.SetResolution(64)
+                cylinder.SetCenter(0, 0, STEM_LENGTH * 0.5)
+                cylinder.CappingOn()
+                cylinder.Update()
+
+                model_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode", "ImplantStem")
+                model_node.SetAndObservePolyData(cylinder.GetOutput())
+                model_node.CreateDefaultDisplayNodes()
+                display = model_node.GetDisplayNode()
+                display.SetColor(0.85, 0.33, 0.1)
+                display.SetOpacity(0.7)
+
+            if not model_node.GetDisplayNode():
+                model_node.CreateDefaultDisplayNodes()
+            display = model_node.GetDisplayNode()
+            _configure_stem_slice_contours(display, thickness=2)
+
+            model_node.SetAndObserveTransformNodeID(transform_node.GetID())
+
+            base_name = model_node.GetName() or "Stem"
+            hardened_name = slicer.mrmlScene.GenerateUniqueName(f"{base_name} (Hardened)")
+            hardened_clone = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLModelNode",
+                hardened_name,
+            )
+            clone_poly_data = vtk.vtkPolyData()
+            clone_poly_data.DeepCopy(model_node.GetPolyData())
+            hardened_clone.SetAndObservePolyData(clone_poly_data)
+            hardened_clone.CreateDefaultDisplayNodes()
+            source_display = model_node.GetDisplayNode()
+            clone_display = hardened_clone.GetDisplayNode()
+            if source_display and clone_display:
+                clone_display.Copy(source_display)
+            _configure_stem_slice_contours(clone_display, thickness=2)
+            hardened_clone.SetAndObserveTransformNodeID(transform_node.GetID())
+            hardened_clone.HardenTransform()
+            hardened_clone.SetAndObserveTransformNodeID(None)
+            hardened_clone.SetAttribute("stem.clone", "hardened")
+
+            for key, value in stem_info.items():
+                if value is None:
+                    continue
+                attr_value = str(value)
+                model_node.SetAttribute("stem.%s" % key, attr_value)
+                hardened_clone.SetAttribute("stem.%s" % key, attr_value)
+
+            return {
+                "model_node": model_node,
+                "hardened_clone": hardened_clone,
+                "transform_node": transform_node,
+                "pre_rotate": pre_rotate,
+                "config_label": config_label,
+            }
+
+        def _run_scalar_animation(stem_infos, volume_node, base_pre_rotate=False, base_post_rotate=False):
+            if not stem_infos:
+                print("Warning: no configurations available for scalar animation")
+                return
+            ordered_infos = _sort_stem_infos_by_anteversion(stem_infos)
+            print("Scalar animation order (by anteversion):")
+            for info in ordered_infos:
+                label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or ""
+                value = _extract_anteversion_value(label)
+                print("  A=%s | %s" % (value if value is not None else "n/a", label))
+
+            base_result = _build_stem_model_for_animation(
+                ordered_infos[0],
+                base_pre_rotate=base_pre_rotate,
+                base_post_rotate=base_post_rotate,
+            )
+            if not base_result:
+                print("Warning: unable to create base stem model for animation")
+                return
+            static_model = base_result["hardened_clone"] or base_result["model_node"]
+            if static_model is None:
+                print("Warning: missing static stem model for animation")
+                return
+            base_display = base_result["model_node"].GetDisplayNode() if base_result.get("model_node") else None
+            if base_display:
+                base_display.SetVisibility(False)
+            static_display = static_model.GetDisplayNode()
+            if static_display:
+                static_display.SetVisibility(True)
+
+            if (SCALAR_STYLE or "").strip().lower() == "standard":
+                lut_node = _ensure_standard_lut()
+                scalar_range = STANDARD_HU_RANGE
+            else:
+                lut_node = _ensure_ezplan_lut()
+                scalar_range = (ACTIVE_ZONE_DEFS[0][0], ACTIVE_ZONE_DEFS[-1][1])
+
+            for frame_idx, info in enumerate(ordered_infos, start=1):
+                result = _build_stem_model_for_animation(
+                    info,
+                    base_pre_rotate=base_pre_rotate,
+                    base_post_rotate=base_post_rotate,
+                )
+                if not result:
+                    continue
+                temp_node = result["hardened_clone"] or result["model_node"]
+                if temp_node is None:
+                    continue
+                try:
+                    _probe_volume_onto_model(volume_node, temp_node, array_name="VolumeScalars")
+                except Exception as exc:
+                    print("Warning: unable to sample scalars for animation frame (%s)" % exc)
+                    continue
+                scalar_name = "VolumeScalars"
+                scalar_name = _apply_below_cut_plane_mask(
+                    temp_node,
+                    scalar_name,
+                    info,
+                    result["transform_node"],
+                    result.get("pre_rotate", base_pre_rotate),
+                )
+                _copy_scalar_array(temp_node, static_model, scalar_name)
+                _apply_scalar_display(
+                    static_model,
+                    array_name=scalar_name,
+                    color_node=lut_node,
+                    scalar_range=scalar_range,
+                )
+                config_label = info.get("hip_config_pretty_name") or info.get("hip_config_name")
+                _capture_scalar_animation_frame(
+                    static_model,
+                    frame_idx,
+                    config_label=config_label,
+                    clear_exports=(frame_idx == 1 and not PRESERVE_EXPORTS),
+                )
+                for node in (result.get("model_node"), result.get("hardened_clone"), result.get("transform_node")):
+                    if node:
+                        slicer.mrmlScene.RemoveNode(node)
+
+            for node in (base_result.get("model_node"), base_result.get("transform_node")):
+                if node:
+                    slicer.mrmlScene.RemoveNode(node)
+
         stem_infos = _extract_stem_infos(SEEDPLAN_PATH)
         filtered_stem_infos = [
             info
@@ -2070,16 +2442,27 @@ def build_slicer_script(
                     )
             raise SystemExit(0)
 
-        for idx, stem_info in enumerate(selected_infos):
-            _process_stem_configuration(
-                stem_info,
-                volume_node=volume_node,
+        skip_per_config_processing = False
+        if EXPORT_SCALAR_ANIMATION:
+            _run_scalar_animation(
+                selected_infos,
+                volume_node,
                 base_pre_rotate=base_pre_rotate,
                 base_post_rotate=base_post_rotate,
-                clear_exports=(idx == 0 and not PRESERVE_EXPORTS),
             )
+            skip_per_config_processing = True
 
-        if EXPORT_AGGREGATE_SCENE and selected_infos:
+        if not skip_per_config_processing:
+            for idx, stem_info in enumerate(selected_infos):
+                _process_stem_configuration(
+                    stem_info,
+                    volume_node=volume_node,
+                    base_pre_rotate=base_pre_rotate,
+                    base_post_rotate=base_post_rotate,
+                    clear_exports=(idx == 0 and not PRESERVE_EXPORTS),
+                )
+
+        if EXPORT_AGGREGATE_SCENE and selected_infos and not skip_per_config_processing:
             def _extract_pretty_size(label):
                 if not label:
                     return ""
@@ -2165,6 +2548,8 @@ def build_slicer_script(
         SHOW_CUT_PLANE="True" if show_cut_plane else "False",
         CUT_PLANE_SIZE=f"{max(cut_plane_size, 1.0):.3f}",
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
+        EXPORT_SCALAR_ANIMATION="True" if export_scalar_animation else "False",
+        SCALAR_ANIMATION_VIEW=scalar_animation_view,
         EXPORT_SCENE="True" if export_scene else "False",
         CORTICAL_UNBOUNDED="True" if cortical_unbounded else "False",
         PRESERVE_EXPORTS="True" if preserve_exports else "False",
@@ -2227,6 +2612,8 @@ def main() -> int:
         args.rotation_mode,
         args.export_local_stem,
         args.export_stem_screenshots,
+        args.export_scalar_animation,
+        args.scalar_animation_view,
         args.export_scene,
         args.cortical_unbounded,
         args.preserve_exports,

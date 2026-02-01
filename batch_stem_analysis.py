@@ -107,6 +107,19 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded flag to export a per-configuration MRML scene.",
     )
     parser.add_argument(
+        "--export-scalar-animation",
+        action="store_true",
+        help=(
+            "Forwarded flag to export ordered scalar animation frames based on anteversion in config pretty names."
+        ),
+    )
+    parser.add_argument(
+        "--scalar-animation-view",
+        choices=["AP_front", "AP_back", "SAG_left", "SAG_right"],
+        default="AP_front",
+        help="Forwarded orientation for scalar animation frames (default: AP_front).",
+    )
+    parser.add_argument(
         "--preserve-exports",
         action="store_true",
         help="Forwarded flag to keep existing Slicer-exports outputs when re-running a single config.",
@@ -359,6 +372,10 @@ def _build_command(
         command.append("--export-local-stem")
     if args.export_scene:
         command.append("--export-scene")
+    if args.export_scalar_animation:
+        command.append("--export-scalar-animation")
+    if args.scalar_animation_view:
+        command.extend(["--scalar-animation-view", args.scalar_animation_view])
     if args.preserve_exports:
         command.append("--preserve-exports")
     if args.allow_missing_pretty_name:
