@@ -1740,7 +1740,14 @@ def build_slicer_script(
                 return (value is None, value if value is not None else 0.0)
             return sorted(infos, key=_key)
 
-        def _capture_scalar_animation_frame(model_node, frame_index, config_label=None, anteversion=None, clear_exports=False):
+        def _capture_scalar_animation_frame(
+            model_node,
+            frame_index,
+            config_label=None,
+            anteversion=None,
+            clear_exports=False,
+            animation_subfolder=None,
+        ):
             poly = model_node.GetPolyData()
             if poly is None:
                 print("Model has no polydata; skipping animation frame")
@@ -1768,7 +1775,11 @@ def build_slicer_script(
                 "SAG_left": ((-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
                 "SAG_right": ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
             }
-            prefix = _stem_output_prefix(clear_dir=clear_exports, suffix="scalar_animation")
+            if animation_subfolder:
+                suffix = "scalar_animation/{}".format(animation_subfolder)
+            else:
+                suffix = "scalar_animation"
+            prefix = _stem_output_prefix(clear_dir=clear_exports, suffix=suffix)
             def _sanitize_filename(value):
                 cleaned = "".join(ch if ch.isalnum() or ch in "-_.()=+" else "_" for ch in str(value))
                 return cleaned.strip("_") or "frame"
@@ -2401,6 +2412,15 @@ def build_slicer_script(
             if not stem_infos:
                 print("Warning: no configurations available for scalar animation")
                 return
+            def _sanitize_folder(value):
+                cleaned = "".join(ch if ch.isalnum() or ch in "-_.()=+" else "_" for ch in str(value))
+                return cleaned.strip("_") or "instance"
+            base_name = os.path.basename(VOLUME_PATH)
+            if base_name.lower().endswith(".nii.gz"):
+                base_name = base_name[:-7]
+            else:
+                base_name = os.path.splitext(base_name)[0]
+            instance_folder = _sanitize_folder("{}_{}_{}".format(CASE_ID or "case", USER_ID or "user", base_name))
             ordered_infos = _sort_stem_infos_by_anteversion(stem_infos)
             print("Scalar animation order (by anteversion):")
             for info in ordered_infos:
@@ -2480,6 +2500,7 @@ def build_slicer_script(
                     config_label=config_label,
                     anteversion=anteversion_value,
                     clear_exports=(frame_idx == 1 and not PRESERVE_EXPORTS),
+                    animation_subfolder=instance_folder,
                 )
                 if frame_path:
                     frame_paths.append(frame_path)
@@ -2493,7 +2514,8 @@ def build_slicer_script(
 
             if frame_paths:
                 aggregate_prefix = _stem_output_prefix(clear_dir=False, suffix="aggregate")
-                video_path = aggregate_prefix + "_scalar_animation.mp4"
+                view_suffix = _sanitize_folder(SCALAR_ANIMATION_VIEW)
+                video_path = aggregate_prefix + "_scalar_animation_{}.mp4".format(view_suffix)
                 _write_scalar_animation_video(frame_paths, video_path)
 
         stem_infos = _extract_stem_infos(SEEDPLAN_PATH)
