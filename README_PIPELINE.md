@@ -492,6 +492,10 @@ python batch_stem_analysis.py \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 014-M-65  --preserve-exports  --stem-rcc-id 103427630_1  --export-aggregate-scene  --heatmap ezplan-2024 --export-scalar-animation --scalar-animation-view AP_front
 ```
 
+## Issue with FFMPEG related to permission denied
+
+look at [ffmpeg permission denied (Ask Ubuntu)](https://askubuntu.com/questions/1340073/ffmpeg-permission-denied-trying-to-covert-video)
+
 ## Full process
 
 ```shell

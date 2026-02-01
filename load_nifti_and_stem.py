@@ -1125,6 +1125,8 @@ def build_slicer_script(
                     return None
             command = [
                 ffmpeg_path,
+                "-fflags",
+                "+genpts",
                 "-y",
                 "-f",
                 "concat",
@@ -1134,6 +1136,8 @@ def build_slicer_script(
                 str(int(fps)),
                 "-i",
                 list_path,
+                "-vf",
+                "pad=ceil(iw/2)*2:ceil(ih/2)*2",
                 "-c:v",
                 "libx264",
                 "-pix_fmt",
