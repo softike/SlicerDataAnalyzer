@@ -480,9 +480,16 @@ python batch_stem_analysis.py \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H003 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 011-F-54  --preserve-exports  --stem-rcc-id 30363087_133  --export-aggregate-scene  --heatmap ezplan-2024
+```
 
+## Animation on local stem
 
-
+```shell
+python batch_stem_analysis.py \
+   --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H001 \
+   --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 014-M-65  --preserve-exports  --stem-rcc-id 103427630_1  --export-aggregate-scene  --heatmap ezplan-2024 --export-scalar-animation --scalar-animation-view AP_front
 ```
 
 ## Full process

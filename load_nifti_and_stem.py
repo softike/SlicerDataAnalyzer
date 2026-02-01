@@ -951,7 +951,7 @@ def build_slicer_script(
             if display_node and hasattr(display_node, "SetOpacity"):
                 display_node.SetOpacity(0.6)
 
-        def _set_layout_one_up_3d():
+        def _set_layout_for_animation():
             layout_manager = slicer.app.layoutManager()
             if not layout_manager:
                 return
@@ -1659,6 +1659,29 @@ def build_slicer_script(
                 raise RuntimeError(
                     "Scalar animation capture requires a GUI session (layout manager unavailable; run without --no-main-window)"
                 )
+            bounds = [0.0] * 6
+            poly.GetBounds(bounds)
+            center = [
+                0.5 * (bounds[0] + bounds[1]),
+                0.5 * (bounds[2] + bounds[3]),
+                0.5 * (bounds[4] + bounds[5]),
+            ]
+            max_extent = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+            if max_extent <= 0:
+                max_extent = 100.0
+            distance = max_extent * 2.5
+            half_extent = max_extent * 0.5
+            orientations = {
+                "AP_front": ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+                "AP_back": ((0.0, -1.0, 0.0), (0.0, 0.0, 1.0)),
+                "SAG_left": ((-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+                "SAG_right": ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+            }
+            prefix = _stem_output_prefix(clear_dir=clear_exports, suffix="scalar_animation")
+            def _sanitize_filename(value):
+                cleaned = "".join(ch if ch.isalnum() or ch in "-_.()=+" else "_" for ch in str(value))
+                return cleaned.strip("_") or "frame"
+            label_part = _sanitize_filename(config_label) if config_label else f"{frame_index:03d}"
             widget = layout_manager.threeDWidget(0)
             if widget is None:
                 print("No 3D widget available; skipping animation frame")
@@ -1690,24 +1713,6 @@ def build_slicer_script(
                 print("Camera node missing vtkCamera; skipping animation frame")
                 return
             camera.ParallelProjectionOn()
-            bounds = [0.0] * 6
-            poly.GetBounds(bounds)
-            center = [
-                0.5 * (bounds[0] + bounds[1]),
-                0.5 * (bounds[2] + bounds[3]),
-                0.5 * (bounds[4] + bounds[5]),
-            ]
-            max_extent = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
-            if max_extent <= 0:
-                max_extent = 100.0
-            distance = max_extent * 2.5
-            half_extent = max_extent * 0.5
-            orientations = {
-                "AP_front": ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
-                "AP_back": ((0.0, -1.0, 0.0), (0.0, 0.0, 1.0)),
-                "SAG_left": ((-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
-                "SAG_right": ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
-            }
             axis, up = orientations.get(SCALAR_ANIMATION_VIEW, orientations["AP_front"])
             position = [center[i] + axis[i] * distance for i in range(3)]
             camera.SetFocalPoint(*center)
@@ -1717,12 +1722,8 @@ def build_slicer_script(
             camera.Modified()
             view.renderWindow().Render()
             qt.QApplication.processEvents()
-            prefix = _stem_output_prefix(clear_dir=clear_exports, suffix="scalar_animation")
-            def _sanitize_filename(value):
-                cleaned = "".join(ch if ch.isalnum() or ch in "-_.()=+" else "_" for ch in str(value))
-                return cleaned.strip("_") or "frame"
-            label_part = _sanitize_filename(config_label) if config_label else f"{frame_index:03d}"
-            file_path = "{}_anim_{:03d}_{}.png".format(prefix, frame_index, label_part)
+            suffix = _sanitize_filename(SCALAR_ANIMATION_VIEW)
+            file_path = "{}_anim_{:03d}_{}_{}.png".format(prefix, frame_index, label_part, suffix)
             pixmap = view.grab()
             pixmap.save(file_path)
             print("Saved animation frame: %s" % file_path)
@@ -2413,7 +2414,7 @@ def build_slicer_script(
         if layout_manager:
             layout_manager.resetSliceViews()
             if EXPORT_SCALAR_ANIMATION:
-                _set_layout_one_up_3d()
+                _set_layout_for_animation()
         else:
             print("Info: layout manager unavailable (likely headless mode); skipping slice reset")
 
