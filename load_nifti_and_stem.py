@@ -292,6 +292,9 @@ def build_slicer_script(
         """
         import os
         import re
+        import shutil
+        import subprocess
+        import tempfile
         import sys
         import xml.etree.ElementTree as ET
         import slicer
@@ -1091,6 +1094,60 @@ def build_slicer_script(
                 renderer.AddActor2D(actor)
             ANIMATION_TEXT_ACTOR.SetInput(text or "")
 
+        def _write_scalar_animation_video(frame_paths, output_path, fps=10):
+            if not frame_paths or not output_path:
+                return None
+            ffmpeg_path = shutil.which("ffmpeg")
+            if not ffmpeg_path:
+                print("Warning: ffmpeg not found; skipping MP4 export")
+                return None
+            list_path = None
+            frame_dir = os.path.dirname(frame_paths[0]) if frame_paths else ""
+            preferred_path = os.path.join(frame_dir, "animation_frames.txt") if frame_dir else ""
+            try:
+                if preferred_path:
+                    with open(preferred_path, "w", encoding="utf-8") as handle:
+                        for path in frame_paths:
+                            handle.write("file '%s'\\n" % path.replace("'", "\\'"))
+                    list_path = preferred_path
+            except Exception:
+                list_path = None
+            if list_path is None:
+                try:
+                    temp_handle = tempfile.NamedTemporaryFile("w", suffix="_animation_frames.txt", delete=False)
+                    for path in frame_paths:
+                        temp_handle.write("file '%s'\\n" % path.replace("'", "\\'"))
+                    temp_handle.flush()
+                    temp_handle.close()
+                    list_path = temp_handle.name
+                except Exception as exc:
+                    print("Warning: unable to write ffmpeg file list (%s)" % exc)
+                    return None
+            command = [
+                ffmpeg_path,
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-r",
+                str(int(fps)),
+                "-i",
+                list_path,
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                output_path,
+            ]
+            try:
+                subprocess.run(command, check=True)
+            except Exception as exc:
+                print("Warning: ffmpeg failed (%s)" % exc)
+                return None
+            print("Saved MP4 animation: %s" % output_path)
+            return output_path
+
         def _capture_stem_screenshots(model_node, suffix=None, clear_exports=False):
             poly = model_node.GetPolyData()
             if poly is None:
@@ -1683,7 +1740,7 @@ def build_slicer_script(
             poly = model_node.GetPolyData()
             if poly is None:
                 print("Model has no polydata; skipping animation frame")
-                return
+                return None
             layout_manager = slicer.app.layoutManager()
             if layout_manager is None:
                 raise RuntimeError(
@@ -1715,7 +1772,7 @@ def build_slicer_script(
             widget = layout_manager.threeDWidget(0)
             if widget is None:
                 print("No 3D widget available; skipping animation frame")
-                return
+                return None
             view = widget.threeDView()
             view_node = view.mrmlViewNode()
             _configure_view_background(view_node)
@@ -1737,11 +1794,11 @@ def build_slicer_script(
                     camera_node.SetAndObserveViewNodeID(view_node.GetID())
                 else:
                     print("Failed to create camera node; skipping animation frame")
-                    return
+                    return None
             camera = camera_node.GetCamera()
             if camera is None:
                 print("Camera node missing vtkCamera; skipping animation frame")
-                return
+                return None
             camera.ParallelProjectionOn()
             axis, up = orientations.get(SCALAR_ANIMATION_VIEW, orientations["AP_front"])
             position = [center[i] + axis[i] * distance for i in range(3)]
@@ -1766,6 +1823,7 @@ def build_slicer_script(
             pixmap = view.grab()
             pixmap.save(file_path)
             print("Saved animation frame: %s" % file_path)
+            return file_path
 
         def _process_stem_configuration(
             stem_info,
@@ -2377,6 +2435,7 @@ def build_slicer_script(
                 lut_node = _ensure_ezplan_lut()
                 scalar_range = (ACTIVE_ZONE_DEFS[0][0], ACTIVE_ZONE_DEFS[-1][1])
 
+            frame_paths = []
             for frame_idx, info in enumerate(ordered_infos, start=1):
                 result = _build_stem_model_for_animation(
                     info,
@@ -2411,13 +2470,15 @@ def build_slicer_script(
                 config_label = info.get("hip_config_pretty_name") or info.get("hip_config_name")
                 angle_label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or config_label
                 anteversion_value = _extract_anteversion_value(angle_label)
-                _capture_scalar_animation_frame(
+                frame_path = _capture_scalar_animation_frame(
                     static_model,
                     frame_idx,
                     config_label=config_label,
                     anteversion=anteversion_value,
                     clear_exports=(frame_idx == 1 and not PRESERVE_EXPORTS),
                 )
+                if frame_path:
+                    frame_paths.append(frame_path)
                 for node in (result.get("model_node"), result.get("hardened_clone"), result.get("transform_node")):
                     if node:
                         slicer.mrmlScene.RemoveNode(node)
@@ -2425,6 +2486,11 @@ def build_slicer_script(
             for node in (base_result.get("model_node"), base_result.get("transform_node")):
                 if node:
                     slicer.mrmlScene.RemoveNode(node)
+
+            if frame_paths:
+                aggregate_prefix = _stem_output_prefix(clear_dir=False, suffix="aggregate")
+                video_path = aggregate_prefix + "_scalar_animation.mp4"
+                _write_scalar_animation_video(frame_paths, video_path)
 
         stem_infos = _extract_stem_infos(SEEDPLAN_PATH)
         filtered_stem_infos = [
@@ -2626,7 +2692,15 @@ def build_slicer_script(
 
 
 def write_temp_script(contents: str) -> str:
-    normalized = textwrap.dedent(contents).lstrip("\n")
+    normalized = textwrap.dedent(contents)
+    lines = normalized.splitlines()
+    first_non_empty = next((line for line in lines if line.strip()), "")
+    if first_non_empty.startswith("        "):
+        normalized = "\n".join(
+            line[8:] if line.startswith("        ") else line
+            for line in lines
+        )
+    normalized = normalized.lstrip("\n")
     handle = tempfile.NamedTemporaryFile("w", suffix="_load_nifti_and_stem.py", delete=False)
     handle.write(normalized)
     handle.flush()
