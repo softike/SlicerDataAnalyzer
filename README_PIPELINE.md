@@ -508,7 +508,7 @@ python batch_stem_analysis.py \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --exit-after-run
 
-python batch_export_gruen_tables.py  --root /media/developer/Storage1/HFRStudy-RUN2/images/ --recursive --side auto --envelope-gruen --envelope-gruen-mode normal --use-input-remesh --envelope-z-bands 0.2,0.4,0.4 --gruen-remapped --gruen-hu-remesh --cortical-unbounded --gruen-bottom-sphere-radius 10 --verbose
+python batch_export_gruen_tables.py  --root /media/developer/Storage1/HFRStudy-RUN2/images/ --recursive --side auto --envelope-gruen --envelope-gruen-mode normal --use-input-remesh --envelope-z-bands 0.2,0.4,0.4 --gruen-remapped --gruen-hu-remesh --cortical-unbounded --gruen-bottom-sphere-radius 10 --hu-heatmap ezplan-2024 --verbose
 
 python export_stem_metrics_excel.py --root /media/developer/Storage1/HFRStudy-RUN3/images/ --output /home/developer/Projects/Code/SlicerDataAnalyzer/CurrentReports/RUN3_9/stem_metrics_RUN3_EZPLAN_LUT_2.xlsx --anteversion-excel  /home/developer/Projects/Code/SlicerDataAnalyzer/CurrentReports/RUN3_9/batch_report_RUN3_raw_data.xlsx  --hu-heatmap ezplan-2024  
 ```
