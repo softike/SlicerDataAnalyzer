@@ -951,6 +951,15 @@ def build_slicer_script(
             if display_node and hasattr(display_node, "SetOpacity"):
                 display_node.SetOpacity(0.6)
 
+        def _set_layout_one_up_3d():
+            layout_manager = slicer.app.layoutManager()
+            if not layout_manager:
+                return
+            try:
+                layout_manager.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutOneUp3DView)
+            except Exception:
+                pass
+
         def _apply_below_cut_plane_mask(model_node, array_name, stem_info, transform_node, pre_rotate):
             if not SCALAR_BELOW_CUT_PLANE:
                 return array_name
@@ -2305,16 +2314,21 @@ def build_slicer_script(
             if not base_result:
                 print("Warning: unable to create base stem model for animation")
                 return
-            static_model = base_result["hardened_clone"] or base_result["model_node"]
+            static_model = base_result["model_node"] or base_result["hardened_clone"]
             if static_model is None:
                 print("Warning: missing static stem model for animation")
                 return
+            if hasattr(static_model, "GetParentTransformNode") and static_model.GetParentTransformNode():
+                static_model.SetAndObserveTransformNodeID(None)
             base_display = base_result["model_node"].GetDisplayNode() if base_result.get("model_node") else None
             if base_display:
                 base_display.SetVisibility(False)
             static_display = static_model.GetDisplayNode()
             if static_display:
                 static_display.SetVisibility(True)
+            base_clone = base_result.get("hardened_clone")
+            if base_clone and base_clone is not static_model:
+                slicer.mrmlScene.RemoveNode(base_clone)
 
             if (SCALAR_STYLE or "").strip().lower() == "standard":
                 lut_node = _ensure_standard_lut()
@@ -2398,7 +2412,8 @@ def build_slicer_script(
         layout_manager = slicer.app.layoutManager()
         if layout_manager:
             layout_manager.resetSliceViews()
-            _show_ap_slice_in_3d()
+            if EXPORT_SCALAR_ANIMATION:
+                _set_layout_one_up_3d()
         else:
             print("Info: layout manager unavailable (likely headless mode); skipping slice reset")
 
@@ -2568,8 +2583,9 @@ def build_slicer_script(
 
 
 def write_temp_script(contents: str) -> str:
+    normalized = textwrap.dedent(contents).lstrip("\n")
     handle = tempfile.NamedTemporaryFile("w", suffix="_load_nifti_and_stem.py", delete=False)
-    handle.write(contents)
+    handle.write(normalized)
     handle.flush()
     handle.close()
     return handle.name
