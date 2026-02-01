@@ -343,6 +343,7 @@ def build_slicer_script(
         STEM_SIZE_FILTERS = $STEM_SIZE_FILTERS
         STEM_SIDE_FILTERS = $STEM_SIDE_FILTERS
         EXPORT_AGGREGATE_SCENE = $EXPORT_AGGREGATE_SCENE
+        ANIMATION_TEXT_ACTOR = None
         ROTATION_BEHAVIOR = {
             "johnson": (True, True, False),
             "mathys": (True, True, True),
@@ -1070,6 +1071,26 @@ def build_slicer_script(
             if hasattr(view_node, "SetBoxVisible"):
                 view_node.SetBoxVisible(False)
 
+        def _set_animation_overlay_text(view, text):
+            global ANIMATION_TEXT_ACTOR
+            if view is None:
+                return
+            render_window = view.renderWindow() if hasattr(view, "renderWindow") else None
+            if render_window is None:
+                return
+            renderer = render_window.GetRenderers().GetFirstRenderer() if render_window.GetRenderers() else None
+            if renderer is None:
+                return
+            if ANIMATION_TEXT_ACTOR is None:
+                actor = vtk.vtkTextActor()
+                actor.GetTextProperty().SetFontSize(20)
+                actor.GetTextProperty().SetColor(0.1, 0.1, 0.1)
+                actor.GetTextProperty().BoldOn()
+                actor.SetDisplayPosition(20, 20)
+                ANIMATION_TEXT_ACTOR = actor
+                renderer.AddActor2D(actor)
+            ANIMATION_TEXT_ACTOR.SetInput(text or "")
+
         def _capture_stem_screenshots(model_node, suffix=None, clear_exports=False):
             poly = model_node.GetPolyData()
             if poly is None:
@@ -1633,8 +1654,17 @@ def build_slicer_script(
         def _extract_anteversion_value(label):
             if not label:
                 return None
-            match = re.search(r"A\s*=?\s*([+-]?\d+(?:\.\d+)?)", str(label), re.IGNORECASE)
-            if not match:
+            text = str(label)
+            match = None
+            for candidate in re.finditer(r"\(([^)]*)\)", text):
+                content = candidate.group(1)
+                hit = re.search(r"A\s*=?\s*([+-]?\d+(?:\.\d+)?)", content, re.IGNORECASE)
+                if hit:
+                    match = hit
+            if match is None:
+                for hit in re.finditer(r"(?:^|[\s_])A\s*=?\s*([+-]?\d+(?:\.\d+)?)", text, re.IGNORECASE):
+                    match = hit
+            if match is None:
                 return None
             raw_value = match.group(1)
             try:
@@ -1649,7 +1679,7 @@ def build_slicer_script(
                 return (value is None, value if value is not None else 0.0)
             return sorted(infos, key=_key)
 
-        def _capture_scalar_animation_frame(model_node, frame_index, config_label=None, clear_exports=False):
+        def _capture_scalar_animation_frame(model_node, frame_index, config_label=None, anteversion=None, clear_exports=False):
             poly = model_node.GetPolyData()
             if poly is None:
                 print("Model has no polydata; skipping animation frame")
@@ -1720,6 +1750,15 @@ def build_slicer_script(
             camera.SetViewUp(*up)
             camera.SetParallelScale(max(half_extent, 1.0))
             camera.Modified()
+            if anteversion is None:
+                overlay_text = "A=n/a"
+            else:
+                value = float(anteversion)
+                if abs(value - round(value)) < 1e-6:
+                    overlay_text = "A={:+.0f}°".format(value)
+                else:
+                    overlay_text = "A={:+.2f}°".format(value)
+            _set_animation_overlay_text(view, overlay_text)
             view.renderWindow().Render()
             qt.QApplication.processEvents()
             suffix = _sanitize_filename(SCALAR_ANIMATION_VIEW)
@@ -2370,10 +2409,13 @@ def build_slicer_script(
                     scalar_range=scalar_range,
                 )
                 config_label = info.get("hip_config_pretty_name") or info.get("hip_config_name")
+                angle_label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or config_label
+                anteversion_value = _extract_anteversion_value(angle_label)
                 _capture_scalar_animation_frame(
                     static_model,
                     frame_idx,
                     config_label=config_label,
+                    anteversion=anteversion_value,
                     clear_exports=(frame_idx == 1 and not PRESERVE_EXPORTS),
                 )
                 for node in (result.get("model_node"), result.get("hardened_clone"), result.get("transform_node")):
