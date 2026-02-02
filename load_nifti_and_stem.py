@@ -1850,6 +1850,7 @@ def build_slicer_script(
                     or stem_info.get("requested_side")
                     or ""
                 ).strip()
+            side_label = f"Operated side : {side}" if side else ""
             if anteversion is None:
                 angle_text = "A=n/a"
             else:
@@ -1860,7 +1861,8 @@ def build_slicer_script(
                     angle_text = "A={:+.2f}°".format(value)
             header_parts = [part for part in (manufacturer, model) if part]
             header = " ".join(header_parts)
-            overlay_lines = [line for line in (header, side, angle_text) if line]
+            view_label = f"View : {SCALAR_ANIMATION_VIEW}" if SCALAR_ANIMATION_VIEW else ""
+            overlay_lines = [line for line in (header, side_label, view_label, angle_text) if line]
             overlay_text = "\\n".join(overlay_lines)
             _set_animation_overlay_text(view, overlay_text)
             view.renderWindow().Render()
@@ -2496,6 +2498,11 @@ def build_slicer_script(
 
             frame_paths = []
             for frame_idx, info in enumerate(ordered_infos, start=1):
+                angle_label = info.get("hip_config_pretty_name") or info.get("hip_config_name")
+                anteversion_value = _extract_anteversion_value(angle_label)
+                if anteversion_value is None:
+                    print("Stopping animation before configurations without anteversion value")
+                    break
                 result = _build_stem_model_for_animation(
                     info,
                     base_pre_rotate=base_pre_rotate,
@@ -2535,8 +2542,6 @@ def build_slicer_script(
                 if static_display:
                     static_display.SetVisibility(True)
                 config_label = info.get("hip_config_pretty_name") or info.get("hip_config_name")
-                angle_label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or config_label
-                anteversion_value = _extract_anteversion_value(angle_label)
                 frame_path = _capture_scalar_animation_frame(
                     static_model,
                     frame_idx,
