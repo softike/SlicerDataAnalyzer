@@ -120,6 +120,11 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded orientation for scalar animation frames (default: AP_front).",
     )
     parser.add_argument(
+        "--scalar-animation-montage",
+        action="store_true",
+        help="Forwarded flag to export a 2x2 montage scalar animation MP4.",
+    )
+    parser.add_argument(
         "--scalar-animation-fps",
         type=float,
         default=10.0,
@@ -382,6 +387,8 @@ def _build_command(
         command.append("--export-scalar-animation")
     if args.scalar_animation_view:
         command.extend(["--scalar-animation-view", args.scalar_animation_view])
+    if args.scalar_animation_montage:
+        command.append("--scalar-animation-montage")
     if args.scalar_animation_fps is not None:
         command.extend(["--scalar-animation-fps", f"{float(args.scalar_animation_fps):.3f}"])
     if args.preserve_exports:

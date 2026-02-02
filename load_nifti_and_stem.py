@@ -144,6 +144,11 @@ def parse_args() -> argparse.Namespace:
         help="3D view orientation used for scalar animation frames (default: AP_front).",
     )
     parser.add_argument(
+        "--scalar-animation-montage",
+        action="store_true",
+        help="Export a 2x2 montage frame with AP/SAG views for scalar animation (single MP4).",
+    )
+    parser.add_argument(
         "--scalar-animation-fps",
         type=float,
         default=10.0,
@@ -271,6 +276,7 @@ def build_slicer_script(
     export_stem_screenshots: bool,
     export_scalar_animation: bool,
     scalar_animation_view: str,
+    scalar_animation_montage: bool,
     scalar_animation_fps: float,
     export_scene: bool,
     cortical_unbounded: bool,
@@ -339,6 +345,7 @@ def build_slicer_script(
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
         EXPORT_SCALAR_ANIMATION = $EXPORT_SCALAR_ANIMATION
         SCALAR_ANIMATION_VIEW = r"$SCALAR_ANIMATION_VIEW"
+        SCALAR_ANIMATION_MONTAGE = $SCALAR_ANIMATION_MONTAGE
         SCALAR_ANIMATION_FPS = $SCALAR_ANIMATION_FPS
         EXPORT_SCENE = $EXPORT_SCENE
         CORTICAL_UNBOUNDED = $CORTICAL_UNBOUNDED
@@ -1855,13 +1862,48 @@ def build_slicer_script(
                 print("Camera node missing vtkCamera; skipping animation frame")
                 return None
             camera.ParallelProjectionOn()
-            axis, up = orientations.get(SCALAR_ANIMATION_VIEW, orientations["AP_front"])
-            position = [center[i] + axis[i] * distance for i in range(3)]
-            camera.SetFocalPoint(*center)
-            camera.SetPosition(*position)
-            camera.SetViewUp(*up)
-            camera.SetParallelScale(max(half_extent, 1.0))
-            camera.Modified()
+            if SCALAR_ANIMATION_MONTAGE:
+                montage_orientations = [
+                    ("AP_front", (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+                    ("AP_back", (0.0, -1.0, 0.0), (0.0, 0.0, 1.0)),
+                    ("SAG_left", (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+                    ("SAG_right", (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+                ]
+                pixmaps = []
+                for _, axis, up in montage_orientations:
+                    position = [center[i] + axis[i] * distance for i in range(3)]
+                    camera.SetFocalPoint(*center)
+                    camera.SetPosition(*position)
+                    camera.SetViewUp(*up)
+                    camera.SetParallelScale(max(half_extent, 1.0))
+                    camera.Modified()
+                    view.renderWindow().Render()
+                    qt.QApplication.processEvents()
+                    pixmaps.append(view.grab())
+                if not pixmaps:
+                    return None
+                base = pixmaps[0]
+                width = base.width()
+                height = base.height()
+                montage_image = qt.QImage(width * 2, height * 2, qt.QImage.Format_ARGB32)
+                montage_image.fill(0xffffffff)
+                painter = qt.QPainter(montage_image)
+                painter.drawPixmap(0, 0, pixmaps[0])
+                if len(pixmaps) > 1:
+                    painter.drawPixmap(width, 0, pixmaps[1])
+                if len(pixmaps) > 2:
+                    painter.drawPixmap(0, height, pixmaps[2])
+                if len(pixmaps) > 3:
+                    painter.drawPixmap(width, height, pixmaps[3])
+                painter.end()
+            else:
+                axis, up = orientations.get(SCALAR_ANIMATION_VIEW, orientations["AP_front"])
+                position = [center[i] + axis[i] * distance for i in range(3)]
+                camera.SetFocalPoint(*center)
+                camera.SetPosition(*position)
+                camera.SetViewUp(*up)
+                camera.SetParallelScale(max(half_extent, 1.0))
+                camera.Modified()
             manufacturer = ""
             model = ""
             side = ""
@@ -1888,16 +1930,19 @@ def build_slicer_script(
                     angle_text = "A={:+.2f}°".format(value)
             header_parts = [part for part in (manufacturer, model) if part]
             header = " ".join(header_parts)
-            view_label = f"View : {SCALAR_ANIMATION_VIEW}" if SCALAR_ANIMATION_VIEW else ""
+            view_label = "View : 4-up" if SCALAR_ANIMATION_MONTAGE else (f"View : {SCALAR_ANIMATION_VIEW}" if SCALAR_ANIMATION_VIEW else "")
             overlay_lines = [line for line in (header, side_label, view_label, angle_text) if line]
             overlay_text = "\\n".join(overlay_lines)
             _set_animation_overlay_text(view, overlay_text)
             view.renderWindow().Render()
             qt.QApplication.processEvents()
-            suffix = _sanitize_filename(SCALAR_ANIMATION_VIEW)
+            suffix = _sanitize_filename("montage" if SCALAR_ANIMATION_MONTAGE else SCALAR_ANIMATION_VIEW)
             file_path = "{}_anim_{:03d}_{}_{}.png".format(prefix, frame_index, label_part, suffix)
-            pixmap = view.grab()
-            pixmap.save(file_path)
+            if SCALAR_ANIMATION_MONTAGE:
+                montage_image.save(file_path)
+            else:
+                pixmap = view.grab()
+                pixmap.save(file_path)
             print("Saved animation frame: %s" % file_path)
             return file_path
 
@@ -2608,7 +2653,7 @@ def build_slicer_script(
 
             if frame_paths:
                 aggregate_prefix = _stem_output_prefix(clear_dir=False, suffix="aggregate")
-                view_suffix = _sanitize_folder(SCALAR_ANIMATION_VIEW)
+                view_suffix = _sanitize_folder("montage" if SCALAR_ANIMATION_MONTAGE else SCALAR_ANIMATION_VIEW)
                 video_path = aggregate_prefix + "_scalar_animation_{}.mp4".format(view_suffix)
                 _write_scalar_animation_video(frame_paths, video_path, fps=SCALAR_ANIMATION_FPS)
 
@@ -2805,6 +2850,7 @@ def build_slicer_script(
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
         EXPORT_SCALAR_ANIMATION="True" if export_scalar_animation else "False",
         SCALAR_ANIMATION_VIEW=scalar_animation_view,
+        SCALAR_ANIMATION_MONTAGE="True" if scalar_animation_montage else "False",
         SCALAR_ANIMATION_FPS=f"{float(scalar_animation_fps):.3f}",
         EXPORT_SCENE="True" if export_scene else "False",
         CORTICAL_UNBOUNDED="True" if cortical_unbounded else "False",
@@ -2879,6 +2925,7 @@ def main() -> int:
         args.export_stem_screenshots,
         args.export_scalar_animation,
         args.scalar_animation_view,
+        args.scalar_animation_montage,
         args.scalar_animation_fps,
         args.export_scene,
         args.cortical_unbounded,
