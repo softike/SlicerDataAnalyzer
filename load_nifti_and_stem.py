@@ -715,7 +715,9 @@ def build_slicer_script(
             if value is None:
                 return None
             text = str(value)
-            text = text.replace("\ufffd", "")
+            text = text.replace("\ufffd", "°")
+            text = text.replace("Â°", "°")
+            text = text.replace("Â", "")
             text = text.replace("\u2192", "->")
             text = text.replace("\u21d2", "=>")
             text = text.replace("\u27a4", "->")
@@ -1736,22 +1738,39 @@ def build_slicer_script(
             if not label:
                 return None
             text = str(label)
+            def _parse_anteversion(raw):
+                if raw is None:
+                    return None
+                cleaned = (
+                    str(raw)
+                    .replace("°", "")
+                    .replace("�", "")
+                    .replace("Â", "")
+                    .replace(",", ".")
+                    .strip()
+                )
+                try:
+                    return float(cleaned)
+                except ValueError:
+                    return None
             match = None
+            fallback_zero = False
             for candidate in re.finditer(r"\(([^)]*)\)", text):
                 content = candidate.group(1)
-                hit = re.search(r"A\s*=?\s*([+-]?\d+(?:\.\d+)?)", content, re.IGNORECASE)
+                hit = re.search(r"A\s*=?\s*([+-]?\d+(?:[\.,]\d+)?)", content, re.IGNORECASE)
                 if hit:
                     match = hit
+                elif re.search(r"\bA\b", content, re.IGNORECASE):
+                    fallback_zero = True
             if match is None:
-                for hit in re.finditer(r"(?:^|[\s_])A\s*=?\s*([+-]?\d+(?:\.\d+)?)", text, re.IGNORECASE):
+                for hit in re.finditer(r"(?:^|[\s_])A\s*=?\s*([+-]?\d+(?:[\.,]\d+)?)", text, re.IGNORECASE):
                     match = hit
             if match is None:
+                if fallback_zero or re.search(r"\(\s*A\s*\)", text, re.IGNORECASE) or re.search(r"\(\s*A\b", text, re.IGNORECASE):
+                    return 0.0
                 return None
             raw_value = match.group(1)
-            try:
-                return float(raw_value)
-            except ValueError:
-                return None
+            return _parse_anteversion(raw_value)
 
         def _sort_stem_infos_by_anteversion(infos):
             def _key(info):
@@ -2468,10 +2487,25 @@ def build_slicer_script(
             instance_folder = _sanitize_folder("{}_{}_{}".format(CASE_ID or "case", USER_ID or "user", base_name))
             ordered_infos = _sort_stem_infos_by_anteversion(stem_infos)
             print("Scalar animation order (by anteversion):")
+            for index, info in enumerate(ordered_infos, start=1):
+                label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or ""
+                label = _clean_text_for_console(label) or ""
+                value = _extract_anteversion_value(label)
+                sys.stdout.write("  %02d. A=%s | %s\\n" % (index, value if value is not None else "n/a", label))
+            sys.stdout.flush()
+            sequence_labels = []
             for info in ordered_infos:
                 label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or ""
+                label = _clean_text_for_console(label) or ""
                 value = _extract_anteversion_value(label)
-                print("  A=%s | %s" % (value if value is not None else "n/a", label))
+                if value is None:
+                    continue
+                sequence_labels.append(label)
+            if sequence_labels:
+                print("\\nScalar animation sequence (prettyName order):")
+                for index, label in enumerate(sequence_labels, start=1):
+                    sys.stdout.write("  %02d. %s\\n" % (index, label))
+                sys.stdout.flush()
 
             base_result = _build_stem_model_for_animation(
                 ordered_infos[0],
@@ -2509,8 +2543,11 @@ def build_slicer_script(
                 angle_label = info.get("hip_config_pretty_name") or info.get("hip_config_name")
                 anteversion_value = _extract_anteversion_value(angle_label)
                 if anteversion_value is None:
-                    print("Stopping animation before configurations without anteversion value")
-                    break
+                    print("Skipping configuration without anteversion value")
+                    continue
+                if abs(anteversion_value - 22.0) < 1e-6:
+                    print("Skipping configuration with A=22")
+                    continue
                 result = _build_stem_model_for_animation(
                     info,
                     base_pre_rotate=base_pre_rotate,
@@ -2591,6 +2628,17 @@ def build_slicer_script(
             skipped_configs = len(stem_infos) - len(filtered_stem_infos)
             if skipped_configs:
                 print("Skipping %d configuration(s) without hip config pretty names" % skipped_configs)
+                missing_pretty = [
+                    info for info in stem_infos if not (info.get("hip_config_pretty_name") or "").strip()
+                ]
+                for index, info in enumerate(missing_pretty, start=1):
+                    config_name = _clean_text_for_console(info.get("hip_config_name")) or ""
+                    source = (info.get("source") or "").strip()
+                    config_index = info.get("config_index")
+                    index_label = f"#{config_index + 1}" if isinstance(config_index, int) else "#?"
+                    name_label = config_name or "(missing hip_config_name)"
+                    suffix = f" [{source}]" if source else ""
+                    print(f"  {index}. {index_label} {name_label}{suffix}")
             stem_infos = filtered_stem_infos
 
         _stem_output_prefix(clear_dir=not PRESERVE_EXPORTS)
