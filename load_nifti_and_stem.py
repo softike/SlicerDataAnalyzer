@@ -2272,7 +2272,10 @@ def build_slicer_script(
                     matrix_local.SetElement(row, col, local_matrix_vals[col * 4 + row])
 
             matrix = vtk.vtkMatrix4x4()
-            vtk.vtkMatrix4x4.Multiply4x4(matrix_global, matrix_local, matrix)
+            # For scalar animation we keep the stem aligned to global Z by using the
+            # global transform only. Per-model rotations (LPS→RAS, pre/post Z) are
+            # still applied below.
+            matrix.DeepCopy(matrix_global)
 
             rotation_mode = _resolve_rotation_mode(stem_info)
             pre_rotate = bool(base_pre_rotate)
@@ -2441,7 +2444,7 @@ def build_slicer_script(
             if not base_result:
                 print("Warning: unable to create base stem model for animation")
                 return
-            static_model = base_result["model_node"] or base_result["hardened_clone"]
+            static_model = base_result.get("hardened_clone") or base_result.get("model_node")
             if static_model is None:
                 print("Warning: missing static stem model for animation")
                 return
@@ -2476,6 +2479,11 @@ def build_slicer_script(
                 temp_node = result["hardened_clone"] or result["model_node"]
                 if temp_node is None:
                     continue
+                for node in (result.get("model_node"), result.get("hardened_clone")):
+                    if node and node is not static_model:
+                        display = node.GetDisplayNode()
+                        if display:
+                            display.SetVisibility(False)
                 try:
                     _probe_volume_onto_model(volume_node, temp_node, array_name="VolumeScalars")
                 except Exception as exc:
@@ -2496,6 +2504,9 @@ def build_slicer_script(
                     color_node=lut_node,
                     scalar_range=scalar_range,
                 )
+                static_display = static_model.GetDisplayNode() if static_model else None
+                if static_display:
+                    static_display.SetVisibility(True)
                 config_label = info.get("hip_config_pretty_name") or info.get("hip_config_name")
                 angle_label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or config_label
                 anteversion_value = _extract_anteversion_value(angle_label)
