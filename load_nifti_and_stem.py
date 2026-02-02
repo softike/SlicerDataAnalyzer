@@ -1094,9 +1094,16 @@ def build_slicer_script(
                 actor.GetTextProperty().SetFontSize(20)
                 actor.GetTextProperty().SetColor(0.1, 0.1, 0.1)
                 actor.GetTextProperty().BoldOn()
-                actor.SetDisplayPosition(20, 20)
+                if hasattr(actor.GetTextProperty(), "SetJustificationToRight"):
+                    actor.GetTextProperty().SetJustificationToRight()
+                if hasattr(actor.GetTextProperty(), "SetVerticalJustificationToTop"):
+                    actor.GetTextProperty().SetVerticalJustificationToTop()
                 ANIMATION_TEXT_ACTOR = actor
                 renderer.AddActor2D(actor)
+            if hasattr(renderer, "GetSize"):
+                width, height = renderer.GetSize()
+                if width and height:
+                    ANIMATION_TEXT_ACTOR.SetDisplayPosition(max(width - 20, 0), max(height - 20, 0))
             ANIMATION_TEXT_ACTOR.SetInput(text or "")
 
         def _write_scalar_animation_video(frame_paths, output_path, fps=10):
@@ -1750,6 +1757,7 @@ def build_slicer_script(
             frame_index,
             config_label=None,
             anteversion=None,
+            stem_info=None,
             clear_exports=False,
             animation_subfolder=None,
         ):
@@ -1827,14 +1835,33 @@ def build_slicer_script(
             camera.SetViewUp(*up)
             camera.SetParallelScale(max(half_extent, 1.0))
             camera.Modified()
+            manufacturer = ""
+            model = ""
+            side = ""
+            if stem_info:
+                manufacturer = (stem_info.get("manufacturer") or "").strip()
+                model = (
+                    stem_info.get("stem_friendly_name")
+                    or stem_info.get("stem_enum_name")
+                    or ""
+                ).strip()
+                side = (
+                    stem_info.get("configured_side")
+                    or stem_info.get("requested_side")
+                    or ""
+                ).strip()
             if anteversion is None:
-                overlay_text = "A=n/a"
+                angle_text = "A=n/a"
             else:
                 value = float(anteversion)
                 if abs(value - round(value)) < 1e-6:
-                    overlay_text = "A={:+.0f}°".format(value)
+                    angle_text = "A={:+.0f}°".format(value)
                 else:
-                    overlay_text = "A={:+.2f}°".format(value)
+                    angle_text = "A={:+.2f}°".format(value)
+            header_parts = [part for part in (manufacturer, model) if part]
+            header = " ".join(header_parts)
+            overlay_lines = [line for line in (header, side, angle_text) if line]
+            overlay_text = "\\n".join(overlay_lines)
             _set_animation_overlay_text(view, overlay_text)
             view.renderWindow().Render()
             qt.QApplication.processEvents()
@@ -2515,6 +2542,7 @@ def build_slicer_script(
                     frame_idx,
                     config_label=config_label,
                     anteversion=anteversion_value,
+                    stem_info=info,
                     clear_exports=(frame_idx == 1 and not PRESERVE_EXPORTS),
                     animation_subfolder=instance_folder,
                 )
