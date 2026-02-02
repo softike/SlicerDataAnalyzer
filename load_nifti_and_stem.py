@@ -144,6 +144,12 @@ def parse_args() -> argparse.Namespace:
         help="3D view orientation used for scalar animation frames (default: AP_front).",
     )
     parser.add_argument(
+        "--scalar-animation-fps",
+        type=float,
+        default=10.0,
+        help="Frames per second for scalar animation MP4 export (default: 10).",
+    )
+    parser.add_argument(
         "--export-scene",
         action="store_true",
         help="Export a per-configuration MRML scene containing the volume and stem",
@@ -265,6 +271,7 @@ def build_slicer_script(
     export_stem_screenshots: bool,
     export_scalar_animation: bool,
     scalar_animation_view: str,
+    scalar_animation_fps: float,
     export_scene: bool,
     cortical_unbounded: bool,
     preserve_exports: bool,
@@ -332,6 +339,7 @@ def build_slicer_script(
         EXPORT_STEM_SCREENSHOTS = $EXPORT_STEM_SCREENSHOTS
         EXPORT_SCALAR_ANIMATION = $EXPORT_SCALAR_ANIMATION
         SCALAR_ANIMATION_VIEW = r"$SCALAR_ANIMATION_VIEW"
+        SCALAR_ANIMATION_FPS = $SCALAR_ANIMATION_FPS
         EXPORT_SCENE = $EXPORT_SCENE
         CORTICAL_UNBOUNDED = $CORTICAL_UNBOUNDED
         PRESERVE_EXPORTS = $PRESERVE_EXPORTS
@@ -2565,7 +2573,7 @@ def build_slicer_script(
                 aggregate_prefix = _stem_output_prefix(clear_dir=False, suffix="aggregate")
                 view_suffix = _sanitize_folder(SCALAR_ANIMATION_VIEW)
                 video_path = aggregate_prefix + "_scalar_animation_{}.mp4".format(view_suffix)
-                _write_scalar_animation_video(frame_paths, video_path)
+                _write_scalar_animation_video(frame_paths, video_path, fps=SCALAR_ANIMATION_FPS)
 
         stem_infos = _extract_stem_infos(SEEDPLAN_PATH)
         filtered_stem_infos = [
@@ -2749,6 +2757,7 @@ def build_slicer_script(
         EXPORT_STEM_SCREENSHOTS="True" if export_stem_screenshots else "False",
         EXPORT_SCALAR_ANIMATION="True" if export_scalar_animation else "False",
         SCALAR_ANIMATION_VIEW=scalar_animation_view,
+        SCALAR_ANIMATION_FPS=f"{float(scalar_animation_fps):.3f}",
         EXPORT_SCENE="True" if export_scene else "False",
         CORTICAL_UNBOUNDED="True" if cortical_unbounded else "False",
         PRESERVE_EXPORTS="True" if preserve_exports else "False",
@@ -2822,6 +2831,7 @@ def main() -> int:
         args.export_stem_screenshots,
         args.export_scalar_animation,
         args.scalar_animation_view,
+        args.scalar_animation_fps,
         args.export_scene,
         args.cortical_unbounded,
         args.preserve_exports,

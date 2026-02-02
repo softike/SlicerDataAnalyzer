@@ -120,6 +120,12 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded orientation for scalar animation frames (default: AP_front).",
     )
     parser.add_argument(
+        "--scalar-animation-fps",
+        type=float,
+        default=10.0,
+        help="Forwarded FPS for scalar animation MP4 export (default: 10).",
+    )
+    parser.add_argument(
         "--preserve-exports",
         action="store_true",
         help="Forwarded flag to keep existing Slicer-exports outputs when re-running a single config.",
@@ -376,6 +382,8 @@ def _build_command(
         command.append("--export-scalar-animation")
     if args.scalar_animation_view:
         command.extend(["--scalar-animation-view", args.scalar_animation_view])
+    if args.scalar_animation_fps is not None:
+        command.extend(["--scalar-animation-fps", f"{float(args.scalar_animation_fps):.3f}"])
     if args.preserve_exports:
         command.append("--preserve-exports")
     if args.allow_missing_pretty_name:
