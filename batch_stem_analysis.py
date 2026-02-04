@@ -131,6 +131,24 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded FPS for scalar animation MP4 export (default: 10).",
     )
     parser.add_argument(
+        "--scalar-animation-global-z-rotation",
+        type=float,
+        default=0.0,
+        help=(
+            "Forwarded global Z rotation (degrees) applied after all transforms during scalar animation "
+            "(default: 0)."
+        ),
+    )
+    parser.add_argument(
+        "--scalar-animation-oblique-deg",
+        type=float,
+        default=0.0,
+        help=(
+            "Forwarded view yaw around global Z (degrees) to get an AP/SAG oblique scalar animation view "
+            "(default: 0)."
+        ),
+    )
+    parser.add_argument(
         "--preserve-exports",
         action="store_true",
         help="Forwarded flag to keep existing Slicer-exports outputs when re-running a single config.",
@@ -391,6 +409,20 @@ def _build_command(
         command.append("--scalar-animation-montage")
     if args.scalar_animation_fps is not None:
         command.extend(["--scalar-animation-fps", f"{float(args.scalar_animation_fps):.3f}"])
+    if args.scalar_animation_global_z_rotation is not None:
+        command.extend(
+            [
+                "--scalar-animation-global-z-rotation",
+                f"{float(args.scalar_animation_global_z_rotation):.3f}",
+            ]
+        )
+    if args.scalar_animation_oblique_deg is not None:
+        command.extend(
+            [
+                "--scalar-animation-oblique-deg",
+                f"{float(args.scalar_animation_oblique_deg):.3f}",
+            ]
+        )
     if args.preserve_exports:
         command.append("--preserve-exports")
     if args.allow_missing_pretty_name:

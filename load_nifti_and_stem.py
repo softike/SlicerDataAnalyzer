@@ -155,6 +155,24 @@ def parse_args() -> argparse.Namespace:
         help="Frames per second for scalar animation MP4 export (default: 10).",
     )
     parser.add_argument(
+        "--scalar-animation-global-z-rotation",
+        type=float,
+        default=0.0,
+        help=(
+            "Additional rotation (degrees) around global Z applied to the stem during scalar animation after all"
+            " transforms (default: 0)."
+        ),
+    )
+    parser.add_argument(
+        "--scalar-animation-oblique-deg",
+        type=float,
+        default=0.0,
+        help=(
+            "Yaw the animation view around global Z by this many degrees to get an AP/SAG oblique view "
+            "(default: 0)."
+        ),
+    )
+    parser.add_argument(
         "--export-scene",
         action="store_true",
         help="Export a per-configuration MRML scene containing the volume and stem",
@@ -278,6 +296,8 @@ def build_slicer_script(
     scalar_animation_view: str,
     scalar_animation_montage: bool,
     scalar_animation_fps: float,
+    scalar_animation_global_z_rotation: float,
+    scalar_animation_oblique_deg: float,
     export_scene: bool,
     cortical_unbounded: bool,
     preserve_exports: bool,
@@ -304,6 +324,7 @@ def build_slicer_script(
     template = Template(textwrap.dedent(
         """
         import os
+        import math
         import re
         import shutil
         import subprocess
@@ -347,6 +368,8 @@ def build_slicer_script(
         SCALAR_ANIMATION_VIEW = r"$SCALAR_ANIMATION_VIEW"
         SCALAR_ANIMATION_MONTAGE = $SCALAR_ANIMATION_MONTAGE
         SCALAR_ANIMATION_FPS = $SCALAR_ANIMATION_FPS
+        SCALAR_ANIMATION_GLOBAL_Z_ROTATION = $SCALAR_ANIMATION_GLOBAL_Z_ROTATION
+        SCALAR_ANIMATION_OBLIQUE_DEG = $SCALAR_ANIMATION_OBLIQUE_DEG
         EXPORT_SCENE = $EXPORT_SCENE
         CORTICAL_UNBOUNDED = $CORTICAL_UNBOUNDED
         PRESERVE_EXPORTS = $PRESERVE_EXPORTS
@@ -513,6 +536,16 @@ def build_slicer_script(
             if length <= 1e-6:
                 return None
             return (x / length, y / length, z / length)
+
+        def _rotate_vector_z(vec, degrees):
+            angle = float(degrees)
+            if abs(angle) <= 1e-6:
+                return vec
+            rad = angle * math.pi / 180.0
+            c = math.cos(rad)
+            s = math.sin(rad)
+            x, y, z = vec
+            return (x * c - y * s, x * s + y * c, z)
 
         def _compute_cut_plane_world(stem_info, transform_node, pre_rotate):
             module, uid_member = _resolve_implant_module(stem_info)
@@ -1898,6 +1931,7 @@ def build_slicer_script(
                 painter.end()
             else:
                 axis, up = orientations.get(SCALAR_ANIMATION_VIEW, orientations["AP_front"])
+                axis = _rotate_vector_z(axis, SCALAR_ANIMATION_OBLIQUE_DEG)
                 position = [center[i] + axis[i] * distance for i in range(3)]
                 camera.SetFocalPoint(*center)
                 camera.SetPosition(*position)
@@ -2124,6 +2158,19 @@ def build_slicer_script(
                 rot_post.SetElement(0, 0, -1)
                 rot_post.SetElement(1, 1, -1)
                 _left_multiply(matrix, rot_post)
+
+            if SCALAR_ANIMATION_GLOBAL_Z_ROTATION:
+                try:
+                    angle = float(SCALAR_ANIMATION_GLOBAL_Z_ROTATION)
+                except Exception:
+                    angle = 0.0
+                if abs(angle) > 1e-6:
+                    rot_global = vtk.vtkTransform()
+                    rot_global.Identity()
+                    rot_global.RotateZ(angle)
+                    rot_matrix = vtk.vtkMatrix4x4()
+                    rot_matrix.DeepCopy(rot_global.GetMatrix())
+                    _left_multiply(matrix, rot_matrix)
 
             transform_name = slicer.mrmlScene.GenerateUniqueName(f"StemTransform_{config_index + 1:02d}")
             transform_node = slicer.mrmlScene.AddNewNodeByClass(
@@ -2852,6 +2899,8 @@ def build_slicer_script(
         SCALAR_ANIMATION_VIEW=scalar_animation_view,
         SCALAR_ANIMATION_MONTAGE="True" if scalar_animation_montage else "False",
         SCALAR_ANIMATION_FPS=f"{float(scalar_animation_fps):.3f}",
+        SCALAR_ANIMATION_GLOBAL_Z_ROTATION=f"{float(scalar_animation_global_z_rotation):.3f}",
+        SCALAR_ANIMATION_OBLIQUE_DEG=f"{float(scalar_animation_oblique_deg):.3f}",
         EXPORT_SCENE="True" if export_scene else "False",
         CORTICAL_UNBOUNDED="True" if cortical_unbounded else "False",
         PRESERVE_EXPORTS="True" if preserve_exports else "False",
@@ -2927,6 +2976,8 @@ def main() -> int:
         args.scalar_animation_view,
         args.scalar_animation_montage,
         args.scalar_animation_fps,
+        args.scalar_animation_global_z_rotation,
+        args.scalar_animation_oblique_deg,
         args.export_scene,
         args.cortical_unbounded,
         args.preserve_exports,
