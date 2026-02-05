@@ -548,7 +548,7 @@ python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H001 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 002-F-36  --preserve-exports  --stem-rcc-id 103550920_1  --export-aggregate-scene  --heatmap ezplan-2024 --export-scalar-animation --scalar-animation-view AP_front --scalar-animation-fps 5 --heatmap-gradient --hide-heatmap-scale --scalar-animation-oblique-deg 65  --scalar-animation-camera-pitch 0 --scalar-animation-camera-roll -10 --scalar-animation-camera-zoom 0.8
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 002-F-36  --preserve-exports  --stem-rcc-id 103550920_1  --export-aggregate-scene  --heatmap ezplan-2024 --export-scalar-animation --scalar-animation-view AP_back --scalar-animation-fps 5 --heatmap-gradient --hide-heatmap-scale --scalar-animation-oblique-deg 65  --scalar-animation-camera-pitch 0 --scalar-animation-camera-roll -10 --scalar-animation-camera-zoom 0.8
 
 
 # FIT 014
@@ -564,7 +564,7 @@ python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 009-F-83  --preserve-exports  --stem-rcc-id 52_34_0202_10092342_V01  --export-aggregate-scene  --heatmap ezplan-2024 --export-scalar-animation --scalar-animation-view AP_front --scalar-animation-fps 5  --heatmap-gradient --hide-heatmap-scale -scalar-animation-oblique-deg -45 --scalar-animation-camera-pitch 0 --scalar-animation-camera-roll 10 --scalar-animation-camera-zoom 0.8
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 009-F-83  --preserve-exports  --stem-rcc-id 52_34_0202_10092342_V01  --export-aggregate-scene  --heatmap ezplan-2024 --export-scalar-animation --scalar-animation-view AP_back --scalar-animation-fps 5  --heatmap-gradient --hide-heatmap-scale --scalar-animation-oblique-deg 45 --scalar-animation-camera-pitch 0 --scalar-animation-camera-roll -10 --scalar-animation-camera-zoom 0.8
 ```
 
 ## Issue with FFMPEG related to permission denied

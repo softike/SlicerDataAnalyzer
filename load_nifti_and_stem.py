@@ -2008,6 +2008,9 @@ def build_slicer_script(
             return entries
 
         def _extract_anteversion_value(label):
+            # Extract anteversion angle from the LAST parenthesized segment.
+            # Patterns matched (at end of string):
+            #   (A-20), (A+5), (A20), (A=20), (A) -> 0.0
             if not label:
                 return None
             text = str(label)
@@ -2026,24 +2029,20 @@ def build_slicer_script(
                     return float(cleaned)
                 except ValueError:
                     return None
-            match = None
-            fallback_zero = False
-            for candidate in re.finditer(r"\(([^)]*)\)", text):
-                content = candidate.group(1)
-                hit = re.search(r"A\s*=?\s*([+-]?\d+(?:[\.,]\d+)?)", content, re.IGNORECASE)
+            # Find the LAST parenthesized segment at the end of the string
+            # This avoids matching "A" in stem type names like "Type A-10"
+            # NOTE: $$ is required because this code is inside a string.Template
+            tail_match = re.search(r"\(([^)]*)\)\s*$$", text)
+            if tail_match:
+                content = tail_match.group(1)
+                # Match patterns: A-20, A+5, A20, A=20, A (alone)
+                hit = re.search(r"^\s*A\s*=?\s*([+-]?\d+(?:[\.,]\d+)?)", content, re.IGNORECASE)
                 if hit:
-                    match = hit
-                elif re.search(r"\bA\b", content, re.IGNORECASE):
-                    fallback_zero = True
-            if match is None:
-                for hit in re.finditer(r"(?:^|[\s_])A\s*=?\s*([+-]?\d+(?:[\.,]\d+)?)", text, re.IGNORECASE):
-                    match = hit
-            if match is None:
-                if fallback_zero or re.search(r"\(\s*A\s*\)", text, re.IGNORECASE) or re.search(r"\(\s*A\b", text, re.IGNORECASE):
+                    return _parse_anteversion(hit.group(1))
+                # (A) alone means 0°
+                if re.match(r"^\s*A\s*$$", content, re.IGNORECASE):
                     return 0.0
-                return None
-            raw_value = match.group(1)
-            return _parse_anteversion(raw_value)
+            return None
 
         def _sort_stem_infos_by_anteversion(infos):
             def _key(info):
