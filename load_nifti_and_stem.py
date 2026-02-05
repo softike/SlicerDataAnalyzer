@@ -190,6 +190,30 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--scalar-animation-camera-yaw",
+        type=float,
+        default=0.0,
+        help="Additional camera yaw around global Z for scalar animation (default: 0).",
+    )
+    parser.add_argument(
+        "--scalar-animation-camera-pitch",
+        type=float,
+        default=0.0,
+        help="Additional camera pitch around global X for scalar animation (default: 0).",
+    )
+    parser.add_argument(
+        "--scalar-animation-camera-roll",
+        type=float,
+        default=0.0,
+        help="Additional camera roll around global Y for scalar animation (default: 0).",
+    )
+    parser.add_argument(
+        "--scalar-animation-camera-zoom",
+        type=float,
+        default=1.0,
+        help="Scalar animation camera zoom factor (>1 zooms in, <1 zooms out; default: 1).",
+    )
+    parser.add_argument(
         "--export-scene",
         action="store_true",
         help="Export a per-configuration MRML scene containing the volume and stem",
@@ -329,6 +353,10 @@ def build_slicer_script(
     scalar_animation_fps: float,
     scalar_animation_global_z_rotation: float,
     scalar_animation_oblique_deg: float,
+    scalar_animation_camera_yaw: float,
+    scalar_animation_camera_pitch: float,
+    scalar_animation_camera_roll: float,
+    scalar_animation_camera_zoom: float,
     export_scene: bool,
     cortical_unbounded: bool,
     preserve_exports: bool,
@@ -406,6 +434,10 @@ def build_slicer_script(
         SCALAR_ANIMATION_FPS = $SCALAR_ANIMATION_FPS
         SCALAR_ANIMATION_GLOBAL_Z_ROTATION = $SCALAR_ANIMATION_GLOBAL_Z_ROTATION
         SCALAR_ANIMATION_OBLIQUE_DEG = $SCALAR_ANIMATION_OBLIQUE_DEG
+        SCALAR_ANIMATION_CAMERA_YAW = $SCALAR_ANIMATION_CAMERA_YAW
+        SCALAR_ANIMATION_CAMERA_PITCH = $SCALAR_ANIMATION_CAMERA_PITCH
+        SCALAR_ANIMATION_CAMERA_ROLL = $SCALAR_ANIMATION_CAMERA_ROLL
+        SCALAR_ANIMATION_CAMERA_ZOOM = $SCALAR_ANIMATION_CAMERA_ZOOM
         EXPORT_SCENE = $EXPORT_SCENE
         CORTICAL_UNBOUNDED = $CORTICAL_UNBOUNDED
         PRESERVE_EXPORTS = $PRESERVE_EXPORTS
@@ -2096,6 +2128,40 @@ def build_slicer_script(
                 print("Camera node missing vtkCamera; skipping animation frame")
                 return None
             camera.ParallelProjectionOn()
+            def _apply_camera_rotation():
+                try:
+                    yaw = float(SCALAR_ANIMATION_CAMERA_YAW)
+                    pitch = float(SCALAR_ANIMATION_CAMERA_PITCH)
+                    roll = float(SCALAR_ANIMATION_CAMERA_ROLL)
+                except Exception:
+                    yaw = pitch = roll = 0.0
+                if abs(yaw) < 1e-6 and abs(pitch) < 1e-6 and abs(roll) < 1e-6:
+                    return
+                position = list(camera.GetPosition())
+                view_up = list(camera.GetViewUp())
+                vec = [position[i] - center[i] for i in range(3)]
+                transform = vtk.vtkTransform()
+                transform.Identity()
+                if abs(yaw) > 1e-6:
+                    transform.RotateZ(yaw)
+                if abs(pitch) > 1e-6:
+                    transform.RotateX(pitch)
+                if abs(roll) > 1e-6:
+                    transform.RotateY(roll)
+                vec = transform.TransformVector(vec)
+                view_up = transform.TransformVector(view_up)
+                camera.SetPosition(center[0] + vec[0], center[1] + vec[1], center[2] + vec[2])
+                camera.SetViewUp(view_up[0], view_up[1], view_up[2])
+
+            def _apply_camera_zoom():
+                try:
+                    zoom = float(SCALAR_ANIMATION_CAMERA_ZOOM)
+                except Exception:
+                    zoom = 1.0
+                if zoom <= 0:
+                    zoom = 1.0
+                scale = max(half_extent, 1.0)
+                camera.SetParallelScale(scale / zoom)
             if SCALAR_ANIMATION_MONTAGE:
                 montage_orientations = [
                     ("AP_front", (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
@@ -2109,8 +2175,9 @@ def build_slicer_script(
                     camera.SetFocalPoint(*center)
                     camera.SetPosition(*position)
                     camera.SetViewUp(*up)
-                    camera.SetParallelScale(max(half_extent, 1.0))
+                    _apply_camera_zoom()
                     camera.Modified()
+                    _apply_camera_rotation()
                     view.renderWindow().Render()
                     qt.QApplication.processEvents()
                     pixmaps.append(view.grab())
@@ -2137,8 +2204,9 @@ def build_slicer_script(
                 camera.SetFocalPoint(*center)
                 camera.SetPosition(*position)
                 camera.SetViewUp(*up)
-                camera.SetParallelScale(max(half_extent, 1.0))
+                _apply_camera_zoom()
                 camera.Modified()
+                _apply_camera_rotation()
             manufacturer = ""
             model = ""
             side = ""
@@ -3159,6 +3227,10 @@ def build_slicer_script(
         SCALAR_ANIMATION_FPS=f"{float(scalar_animation_fps):.3f}",
         SCALAR_ANIMATION_GLOBAL_Z_ROTATION=f"{float(scalar_animation_global_z_rotation):.3f}",
         SCALAR_ANIMATION_OBLIQUE_DEG=f"{float(scalar_animation_oblique_deg):.3f}",
+        SCALAR_ANIMATION_CAMERA_YAW=f"{float(scalar_animation_camera_yaw):.3f}",
+        SCALAR_ANIMATION_CAMERA_PITCH=f"{float(scalar_animation_camera_pitch):.3f}",
+        SCALAR_ANIMATION_CAMERA_ROLL=f"{float(scalar_animation_camera_roll):.3f}",
+        SCALAR_ANIMATION_CAMERA_ZOOM=f"{float(scalar_animation_camera_zoom):.3f}",
         EXPORT_SCENE="True" if export_scene else "False",
         CORTICAL_UNBOUNDED="True" if cortical_unbounded else "False",
         PRESERVE_EXPORTS="True" if preserve_exports else "False",
@@ -3241,6 +3313,10 @@ def main() -> int:
         args.scalar_animation_fps,
         args.scalar_animation_global_z_rotation,
         args.scalar_animation_oblique_deg,
+        args.scalar_animation_camera_yaw,
+        args.scalar_animation_camera_pitch,
+        args.scalar_animation_camera_roll,
+        args.scalar_animation_camera_zoom,
         args.export_scene,
         args.cortical_unbounded,
         args.preserve_exports,

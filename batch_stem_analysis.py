@@ -166,6 +166,30 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--scalar-animation-camera-yaw",
+        type=float,
+        default=0.0,
+        help="Forwarded camera yaw around global Z for scalar animation (default: 0).",
+    )
+    parser.add_argument(
+        "--scalar-animation-camera-pitch",
+        type=float,
+        default=0.0,
+        help="Forwarded camera pitch around global X for scalar animation (default: 0).",
+    )
+    parser.add_argument(
+        "--scalar-animation-camera-roll",
+        type=float,
+        default=0.0,
+        help="Forwarded camera roll around global Y for scalar animation (default: 0).",
+    )
+    parser.add_argument(
+        "--scalar-animation-camera-zoom",
+        type=float,
+        default=1.0,
+        help="Forwarded camera zoom factor (>1 zooms in, <1 zooms out; default: 1).",
+    )
+    parser.add_argument(
         "--preserve-exports",
         action="store_true",
         help="Forwarded flag to keep existing Slicer-exports outputs when re-running a single config.",
@@ -460,6 +484,26 @@ def _build_command(
                 f"{float(args.scalar_animation_oblique_deg):.3f}",
             ]
         )
+    if args.scalar_animation_camera_yaw is not None:
+        command.extend([
+            "--scalar-animation-camera-yaw",
+            f"{float(args.scalar_animation_camera_yaw):.3f}",
+        ])
+    if args.scalar_animation_camera_pitch is not None:
+        command.extend([
+            "--scalar-animation-camera-pitch",
+            f"{float(args.scalar_animation_camera_pitch):.3f}",
+        ])
+    if args.scalar_animation_camera_roll is not None:
+        command.extend([
+            "--scalar-animation-camera-roll",
+            f"{float(args.scalar_animation_camera_roll):.3f}",
+        ])
+    if args.scalar_animation_camera_zoom is not None:
+        command.extend([
+            "--scalar-animation-camera-zoom",
+            f"{float(args.scalar_animation_camera_zoom):.3f}",
+        ])
     if args.preserve_exports:
         command.append("--preserve-exports")
     if args.allow_missing_pretty_name:
