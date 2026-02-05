@@ -485,6 +485,39 @@ def build_slicer_script(
             user_id = case_dir.parent.name if case_dir and case_dir.parent else ""
             return case_id, user_id
 
+        def _load_metrics_pretty_name(config_folder, expected_rcc_id=None):
+            if not config_folder:
+                return None
+            if not SCREENSHOT_DIR or not os.path.isdir(SCREENSHOT_DIR):
+                return None
+            target_dir = os.path.join(SCREENSHOT_DIR, config_folder)
+            if not os.path.isdir(target_dir):
+                return None
+            try:
+                entries = [
+                    name
+                    for name in os.listdir(target_dir)
+                    if name.endswith("_stem_metrics.xml")
+                ]
+            except Exception:
+                return None
+            for name in entries:
+                path = os.path.join(target_dir, name)
+                try:
+                    tree = ET.parse(path)
+                except Exception:
+                    continue
+                root = tree.getroot()
+                pretty = root.attrib.get("hipConfigPrettyName")
+                if expected_rcc_id:
+                    stem_elem = root.find("./stem")
+                    metrics_rcc = stem_elem.attrib.get("rccId") if stem_elem is not None else None
+                    if metrics_rcc and metrics_rcc != expected_rcc_id:
+                        continue
+                if pretty and pretty.strip():
+                    return pretty.strip()
+            return None
+
         CASE_ID, USER_ID = _derive_case_and_user_ids()
 
         if not os.path.exists(VOLUME_PATH):
@@ -1904,6 +1937,8 @@ def build_slicer_script(
                     info["config_folder"] = sanitized
                     info["hip_config_name"] = hip_label or fallback_label or friendly
                     pretty_name = hip_config.findtext("./prettyName") or hip_config.attrib.get("prettyName")
+                    if pretty_name is None:
+                        pretty_name = fem_config.findtext("./prettyName") or fem_config.attrib.get("prettyName")
                     if pretty_name is not None:
                         pretty_name_clean = pretty_name.strip()
                         if pretty_name_clean:
@@ -1923,6 +1958,10 @@ def build_slicer_script(
                                     info["stem_enum_name"] = lookup.enum_name
                                     info["stem_friendly_name"] = lookup.friendly_name
                                     info["rcc_id"] = lookup.rcc_id
+                        if not info.get("hip_config_pretty_name"):
+                            metrics_pretty = _load_metrics_pretty_name(info.get("config_folder"), info.get("rcc_id"))
+                            if metrics_pretty:
+                                info["hip_config_pretty_name"] = metrics_pretty
                     matrix_elem = stem_shape.find("matrix4[@name='mat']")
                     if matrix_elem is None:
                         matrix_elem = stem_shape.find("matrix4")
@@ -2746,20 +2785,54 @@ def build_slicer_script(
                 label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or ""
                 label = _clean_text_for_console(label) or ""
                 value = _extract_anteversion_value(label)
-                sys.stdout.write("  %02d. A=%s | %s\\n" % (index, value if value is not None else "n/a", label))
+                rcc_id = info.get("rcc_id") or "n/a"
+                folder = info.get("config_folder") or "n/a"
+                sys.stdout.write("  %02d. rcc_id=%s | A=%s | %s | %s\\n" % (
+                    index,
+                    rcc_id,
+                    value if value is not None else "n/a",
+                    folder,
+                    label,
+                ))
             sys.stdout.flush()
-            sequence_labels = []
+            print("\\nScalar animation RCC mapping (name-based, no prettyName):")
+            for index, info in enumerate(ordered_infos, start=1):
+                raw_label = info.get("hip_config_name") or info.get("config_label") or ""
+                raw_label = _clean_text_for_console(raw_label) or ""
+                value = _extract_anteversion_value(raw_label)
+                rcc_id = info.get("rcc_id") or "n/a"
+                folder = info.get("config_folder") or "n/a"
+                sys.stdout.write("  %02d. rcc_id=%s | A=%s | %s | %s\\n" % (
+                    index,
+                    rcc_id,
+                    value if value is not None else "n/a",
+                    folder,
+                    raw_label,
+                ))
+            sys.stdout.flush()
+            sequence_infos = []
             for info in ordered_infos:
                 label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or ""
                 label = _clean_text_for_console(label) or ""
                 value = _extract_anteversion_value(label)
                 if value is None:
                     continue
-                sequence_labels.append(label)
-            if sequence_labels:
+                sequence_infos.append((
+                    info.get("rcc_id") or "n/a",
+                    info.get("config_folder") or "n/a",
+                    value,
+                    label,
+                ))
+            if sequence_infos:
                 print("\\nScalar animation sequence (prettyName order):")
-                for index, label in enumerate(sequence_labels, start=1):
-                    sys.stdout.write("  %02d. %s\\n" % (index, label))
+                for index, (rcc_id, folder, value, label) in enumerate(sequence_infos, start=1):
+                    sys.stdout.write("  %02d. rcc_id=%s | A=%s | %s | %s\\n" % (
+                        index,
+                        rcc_id,
+                        value if value is not None else "n/a",
+                        folder,
+                        label,
+                    ))
                 sys.stdout.flush()
 
             base_result = _build_stem_model_for_animation(
@@ -2869,11 +2942,27 @@ def build_slicer_script(
                 _write_scalar_animation_video(frame_paths, video_path, fps=SCALAR_ANIMATION_FPS)
 
         stem_infos = _extract_stem_infos(SEEDPLAN_PATH)
-        filtered_stem_infos = [
-            info
-            for info in stem_infos
-            if (info.get("hip_config_pretty_name") or "").strip()
-        ]
+        def _has_pretty_name(info):
+            return bool((info.get("hip_config_pretty_name") or "").strip())
+
+        def _has_anteversion_label(info):
+            label = info.get("hip_config_pretty_name") or info.get("hip_config_name") or info.get("config_label")
+            return _extract_anteversion_value(label) is not None
+
+        if ALLOW_MISSING_PRETTY_NAME:
+            filtered_stem_infos = list(stem_infos)
+        elif EXPORT_SCALAR_ANIMATION:
+            filtered_stem_infos = [
+                info
+                for info in stem_infos
+                if _has_pretty_name(info) or _has_anteversion_label(info)
+            ]
+        else:
+            filtered_stem_infos = [
+                info
+                for info in stem_infos
+                if _has_pretty_name(info)
+            ]
         if not filtered_stem_infos and not ALLOW_MISSING_PRETTY_NAME:
             _stem_output_prefix(clear_dir=not PRESERVE_EXPORTS)
             print(
@@ -2885,7 +2974,9 @@ def build_slicer_script(
             if skipped_configs:
                 print("Skipping %d configuration(s) without hip config pretty names" % skipped_configs)
                 missing_pretty = [
-                    info for info in stem_infos if not (info.get("hip_config_pretty_name") or "").strip()
+                    info
+                    for info in stem_infos
+                    if not _has_pretty_name(info) and info not in filtered_stem_infos
                 ]
                 for index, info in enumerate(missing_pretty, start=1):
                     config_name = _clean_text_for_console(info.get("hip_config_name")) or ""

@@ -328,7 +328,7 @@ python view_vtp.py /media/developer/Storage1/HFRStudy-RUN2/images/H001/013-F-81/
 # FIT right A=+15
 python view_vtp.py /media/developer/Storage1/HFRStudy-RUN3/images/H002/006-M-63/Mediplan3D/Slicer-exports/active_05/1.2.840.113619.2.416.323108426829918732464075286489137100165_stack_03_stem_local.vtp --local-frame --show-cut-plane --opacity 1 --base-color 0.7,0.7,0.7 --side auto  --show-side-label --show-axes  --gruen-hu-remesh-input --gruen-remapped  --solid-zones  --hu-heatmap ezplan-2024
 
-# Compare with the animation
+# Compare with the animation (config 05)
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
@@ -339,7 +339,13 @@ python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 006-M-63 --config-index 5   --preserve-exports  --export-scene  --heatmap ezplan-2024 
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 006-M-63 --config-index 5   --preserve-exports  --export-scene  --heatmap ezplan-2024 --heatmap-gradient
+
+python batch_stem_analysis.py \
+   --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
+   --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 006-M-63 --config-index 5   --preserve-exports  --export-scene  --heatmap ezplan-2024 --heatmap-gradient --scalar-animation-oblique-deg 25
 
 #python batch_stem_analysis.py \
 #   --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
@@ -404,7 +410,7 @@ python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
    --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
-   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 009-F-83  --preserve-exports  --stem-rcc-id 52_34_0202_10092342_V01  --export-aggregate-scene  --heatmap ezplan-2024 --export-scalar-animation --scalar-animation-view AP_front --scalar-animation-fps 5
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 009-F-83  --preserve-exports  --stem-rcc-id 52_34_0202_10092342_V01  --export-aggregate-scene  --heatmap ezplan-2024 --export-scalar-animation --scalar-animation-view AP_front --scalar-animation-fps 5  --heatmap-gradient --hide-heatmap-scale -scalar-animation-oblique-deg -45
 
 
 # Case 011 Optimyys
