@@ -97,6 +97,23 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded flag to keep HU values only below the cut plane in a separate scalar array.",
     )
     parser.add_argument(
+        "--scalar-interpolate",
+        action="store_true",
+        help="Forwarded flag to smooth sampled stem scalars using Gaussian interpolation.",
+    )
+    parser.add_argument(
+        "--scalar-interpolate-radius",
+        type=float,
+        default=3.0,
+        help="Forwarded scalar interpolation radius (default: 3).",
+    )
+    parser.add_argument(
+        "--scalar-interpolate-sharpness",
+        type=float,
+        default=2.0,
+        help="Forwarded scalar interpolation sharpness (default: 2).",
+    )
+    parser.add_argument(
         "--export-local-stem",
         action="store_true",
         help="Forwarded flag to export the local-frame stem VTP with HU scalars.",
@@ -171,6 +188,17 @@ def parse_args() -> argparse.Namespace:
             "Forwarded HU heatmap LUT to apply for stem visualization (default: ezplan). "
             "Use 'standard' for a grayscale HU ramp."
         ),
+    )
+    parser.add_argument(
+        "--heatmap-gradient",
+        action="store_true",
+        help="Forwarded flag to use a continuous gradient between heatmap colors",
+    )
+    parser.add_argument(
+        "--hide-heatmap-scale",
+        dest="show_heatmap_scale",
+        action="store_false",
+        help="Forwarded flag to hide the HU heatmap scale overlay in the 3D view",
     )
     parser.add_argument(
         "--stem-model",
@@ -397,6 +425,15 @@ def _build_command(
     command.append("--export-stem-screenshots")
     if args.scalar_below_cut_plane:
         command.append("--scalar-below-cut-plane")
+    if args.scalar_interpolate:
+        command.append("--scalar-interpolate")
+    if args.scalar_interpolate_radius is not None:
+        command.extend(["--scalar-interpolate-radius", f"{float(args.scalar_interpolate_radius):.3f}"])
+    if args.scalar_interpolate_sharpness is not None:
+        command.extend([
+            "--scalar-interpolate-sharpness",
+            f"{float(args.scalar_interpolate_sharpness):.3f}",
+        ])
     if args.export_local_stem:
         command.append("--export-local-stem")
     if args.export_scene:
@@ -431,6 +468,10 @@ def _build_command(
         command.append("--cortical-unbounded")
     if args.heatmap:
         command.extend(["--heatmap", args.heatmap])
+    if args.heatmap_gradient:
+        command.append("--heatmap-gradient")
+    if not args.show_heatmap_scale:
+        command.append("--hide-heatmap-scale")
     for model in args.stem_models:
         if model:
             command.extend(["--stem-model", str(model)])

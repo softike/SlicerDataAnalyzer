@@ -73,6 +73,23 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--scalar-interpolate",
+        action="store_true",
+        help="Smooth sampled stem scalars using Gaussian interpolation (view_vtp-style).",
+    )
+    parser.add_argument(
+        "--scalar-interpolate-radius",
+        type=float,
+        default=3.0,
+        help="Gaussian kernel radius (mm) for scalar smoothing (default: 3).",
+    )
+    parser.add_argument(
+        "--scalar-interpolate-sharpness",
+        type=float,
+        default=2.0,
+        help="Gaussian kernel sharpness for scalar smoothing (default: 2).",
+    )
+    parser.add_argument(
         "--show-neck-point",
         action="store_true",
         help="Render the implant neck point overlay when metadata is available",
@@ -207,6 +224,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--heatmap-gradient",
+        action="store_true",
+        help="Use a continuous gradient between heatmap colors instead of discrete bands",
+    )
+    parser.add_argument(
+        "--hide-heatmap-scale",
+        dest="show_heatmap_scale",
+        action="store_false",
+        help="Hide the HU heatmap scale overlay in the 3D view",
+    )
+    parser.add_argument(
         "--stem-model",
         dest="stem_models",
         action="append",
@@ -285,6 +313,9 @@ def build_slicer_script(
     post_rotate_z_180: bool,
     compute_stem_scalars: bool,
     scalar_below_cut_plane: bool,
+    scalar_interpolate: bool,
+    scalar_interpolate_radius: float,
+    scalar_interpolate_sharpness: float,
     show_neck_point: bool,
     show_cut_plane: bool,
     cut_plane_size: float,
@@ -304,6 +335,8 @@ def build_slicer_script(
     allow_missing_pretty_name: bool,
     exit_after_run: bool,
     heatmap: str,
+    show_heatmap_scale: bool,
+    heatmap_gradient: bool,
     stem_model_filters: list[str],
     stem_size_filters: list[str],
     stem_side_filters: list[str],
@@ -357,6 +390,9 @@ def build_slicer_script(
         COMPUTE_STEM_SCALARS = $COMPUTE_STEM_SCALARS
         SCALAR_BELOW_CUT_PLANE = $SCALAR_BELOW_CUT_PLANE
         SCALAR_BELOW_CUT_PLANE_SUFFIX = "BelowCutPlane"
+        SCALAR_INTERPOLATE = $SCALAR_INTERPOLATE
+        SCALAR_INTERPOLATE_RADIUS = $SCALAR_INTERPOLATE_RADIUS
+        SCALAR_INTERPOLATE_SHARPNESS = $SCALAR_INTERPOLATE_SHARPNESS
         SHOW_NECK_POINT = $SHOW_NECK_POINT
         NECK_POINT_RADIUS = 2.0
         SHOW_CUT_PLANE = $SHOW_CUT_PLANE
@@ -379,12 +415,15 @@ def build_slicer_script(
         AUTO_ROTATION_MODE = r"$AUTO_ROTATION_MODE"
         EXIT_AFTER_RUN = $EXIT_AFTER_RUN
         HEATMAP = r"$HEATMAP"
+        SHOW_HEATMAP_SCALE = $SHOW_HEATMAP_SCALE
+        HEATMAP_GRADIENT = $HEATMAP_GRADIENT
         SCALAR_STYLE = r"$SCALAR_STYLE"
         STEM_MODEL_FILTERS = $STEM_MODEL_FILTERS
         STEM_SIZE_FILTERS = $STEM_SIZE_FILTERS
         STEM_SIDE_FILTERS = $STEM_SIDE_FILTERS
         EXPORT_AGGREGATE_SCENE = $EXPORT_AGGREGATE_SCENE
         ANIMATION_TEXT_ACTOR = None
+        HEATMAP_SCALE_ACTOR = None
         ROTATION_BEHAVIOR = {
             "johnson": (True, True, False),
             "mathys": (True, True, True),
@@ -889,13 +928,23 @@ def build_slicer_script(
                 range_max = zone_range[-1][1]
                 if range_max != float("inf") and hasattr(color_tf, "SetRange"):
                     color_tf.SetRange(range_min, range_max)
-            for zone_min, zone_max, (r, g, b), label in _iter_active_zone_defs():
-                color_tf.AddRGBPoint(zone_min, r, g, b)
-                if zone_max != float("inf"):
-                    color_tf.AddRGBPoint(zone_max, r, g, b)
+            zone_defs = list(_iter_active_zone_defs())
+            if HEATMAP_GRADIENT:
+                for zone_min, _zone_max, (r, g, b), _label in zone_defs:
+                    color_tf.AddRGBPoint(zone_min, r, g, b)
+                if zone_defs:
+                    last_min, last_max, (r, g, b), _label = zone_defs[-1]
+                    if last_max != float("inf"):
+                        color_tf.AddRGBPoint(last_max, r, g, b)
+            else:
+                for zone_min, zone_max, (r, g, b), _label in zone_defs:
+                    color_tf.AddRGBPoint(zone_min, r, g, b)
+                    if zone_max != float("inf"):
+                        color_tf.AddRGBPoint(zone_max, r, g, b)
             color_node.SetAndObserveColorTransferFunction(color_tf)
             color_node.SetAttribute("lut.source", "load_nifti_and_stem")
             color_node.SetAttribute("lut.heatmap", ACTIVE_HEATMAP)
+            color_node.SetAttribute("lut.gradient", "true" if HEATMAP_GRADIENT else "false")
             slicer.mrmlScene.AddNode(color_node)
             print("Registered color node '%s' for stem scalar visualization" % EZPLAN_LUT_NAME)
             return color_node
@@ -1155,6 +1204,72 @@ def build_slicer_script(
                 if width and height:
                     ANIMATION_TEXT_ACTOR.SetDisplayPosition(max(width - 20, 0), max(height - 20, 0))
             ANIMATION_TEXT_ACTOR.SetInput(text or "")
+
+        def _get_primary_3d_view():
+            layout_manager = slicer.app.layoutManager()
+            if layout_manager is None:
+                return None
+            widget = layout_manager.threeDWidget(0)
+            if widget is None:
+                return None
+            return widget.threeDView()
+
+        def _heatmap_scale_label():
+            if SCALAR_STYLE == "standard":
+                return "HU (Standard)"
+            if ACTIVE_HEATMAP == "ezplan":
+                return "HU (EZplan LUT)"
+            if ACTIVE_HEATMAP == "ezplan-2024":
+                return "HU (EZplan 2024 LUT)"
+            return "HU (%s LUT)" % ACTIVE_HEATMAP
+
+        def _heatmap_scale_label_count():
+            if SCALAR_STYLE == "standard":
+                return 6
+            return max(len(_iter_active_zone_defs()) + 1, 2)
+
+        def _attach_heatmap_scale(view, color_node):
+            global HEATMAP_SCALE_ACTOR
+            if not SHOW_HEATMAP_SCALE:
+                return
+            if view is None or color_node is None:
+                return
+            render_window = view.renderWindow() if hasattr(view, "renderWindow") else None
+            if render_window is None:
+                return
+            renderers = render_window.GetRenderers() if hasattr(render_window, "GetRenderers") else None
+            if renderers is None:
+                return
+            renderer = renderers.GetFirstRenderer()
+            if renderer is None:
+                return
+            lookup = None
+            if hasattr(color_node, "GetColorTransferFunction"):
+                lookup = color_node.GetColorTransferFunction()
+            if lookup is None and hasattr(color_node, "GetLookupTable"):
+                lookup = color_node.GetLookupTable()
+            if lookup is None:
+                return
+            if HEATMAP_SCALE_ACTOR is not None:
+                try:
+                    renderer.RemoveActor2D(HEATMAP_SCALE_ACTOR)
+                except Exception:
+                    pass
+            scalar_bar = vtk.vtkScalarBarActor()
+            scalar_bar.SetLookupTable(lookup)
+            scalar_bar.SetTitle(_heatmap_scale_label())
+            scalar_bar.SetNumberOfLabels(_heatmap_scale_label_count())
+            scalar_bar.SetLabelFormat(" %.0f")
+            scalar_bar.GetLabelTextProperty().SetColor(0.1, 0.1, 0.1)
+            scalar_bar.GetTitleTextProperty().SetColor(0.1, 0.1, 0.1)
+            scalar_bar.SetPosition(0.82, 0.08)
+            if hasattr(scalar_bar, "SetWidth"):
+                scalar_bar.SetWidth(0.16)
+            if hasattr(scalar_bar, "SetHeight"):
+                scalar_bar.SetHeight(0.78)
+            renderer.AddActor2D(scalar_bar)
+            HEATMAP_SCALE_ACTOR = scalar_bar
+            render_window.Render()
 
         def _write_scalar_animation_video(frame_paths, output_path, fps=10):
             if not frame_paths or not output_path:
@@ -1555,6 +1670,8 @@ def build_slicer_script(
             target_point_data.AddArray(copied_array)
             target_point_data.SetActiveScalars(array_name)
             source_poly_data.Modified()
+            if SCALAR_INTERPOLATE:
+                _smooth_scalar_array(source_poly_data, array_name)
             sampled_range = copied_array.GetRange()
             if sampled_range:
                 print(
@@ -1562,6 +1679,51 @@ def build_slicer_script(
                     % (model_node.GetName(), array_name, sampled_range[0], sampled_range[1])
                 )
             return source_poly_data
+
+        def _smooth_scalar_array(poly_data, array_name):
+            point_data = poly_data.GetPointData() if poly_data else None
+            if point_data is None:
+                return False
+            source_array = point_data.GetArray(array_name)
+            if source_array is None:
+                return False
+            source = poly_data
+            if point_data.GetNormals() is None:
+                normals_filter = vtk.vtkPolyDataNormals()
+                normals_filter.SetInputData(poly_data)
+                normals_filter.ComputePointNormalsOn()
+                normals_filter.ComputeCellNormalsOff()
+                normals_filter.SplittingOff()
+                normals_filter.ConsistencyOn()
+                normals_filter.AutoOrientNormalsOn()
+                normals_filter.Update()
+                source = normals_filter.GetOutput()
+            interpolator = vtk.vtkPointInterpolator()
+            interpolator.SetSourceData(source)
+            interpolator.SetInputData(poly_data)
+            interpolator.SetNullPointsStrategyToClosestPoint()
+            kernel = vtk.vtkGaussianKernel()
+            kernel.SetSharpness(float(SCALAR_INTERPOLATE_SHARPNESS))
+            kernel.SetRadius(float(SCALAR_INTERPOLATE_RADIUS))
+            interpolator.SetKernel(kernel)
+            interpolator.Update()
+            smoothed = interpolator.GetOutput()
+            smoothed_array = smoothed.GetPointData().GetArray(array_name) if smoothed else None
+            if smoothed_array is None:
+                return False
+            copied = vtk.vtkDoubleArray()
+            copied.DeepCopy(smoothed_array)
+            copied.SetName(array_name)
+            if point_data.GetArray(array_name):
+                point_data.RemoveArray(array_name)
+            point_data.AddArray(copied)
+            point_data.SetActiveScalars(array_name)
+            poly_data.Modified()
+            print(
+                "Smoothed scalar '%s' using Gaussian kernel (radius=%.2f, sharpness=%.2f)"
+                % (array_name, float(SCALAR_INTERPOLATE_RADIUS), float(SCALAR_INTERPOLATE_SHARPNESS))
+            )
+            return True
 
         def _summarize_scalar_percentages(model_node, array_name="ImageScalars"):
             poly_data = model_node.GetPolyData()
@@ -2315,6 +2477,7 @@ def build_slicer_script(
                             color_node=lut_node,
                             scalar_range=scalar_range,
                         )
+                        _attach_heatmap_scale(_get_primary_3d_view(), lut_node)
                     lut_name = lut_node.GetName() if lut_node and hasattr(lut_node, "GetName") else "LUT"
                     print("Stored sampled scalars on '{}' and applied '{}' LUT".format(
                         target_node.GetName(), lut_name
@@ -2675,6 +2838,7 @@ def build_slicer_script(
                     color_node=lut_node,
                     scalar_range=scalar_range,
                 )
+                _attach_heatmap_scale(_get_primary_3d_view(), lut_node)
                 static_display = static_model.GetDisplayNode() if static_model else None
                 if static_display:
                     static_display.SetVisibility(True)
@@ -2891,6 +3055,9 @@ def build_slicer_script(
         POST_ROTATE_Z_180="True" if post_rotate_z_180 else "False",
         COMPUTE_STEM_SCALARS="True" if compute_stem_scalars else "False",
         SCALAR_BELOW_CUT_PLANE="True" if scalar_below_cut_plane else "False",
+        SCALAR_INTERPOLATE="True" if scalar_interpolate else "False",
+        SCALAR_INTERPOLATE_RADIUS=f"{float(scalar_interpolate_radius):.3f}",
+        SCALAR_INTERPOLATE_SHARPNESS=f"{float(scalar_interpolate_sharpness):.3f}",
         SHOW_NECK_POINT="True" if show_neck_point else "False",
         SHOW_CUT_PLANE="True" if show_cut_plane else "False",
         CUT_PLANE_SIZE=f"{max(cut_plane_size, 1.0):.3f}",
@@ -2910,6 +3077,8 @@ def build_slicer_script(
         AUTO_ROTATION_MODE=rotation_mode,
         EXIT_AFTER_RUN="True" if exit_after_run else "False",
         HEATMAP=heatmap,
+        SHOW_HEATMAP_SCALE="True" if show_heatmap_scale else "False",
+        HEATMAP_GRADIENT="True" if heatmap_gradient else "False",
         SCALAR_STYLE=heatmap,
         STEM_MODEL_FILTERS=model_filters_literal,
         STEM_SIZE_FILTERS=size_filters_literal,
@@ -2965,6 +3134,9 @@ def main() -> int:
         args.post_rotate_z_180,
         args.compute_stem_scalars,
         args.scalar_below_cut_plane,
+        args.scalar_interpolate,
+        args.scalar_interpolate_radius,
+        args.scalar_interpolate_sharpness,
         args.show_neck_point,
         args.show_cut_plane,
         args.cut_plane_size,
@@ -2984,6 +3156,8 @@ def main() -> int:
         args.allow_missing_pretty_name,
         args.exit_after_run,
         args.heatmap,
+        args.show_heatmap_scale,
+        args.heatmap_gradient,
         args.stem_models,
         (args.stem_sizes or []) + (args.stem_rcc_ids or []),
         args.stem_sides,
