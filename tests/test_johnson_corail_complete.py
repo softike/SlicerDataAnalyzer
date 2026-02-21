@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from johnson_corail_complete import (
+from implants.johnson_corail_complete import (
     S3UID,
     StemGroup,
     get_cut_plane,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from johnson_corail_complete import (  # re-export
+from implants.johnson_corail_complete import (  # re-export
     COMPANY_RANGE_START_AT,
     JJ_RANGE_START_AT,
     PRODUCT_RANGE_START_AT,

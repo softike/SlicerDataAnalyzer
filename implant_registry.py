@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-import amedacta_complete as mdca_amistem_implants
-import implancast_ecofit_complete as icast_ecofit_implants
-import johnson_actis_complete as jj_actis_implants
-import johnson_corail_complete as jj_corail_implants
-import lima_fit_complete as lima_fit_implants
 import legacy_implants.mathys_implants as mys_implants
+import implants.amedacta_complete as mdca_amistem_implants
+import implants.implancast_ecofit_complete as icast_ecofit_implants
+import implants.johnson_actis_complete as jj_actis_implants
+import implants.johnson_corail_complete as jj_corail_implants
+import implants.lima_fit_complete as lima_fit_implants
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import mathys_optimys_complete as _impl
+import implants.mathys_optimys_complete as _impl
 
 __all__ = list(_impl.__all__)
 

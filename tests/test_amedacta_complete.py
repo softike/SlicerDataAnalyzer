@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from amedacta_complete import (
+from implants.amedacta_complete import (
     S3UID,
     StemGroup,
     get_cut_plane,

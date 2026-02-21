@@ -596,16 +596,16 @@ def build_slicer_script(
             if uid is None:
                 return None, None
             module_names = (
-                "amedacta_complete",
-                "mathys_optimys_complete",
-                "johnson_corail_complete",
-                "johnson_actis_complete",
-                "implancast_ecofit_complete",
-                "lima_fit_complete",
+                "implants.amedacta_complete",
+                "implants.mathys_optimys_complete",
+                "implants.johnson_corail_complete",
+                "implants.johnson_actis_complete",
+                "implants.implancast_ecofit_complete",
+                "implants.lima_fit_complete",
             )
             for module_name in module_names:
                 try:
-                    module = __import__(module_name)
+                    module = __import__(module_name, fromlist=["*"])
                 except Exception:
                     continue
                 enum_cls = getattr(module, "S3UID", None)
@@ -701,7 +701,7 @@ def build_slicer_script(
                 neck_point = get_neck_origin(uid_member)
             except Exception:
                 return None
-            if module is not None and getattr(module, "__name__", "") == "lima_fit_complete":
+            if module is not None and getattr(module, "__name__", "").endswith("lima_fit_complete"):
                 get_cut_plane = getattr(module, "get_cut_plane", None)
                 if callable(get_cut_plane):
                     try:

@@ -886,12 +886,12 @@ def _resolve_implant_module(uid: int | None):
 	if uid is None:
 		return None, None
 	module_names = (
-		"amedacta_complete",
-		"mathys_optimys_complete",
-		"johnson_corail_complete",
-		"johnson_actis_complete",
-		"implancast_ecofit_complete",
-		"lima_fit_complete",
+		"implants.amedacta_complete",
+		"implants.mathys_optimys_complete",
+		"implants.johnson_corail_complete",
+		"implants.johnson_actis_complete",
+		"implants.implancast_ecofit_complete",
+		"implants.lima_fit_complete",
 	)
 	for module_name in module_names:
 		try:
@@ -3596,7 +3596,7 @@ def main() -> int:
 			cut_plane_normal = auto_normal
 		if args.side == "auto" and auto_side:
 			args.side = "left" if auto_side.strip().lower().startswith("l") else "right"
-		if auto_module is not None and getattr(auto_module, "__name__", "") == "amedacta_complete":
+		if auto_module is not None and getattr(auto_module, "__name__", "").endswith("amedacta_complete"):
 			if args.side == "right":
 				amistem_rotation_deg = 90.0
 			elif args.side == "left":
@@ -3605,12 +3605,12 @@ def main() -> int:
 				neck_point = _rotate_z_point(neck_point, amistem_rotation_deg)
 				cut_plane_origin = _rotate_z_point(cut_plane_origin, amistem_rotation_deg)
 				cut_plane_normal = _rotate_z_vector(cut_plane_normal, amistem_rotation_deg)
-		if auto_module is not None and getattr(auto_module, "__name__", "") == "johnson_actis_complete":
+		if auto_module is not None and getattr(auto_module, "__name__", "").endswith("johnson_actis_complete"):
 			actis_rotation_deg = 180.0
 			neck_point = _rotate_z_point(neck_point, actis_rotation_deg)
 			cut_plane_origin = _rotate_z_point(cut_plane_origin, actis_rotation_deg)
 			cut_plane_normal = _rotate_z_vector(cut_plane_normal, actis_rotation_deg)
-		if auto_module is not None and getattr(auto_module, "__name__", "") == "mathys_optimys_complete":
+		if auto_module is not None and getattr(auto_module, "__name__", "").endswith("mathys_optimys_complete"):
 			neck_point = _rotate_z_point(neck_point, -90.0)
 			cut_plane_origin = _rotate_z_point(cut_plane_origin, -90.0)
 			cut_plane_normal = _rotate_z_vector(cut_plane_normal, -90.0)
@@ -3620,7 +3620,7 @@ def main() -> int:
 			cut_plane_normal = _rotate_x_vector(cut_plane_normal, mathys_rotation_x_deg)
 			cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], -cut_plane_normal[2])
 			gruen_cut_plane_mode = "above"
-		if auto_module is not None and getattr(auto_module, "__name__", "") == "implancast_ecofit_complete":
+		if auto_module is not None and getattr(auto_module, "__name__", "").endswith("implancast_ecofit_complete"):
 			ecofit_rotation_x_deg = -90.0
 			neck_point = _rotate_x_point(neck_point, ecofit_rotation_x_deg)
 			cut_plane_origin = _rotate_x_point(cut_plane_origin, ecofit_rotation_x_deg)
@@ -3631,7 +3631,7 @@ def main() -> int:
 				ecofit_side_rotation_z_deg = 180.0
 			if cut_plane_normal is not None:
 				cut_plane_normal = (-cut_plane_normal[0], -cut_plane_normal[1], -cut_plane_normal[2])
-		if auto_module is not None and getattr(auto_module, "__name__", "") == "lima_fit_complete":
+		if auto_module is not None and getattr(auto_module, "__name__", "").endswith("lima_fit_complete"):
 			fit_rotation_x_deg = -90.0
 			fit_rotation_y_deg = 45.0
 			fit_rotation_z_deg = 180.0
@@ -3828,7 +3828,7 @@ def main() -> int:
 				offset_point = _coerce_point(head_offset_fn(offset_head_uid, uid_member))
 			except ValueError:
 				offset_point = None
-			if module is not None and getattr(module, "__name__", "") == "mathys_optimys_complete":
+			if module is not None and getattr(module, "__name__", "").endswith("mathys_optimys_complete"):
 				if offset_point is not None:
 					offset_point = (-offset_point[0], offset_point[1], offset_point[2])
 			if amistem_rotation_deg:
@@ -3848,7 +3848,7 @@ def main() -> int:
 						point = _coerce_point(head_offset_fn(head_uid, uid_member))
 					except ValueError:
 						continue
-					if module is not None and getattr(module, "__name__", "") == "mathys_optimys_complete":
+					if module is not None and getattr(module, "__name__", "").endswith("mathys_optimys_complete"):
 						point = (-point[0], point[1], point[2])
 					if amistem_rotation_deg:
 						point = _rotate_z_point(point, amistem_rotation_deg)

@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, cast
 
 AVAILABLE_MANUFACTURERS = {
-    "medacta": "amedacta_complete",
-    "mathys": "mathys_optimys_complete",
-    "johnson": "johnson_corail_complete",  # alias for the enhanced CORAIL module
-    "johnson-corail": "johnson_corail_complete",
-    "johnson-actis": "johnson_actis_complete",
+    "medacta": "implants.amedacta_complete",
+    "mathys": "implants.mathys_optimys_complete",
+    "johnson": "implants.johnson_corail_complete",  # alias for the enhanced CORAIL module
+    "johnson-corail": "implants.johnson_corail_complete",
+    "johnson-actis": "implants.johnson_actis_complete",
 }
 
 Vector3 = Tuple[float, float, float]

@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from mathys_optimys_complete import (
+from implants.mathys_optimys_complete import (
     S3UID,
     StemGroup,
     get_cut_plane,

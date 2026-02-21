@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from amedacta_complete import (  # re-export
+from implants.amedacta_complete import (  # re-export
     AMISTEM_RANGE_START_AT,
     COMPANY_NAME,
     COMPANY_RANGE_END_AT,

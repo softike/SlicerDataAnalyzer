@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import unittest
 
-import amedacta_complete as amedacta_implants
-import johnson_actis_complete as johnson_actis_implants
-import johnson_corail_complete as johnson_corail_implants
+import implants.amedacta_complete as amedacta_implants
+import implants.johnson_actis_complete as johnson_actis_implants
+import implants.johnson_corail_complete as johnson_corail_implants
 import legacy_implants.mathys_implants as mathys_implants
 from implant_registry import resolve_stem_uid
 
