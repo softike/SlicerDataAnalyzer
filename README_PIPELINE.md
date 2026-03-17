@@ -354,6 +354,13 @@ python batch_stem_analysis.py \
 #   --export-local-stem --cortical-unbounded --case 006-M-63 --config-index 5   --preserve-exports  \
 #   --export-scene  --heatmap ezplan-2024 --scalar-interpolate --scalar-interpolate-radius 3 --scalar-interpolate-sharpness 2
 
+## Here I use some examples from the surgeons using EZplan to test a complete setup
+
+python batch_stem_analysis.py \
+   --image-root   /media/developer/Storage1/PATIENTS/BOULOS/2025/BIRRER SUZANNE_2025-12-07T09434/images/stacks \
+   --planning-root  /media/developer/Storage1/PATIENTS/BOULOS/2025/BIRRER SUZANNE_2025-12-07T09434/MediPlan3D \
+   --stl-folder /media/developer/Storage1/Implants4EZplan \
+   --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --case 006-M-63 --config-index 5   --preserve-exports  --export-scene  --heatmap ezplan-2024 --heatmap-gradient
 ```
 
 ## Test a specific case in Slicer

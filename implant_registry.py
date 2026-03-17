@@ -11,6 +11,7 @@ import implants.implancast_ecofit_complete as icast_ecofit_implants
 import implants.johnson_actis_complete as jj_actis_implants
 import implants.johnson_corail_complete as jj_corail_implants
 import implants.lima_fit_complete as lima_fit_implants
+import implants.zimmer_fitmore_complete as zb_fitmore_implants
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ def resolve_stem_uid(uid: Optional[int]) -> Optional[StemLookupResult]:
         ("Johnson & Johnson (Actis)", jj_actis_implants.S3UID, jj_actis_implants.get_rcc_id),
         ("Implantcast (Ecofit)", icast_ecofit_implants.S3UID, icast_ecofit_implants.get_rcc_id),
         ("Lima (FIT)", lima_fit_implants.S3UID, lima_fit_implants.get_rcc_id),
+        ("Zimmer Biomet (Fitmore)", zb_fitmore_implants.S3UID, zb_fitmore_implants.get_rcc_id),
     )
 
     for manufacturer, enum_cls, get_rcc in lookup_table:
