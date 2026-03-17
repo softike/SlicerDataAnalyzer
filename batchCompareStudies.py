@@ -206,51 +206,68 @@ def extract_stem_info_from_xml(xml_path):
 
 def find_case_folders(base_path):
     """
-    Find all corresponding case folders across H001, H002, H003 directories.
-    
+    Find all corresponding case folders across available tester directories.
+    Works with any subset of H001/H002/H003 as long as at least two are present.
+
     Args:
-        base_path: Base path containing H001, H002, H003 directories
-        
+        base_path: Base path containing tester directories (H001, H002, H003)
+
     Returns:
-        List of tuples (case_name, h001_path, h002_path, h003_path)
+        List of tuples (case_name, xml_paths, available_testers)
+        where xml_paths is a list of seedplan.xml paths and available_testers
+        is the ordered list of tester IDs that contributed paths.
     """
     case_sets = []
-    
-    # Find all case folders in H001 first (use as reference)
-    h001_path = os.path.join(base_path, 'H001')
-    if not os.path.exists(h001_path):
-        print(f"H001 directory not found at {h001_path}")
+
+    # Discover which tester directories are actually present
+    available_testers = [t for t in TESTER_IDS if os.path.isdir(os.path.join(base_path, t))]
+    missing_testers = [t for t in TESTER_IDS if t not in available_testers]
+
+    if missing_testers:
+        print(f"Warning: The following tester directories were not found: {missing_testers}")
+
+    if len(available_testers) < 2:
+        print(f"Error: At least 2 tester directories are required. Found: {available_testers}")
         return case_sets
-    
-    # Get all case folders in H001
-    h001_cases = [d for d in os.listdir(h001_path) 
-                  if os.path.isdir(os.path.join(h001_path, d))]
-    
-    for case_name in h001_cases:
-        # Check if corresponding case exists in H002 and H003
-        h002_case_path = os.path.join(base_path, 'H002', case_name)
-        h003_case_path = os.path.join(base_path, 'H003', case_name)
-        
-        if os.path.exists(h002_case_path) and os.path.exists(h003_case_path):
-            # Look for seedplan.xml files
-            h001_xml = os.path.join(h001_path, case_name, 'Mediplan3D', 'seedplan.xml')
-            h002_xml = os.path.join(h002_case_path, 'Mediplan3D', 'seedplan.xml')
-            h003_xml = os.path.join(h003_case_path, 'Mediplan3D', 'seedplan.xml')
-            
-            if all(os.path.exists(xml_path) for xml_path in [h001_xml, h002_xml, h003_xml]):
-                case_sets.append((case_name, h001_xml, h002_xml, h003_xml))
-                print(f"Found complete case set: {case_name}")
+
+    print(f"Operating with testers: {available_testers}")
+
+    # Collect all unique case names across all available testers
+    all_case_names = set()
+    for tester in available_testers:
+        tester_path = os.path.join(base_path, tester)
+        for d in os.listdir(tester_path):
+            if os.path.isdir(os.path.join(tester_path, d)):
+                all_case_names.add(d)
+
+    for case_name in sorted(all_case_names):
+        xml_paths = []
+        present_testers = []
+
+        for tester in available_testers:
+            xml_path = os.path.join(base_path, tester, case_name, 'Mediplan3D', 'seedplan.xml')
+            if os.path.exists(xml_path):
+                xml_paths.append(xml_path)
+                present_testers.append(tester)
             else:
-                print(f"Missing seedplan.xml files for case: {case_name}")
+                print(f"Case {case_name}: missing seedplan.xml for {tester}")
+
+        if len(present_testers) >= 2:
+            case_sets.append((case_name, xml_paths, present_testers))
+            print(f"Found case set: {case_name} ({', '.join(present_testers)})")
         else:
-            print(f"Case {case_name} not found in all tester directories")
-    
+            print(f"Skipping case {case_name}: only found data for {present_testers}")
+
     return case_sets
 
-def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, output_dir, translation_only=False, side_filter='Both', no_landmark_rotation=False):
+def generate_case_comparison_data(xml_paths, tester_ids, case_name, output_dir, translation_only=False, side_filter='Both', no_landmark_rotation=False):
     """
-    Generate comparison data for a single case across three testers.
-    
+    Generate comparison data for a single case across the given testers.
+
+    Args:
+        xml_paths: List of seedplan.xml paths (one per tester, length 2 or 3)
+        tester_ids: Ordered list of tester IDs matching xml_paths
+
     Returns:
         Dictionary containing comparison results and plot information
     """
@@ -258,13 +275,19 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
     import matplotlib
     matplotlib.use('Agg')
     import numpy as np
-    
+
+    # Unpack paths; when only 2 testers are present, duplicate the second so that
+    # downstream functions imported from compareResults_3Studies still receive 3 dicts.
+    xml_path1 = xml_paths[0]
+    xml_path2 = xml_paths[1]
+    xml_path3 = xml_paths[2] if len(xml_paths) > 2 else xml_paths[1]
+    _two_tester_mode = len(xml_paths) == 2
+
     # Determine actual side filter based on mode
     actual_side_filter = side_filter
     detected_side = None  # Initialize to ensure it's always defined
-    
+
     if side_filter == 'Auto':
-        xml_paths = [xml_path1, xml_path2, xml_path3]
         is_consistent, detected_side, sides_list = validate_patient_sides(xml_paths, case_name)
         
         if not is_consistent:
@@ -293,7 +316,6 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
     
     # Validate patient sides consistency if filtering is requested
     elif side_filter != 'Both':
-        xml_paths = [xml_path1, xml_path2, xml_path3]
         is_consistent, detected_side, sides_list = validate_patient_sides(xml_paths, case_name)
         
         if not is_consistent:
@@ -371,19 +393,21 @@ def generate_case_comparison_data(xml_path1, xml_path2, xml_path3, case_name, ou
     }
 
     stem_details = []
-    for tester_label, xml_path in zip(TESTER_IDS, [xml_path1, xml_path2, xml_path3]):
+    for tester_label, xml_path in zip(tester_ids, xml_paths):
         stem_entries = extract_stem_info_from_xml(xml_path)
         for entry in stem_entries:
             entry['tester'] = tester_label
             stem_details.append(entry)
-    
+
     return {
         'case_name': case_name,
         'status': 'success',
         'common_tags': common_tags,
         'plot_files': plot_files,
         'stats_html': stats_html,
-        'xml_paths': [xml_path1, xml_path2, xml_path3],
+        'xml_paths': xml_paths,
+        'tester_ids': tester_ids,
+        '_two_tester_mode': _two_tester_mode,
         'side_info': side_info,
         'raw_data': (data1, data2, data3),  # Store raw data for Excel export
         'anteversion_angles': extract_anteversion_from_data(data1, data2, data3),  # Store anteversion angles
@@ -416,17 +440,26 @@ def extract_anteversion_from_data(data1, data2, data3):
     
     return anteversion_angles
 
-def generate_anteversion_summary_table(anteversion_data, case_results):
+def generate_anteversion_summary_table(anteversion_data, case_results, tester_ids=None):
     """
     Generate HTML table summarizing femoral anteversion angles across all cases and testers.
-    
+
     Args:
-        anteversion_data: dict with case_name -> {'Right': [H001, H002, H003], 'Left': [...]}
+        anteversion_data: dict with case_name -> {'Right': [angles...], 'Left': [angles...]}
         case_results: list of case comparison results with side information
-    
+        tester_ids: ordered list of tester IDs (defaults to TESTER_IDS if not provided)
+
     Returns:
         str: HTML table with femoral anteversion angle summary
     """
+    if tester_ids is None:
+        # Try to infer from case_results; fall back to global default
+        tester_ids = TESTER_IDS
+        for r in case_results:
+            if r.get('tester_ids'):
+                tester_ids = r['tester_ids']
+                break
+    n_testers = len(tester_ids)
     if not anteversion_data:
         return ""
     
@@ -445,18 +478,14 @@ def generate_anteversion_summary_table(anteversion_data, case_results):
             <thead>
                 <tr>
                     <th rowspan="2">Case</th>
-                    <th colspan="3">Right Femoral Anteversion Angle (°)</th>
-                    <th colspan="3">Left Femoral Anteversion Angle (°)</th>
+                    <th colspan="{n_testers}">Right Femoral Anteversion Angle (°)</th>
+                    <th colspan="{n_testers}">Left Femoral Anteversion Angle (°)</th>
                     <th colspan="2">Right Side Statistics</th>
                     <th colspan="2">Left Side Statistics</th>
                 </tr>
                 <tr>
-                    <th>H001</th>
-                    <th>H002</th>
-                    <th>H003</th>
-                    <th>H001</th>
-                    <th>H002</th>
-                    <th>H003</th>
+                    {''.join(f'<th>{t}</th>' for t in tester_ids)}
+                    {''.join(f'<th>{t}</th>' for t in tester_ids)}
                     <th>Mean ± SD</th>
                     <th>Range</th>
                     <th>Mean ± SD</th>
@@ -693,7 +722,13 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
     
     # Generate femoral anteversion angle summary table
     anteversion_data = extract_femoral_anteversion_angles(case_results)
-    anteversion_table_html = generate_anteversion_summary_table(anteversion_data, case_results)
+    # Determine active tester IDs from results for dynamic table headers
+    _active_testers = None
+    for _r in case_results:
+        if _r.get('tester_ids'):
+            _active_testers = _r['tester_ids']
+            break
+    anteversion_table_html = generate_anteversion_summary_table(anteversion_data, case_results, _active_testers)
     
     # Generate inter-rater analysis section
     inter_rater_html = generate_inter_rater_html_section(inter_rater_results, report_dir) if inter_rater_results else ""
@@ -758,9 +793,7 @@ def generate_consolidated_html_report(case_results, output_prefix, export_pdf=Fa
             <div class="case-info">
                 <h3>File Paths:</h3>
                 <ul>
-                    <li><strong>H001:</strong> {result['xml_paths'][0]}</li>
-                    <li><strong>H002:</strong> {result['xml_paths'][1]}</li>
-                    <li><strong>H003:</strong> {result['xml_paths'][2]}</li>
+                    {''.join(f"<li><strong>{tid}:</strong> {path}</li>" for tid, path in zip(result.get('tester_ids', TESTER_IDS), result['xml_paths']))}
                 </ul>
                 <p><strong>Common parameters:</strong> {len(result['common_tags'])}</p>
             </div>
@@ -1277,13 +1310,13 @@ def main():
     
     # Process each case
     case_results = []
-    for i, (case_name, h001_xml, h002_xml, h003_xml) in enumerate(case_sets, 1):
+    for i, (case_name, xml_paths, available_testers) in enumerate(case_sets, 1):
         print(f"Processing case {i}/{len(case_sets)}: {case_name}")
-        
+
         try:
             result = generate_case_comparison_data(
-                h001_xml, h002_xml, h003_xml, 
-                case_name, output_dir, 
+                xml_paths, available_testers,
+                case_name, output_dir,
                 args.translation_only, args.side, args.no_landmark_rotation
             )
             case_results.append(result)
@@ -1485,9 +1518,7 @@ def generate_inter_rater_html_section(inter_rater_results, report_dir=None):
                     <h4>{side} Side Distribution</h4>
                     <img src="{img_src}" alt="Distribution {side}" class="inter-rater-plot">
                     <div class="plot-stats">
-                        <span>H001: μ={stats['means'][0]:.2f}°</span> | 
-                        <span>H002: μ={stats['means'][1]:.2f}°</span> | 
-                        <span>H003: μ={stats['means'][2]:.2f}°</span>
+                        {' | '.join(f"<span>{t}: μ={m:.2f}°</span>" for t, m in zip(stats.get('tester_names', ['H001','H002','H003']), stats['means']))}
                     </div>
                 </div>
         """
@@ -1648,17 +1679,18 @@ def create_box_plot_distribution(data_dict, title, output_filename):
     import matplotlib.pyplot as plt
     import numpy as np
     
-    # Prepare data for box plot
-    tester_names = ['H001', 'H002', 'H003']
+    # Prepare data for box plot — iterate over whatever keys were passed
+    tester_names = list(data_dict.keys())
     plot_data = []
     labels = []
-    
+    active_tester_names = []
+
     for tester in tester_names:
-        if tester in data_dict:
-            clean_data = [x for x in data_dict[tester] if x is not None]
-            if clean_data:
-                plot_data.append(clean_data)
-                labels.append(f'{tester}\n(n={len(clean_data)})')
+        clean_data = [x for x in data_dict[tester] if x is not None]
+        if clean_data:
+            plot_data.append(clean_data)
+            labels.append(f'{tester}\n(n={len(clean_data)})')
+            active_tester_names.append(tester)
     
     if not plot_data:
         return None
@@ -1681,7 +1713,7 @@ def create_box_plot_distribution(data_dict, title, output_filename):
     for i, (data, label) in enumerate(zip(plot_data, labels)):
         mean_val = np.mean(data)
         std_val = np.std(data)
-        stats_text.append(f'{tester_names[i]}: μ={mean_val:.3f}, σ={std_val:.3f}')
+        stats_text.append(f'{active_tester_names[i]}: μ={mean_val:.3f}, σ={std_val:.3f}')
     
     plt.text(0.02, 0.98, '\n'.join(stats_text), transform=plt.gca().transAxes, 
              fontsize=10, verticalalignment='top',
@@ -1694,7 +1726,8 @@ def create_box_plot_distribution(data_dict, title, output_filename):
     return {
         'means': [np.mean(data) for data in plot_data],
         'stds': [np.std(data) for data in plot_data],
-        'n_values': [len(data) for data in plot_data]
+        'n_values': [len(data) for data in plot_data],
+        'tester_names': active_tester_names
     }
 
 def calculate_icc(data_matrix):
@@ -1783,44 +1816,43 @@ def generate_inter_rater_analysis(case_results, output_dir):
     
     # Extract femoral anteversion angles for analysis
     anteversion_data = extract_femoral_anteversion_angles(case_results)
-    
+
+    # Determine ordered tester IDs from the first successful result
+    active_testers = list(TESTER_IDS)
+    for r in case_results:
+        if r.get('tester_ids'):
+            active_testers = list(r['tester_ids'])
+            break
+    n_active = len(active_testers)
+
     if anteversion_data:
-        # Prepare data for analysis
-        right_h001 = []
-        right_h002 = []
-        right_h003 = []
-        left_h001 = []
-        left_h002 = []
-        left_h003 = []
-        
+        # Build one data list per tester, keyed by tester ID
+        tester_right = {t: [] for t in active_testers}
+        tester_left  = {t: [] for t in active_testers}
+
         for case_name, case_data in anteversion_data.items():
-            right_angles = case_data.get('Right', [None, None, None])
-            left_angles = case_data.get('Left', [None, None, None])
-            
-            right_h001.append(right_angles[0])
-            right_h002.append(right_angles[1])
-            right_h003.append(right_angles[2])
-            
-            left_h001.append(left_angles[0])
-            left_h002.append(left_angles[1])
-            left_h003.append(left_angles[2])
-        
+            right_angles = case_data.get('Right', [])
+            left_angles  = case_data.get('Left',  [])
+
+            for idx, tester in enumerate(active_testers):
+                tester_right[tester].append(right_angles[idx] if idx < len(right_angles) else None)
+                tester_left[tester].append(left_angles[idx]   if idx < len(left_angles)  else None)
+
         # Generate Bland-Altman plots for each pair of testers
-        tester_pairs = [('H001', 'H002'), ('H001', 'H003'), ('H002', 'H003')]
-        
-        for side, side_data in [('Right', (right_h001, right_h002, right_h003)), 
-                               ('Left', (left_h001, left_h002, left_h003))]:
-            h001_data, h002_data, h003_data = side_data
-            data_arrays = [h001_data, h002_data, h003_data]
-            
-            for i, (tester1, tester2) in enumerate(tester_pairs):
-                data1 = data_arrays[0] if tester1 == 'H001' else (data_arrays[1] if tester1 == 'H002' else data_arrays[2])
-                data2 = data_arrays[0] if tester2 == 'H001' else (data_arrays[1] if tester2 == 'H002' else data_arrays[2])
-                
+        from itertools import combinations
+        tester_pairs = list(combinations(active_testers, 2))
+
+        for side, tester_side_data in [('Right', tester_right), ('Left', tester_left)]:
+            data_arrays = {t: tester_side_data[t] for t in active_testers}
+
+            for tester1, tester2 in tester_pairs:
+                data1 = data_arrays[tester1]
+                data2 = data_arrays[tester2]
+
                 # Bland-Altman plot
                 ba_filename = os.path.join(inter_rater_dir, f"bland_altman_{side.lower()}_{tester1}_{tester2}.png")
-                ba_stats = create_bland_altman_plot(data1, data2, f"{side} Femoral Anteversion Angle", 
-                                                  ba_filename, tester1, tester2)
+                ba_stats = create_bland_altman_plot(data1, data2, f"{side} Femoral Anteversion Angle",
+                                                   ba_filename, tester1, tester2)
                 if ba_stats:
                     analysis_results['bland_altman_plots'].append({
                         'filename': ba_filename,
@@ -1828,11 +1860,11 @@ def generate_inter_rater_analysis(case_results, output_dir):
                         'testers': f"{tester1} vs {tester2}",
                         'stats': ba_stats
                     })
-                
+
                 # Correlation plot
                 corr_filename = os.path.join(inter_rater_dir, f"correlation_{side.lower()}_{tester1}_{tester2}.png")
-                corr_stats = create_correlation_plot(data1, data2, f"{side} Femoral Anteversion Angle", 
-                                                   corr_filename, tester1, tester2)
+                corr_stats = create_correlation_plot(data1, data2, f"{side} Femoral Anteversion Angle",
+                                                    corr_filename, tester1, tester2)
                 if corr_stats:
                     analysis_results['correlation_plots'].append({
                         'filename': corr_filename,
@@ -1840,26 +1872,24 @@ def generate_inter_rater_analysis(case_results, output_dir):
                         'testers': f"{tester1} vs {tester2}",
                         'stats': corr_stats
                     })
-            
+
             # Distribution box plot
             dist_filename = os.path.join(inter_rater_dir, f"distribution_{side.lower()}_all_testers.png")
-            dist_stats = create_box_plot_distribution({
-                'H001': h001_data,
-                'H002': h002_data, 
-                'H003': h003_data
-            }, f"{side} Femoral Anteversion Angle", dist_filename)
+            dist_stats = create_box_plot_distribution(
+                data_arrays,
+                f"{side} Femoral Anteversion Angle", dist_filename)
             if dist_stats:
                 analysis_results['distribution_plots'].append({
                     'filename': dist_filename,
                     'side': side,
                     'stats': dist_stats
                 })
-            
+
             # Calculate ICC for this side
             data_matrix = []
-            for h1, h2, h3 in zip(h001_data, h002_data, h003_data):
-                if all(x is not None for x in [h1, h2, h3]):
-                    data_matrix.append([h1, h2, h3])
+            for row in zip(*[data_arrays[t] for t in active_testers]):
+                if all(x is not None for x in row):
+                    data_matrix.append(list(row))
             
             if len(data_matrix) >= 2:
                 icc, ci_lower, ci_upper = calculate_icc(data_matrix)
