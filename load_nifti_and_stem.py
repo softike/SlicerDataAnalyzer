@@ -601,6 +601,7 @@ def build_slicer_script(
                 "implants.johnson_corail_complete",
                 "implants.johnson_actis_complete",
                 "implants.implancast_ecofit_complete",
+                "implants.zimmer_fitmore_complete",
                 "implants.lima_fit_complete",
             )
             for module_name in module_names:
@@ -890,6 +891,8 @@ def build_slicer_script(
                 for marker in markers
             ):
                 return "ecofit"
+            if any("fitmore" in marker or "zimmer" in marker for marker in markers):
+                return "fitmore"
             if any("lima" in marker or "fit" in marker or "lc fit" in marker for marker in markers):
                 return "fit"
             return "none"

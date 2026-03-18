@@ -20,6 +20,7 @@ ROTATION_BEHAVIOR = {
     "mathys": (False, True),
     "medacta": (False, True),
     "ecofit": (True, True),
+    "fitmore": (True, True),
     "fit": (True, True),
 }
 
@@ -421,6 +422,8 @@ def _detect_rotation_mode(seedplan_path: Path, case_id: str | None = None) -> st
                 for token in tokens
             ):
                 return "ecofit"
+            if any(token and ("fitmore" in token or "zimmer" in token) for token in tokens):
+                return "fitmore"
             if any(token and ("lima" in token or "fit" in token) for token in tokens):
                 return "fit"
     return "auto"
