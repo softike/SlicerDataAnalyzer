@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import gc
+import itertools
 import os
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from implant_registry import resolve_stem_uid
 
@@ -312,9 +314,8 @@ def _read_cases_file(path: str | None) -> list[str]:
     return cases
 
 
-def _collect_seedplans(planning_root: Path, requested_cases: Iterable[str] | None) -> list[tuple[str, Path]]:
+def _collect_seedplans(planning_root: Path, requested_cases: Iterable[str] | None) -> Iterator[tuple[str, Path]]:
     requested = set(case.strip() for case in (requested_cases or []) if case and case.strip())
-    seedplans: list[tuple[str, Path]] = []
 
     if requested:
         for case in sorted(requested):
@@ -324,9 +325,10 @@ def _collect_seedplans(planning_root: Path, requested_cases: Iterable[str] | Non
                 continue
             if len(matches) > 1:
                 print(f"Warning: multiple seedplans found for case '{case}'; using first match")
-            seedplans.append((case, matches[0]))
-        return seedplans
+            yield (case, matches[0])
+        return
 
+    all_seedplans: list[tuple[str, Path]] = []
     for seedplan in planning_root.rglob("seedplan.xml"):
         try:
             case_id = seedplan.parent.parent.name
@@ -334,9 +336,9 @@ def _collect_seedplans(planning_root: Path, requested_cases: Iterable[str] | Non
             continue
         if not case_id:
             continue
-        seedplans.append((case_id, seedplan))
-    seedplans.sort(key=lambda item: item[0])
-    return seedplans
+        all_seedplans.append((case_id, seedplan))
+    all_seedplans.sort(key=lambda item: item[0])
+    yield from all_seedplans
 
 
 def _find_unique_nifti(image_root: Path, case_id: str) -> Path | None:
@@ -366,7 +368,9 @@ def _find_unique_nifti(image_root: Path, case_id: str) -> Path | None:
             f"Warning: multiple NIfTI files detected in {case_dir}; using '{candidates[0]}' and ignoring the rest."
         )
 
-    return candidates[0]
+    winner = candidates[0]
+    del candidates
+    return winner
 
 
 def _detect_rotation_mode(seedplan_path: Path, case_id: str | None = None) -> str:
@@ -426,6 +430,7 @@ def _detect_rotation_mode(seedplan_path: Path, case_id: str | None = None) -> st
                 return "fitmore"
             if any(token and ("lima" in token or "fit" in token) for token in tokens):
                 return "fit"
+    del tree, root, hip_configs, history_configs
     return "auto"
 
 
@@ -573,21 +578,20 @@ def main() -> int:
 
     requested_cases = args.cases or []
     requested_cases.extend(_read_cases_file(args.cases_file))
-    seedplan_entries = _collect_seedplans(planning_root, requested_cases)
+    seedplan_iter = _collect_seedplans(planning_root, requested_cases)
     if args.max_cases is not None:
-        seedplan_entries = seedplan_entries[: args.max_cases]
-
-    if not seedplan_entries:
-        print("No seedplans found to process.")
-        return 0
+        seedplan_iter = itertools.islice(seedplan_iter, args.max_cases)
 
     processed = 0
     failures = 0
+    total_cases = 0
 
-    for case_id, seedplan_path in seedplan_entries:
+    for case_id, seedplan_path in seedplan_iter:
+        total_cases += 1
         nifti_path = _find_unique_nifti(image_root, case_id)
         if not nifti_path:
             failures += 1
+            gc.collect()
             continue
         rotation_mode = _detect_rotation_mode(seedplan_path, case_id)
         auto_pre, auto_post = ROTATION_BEHAVIOR.get(rotation_mode, (False, False))
@@ -608,6 +612,8 @@ def main() -> int:
         print("Command: ", " ".join(map(str, command)))
         if args.dry_run:
             processed += 1
+            del command
+            gc.collect()
             continue
         try:
             subprocess.run(command, check=True)
@@ -616,6 +622,12 @@ def main() -> int:
             print(f"Warning: command failed with exit code {exc.returncode} for case '{case_id}'")
         else:
             processed += 1
+        del command
+        gc.collect()
+
+    if total_cases == 0:
+        print("No seedplans found to process.")
+        return 0
 
     print(f"\nCompleted {processed} case(s); {failures} failure(s).")
     return 0 if failures == 0 else 2
