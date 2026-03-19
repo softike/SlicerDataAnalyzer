@@ -891,6 +891,7 @@ def _resolve_implant_module(uid: int | None):
 		"implants.johnson_corail_complete",
 		"implants.johnson_actis_complete",
 		"implants.implancast_ecofit_complete",
+		"implants.zimmer_fitmore_complete",
 		"implants.lima_fit_complete",
 	)
 	for module_name in module_names:
@@ -3557,6 +3558,7 @@ def main() -> int:
 	auto_uid = None
 	amistem_rotation_deg = 0.0
 	actis_rotation_deg = 0.0
+	fitmore_rotation_deg = 0.0
 	mathys_rotation_x_deg = 0.0
 	ecofit_rotation_x_deg = 0.0
 	ecofit_side_rotation_z_deg = 0.0
@@ -3610,6 +3612,11 @@ def main() -> int:
 			neck_point = _rotate_z_point(neck_point, actis_rotation_deg)
 			cut_plane_origin = _rotate_z_point(cut_plane_origin, actis_rotation_deg)
 			cut_plane_normal = _rotate_z_vector(cut_plane_normal, actis_rotation_deg)
+		if auto_module is not None and getattr(auto_module, "__name__", "").endswith("zimmer_fitmore_complete"):
+			fitmore_rotation_deg = 180.0
+			neck_point = _rotate_z_point(neck_point, fitmore_rotation_deg)
+			cut_plane_origin = _rotate_z_point(cut_plane_origin, fitmore_rotation_deg)
+			cut_plane_normal = _rotate_z_vector(cut_plane_normal, fitmore_rotation_deg)
 		if auto_module is not None and getattr(auto_module, "__name__", "").endswith("mathys_optimys_complete"):
 			neck_point = _rotate_z_point(neck_point, -90.0)
 			cut_plane_origin = _rotate_z_point(cut_plane_origin, -90.0)
@@ -3653,6 +3660,15 @@ def main() -> int:
 		transform = vtk.vtkTransform()
 		transform.Identity()
 		transform.RotateZ(actis_rotation_deg)
+		transformer = vtk.vtkTransformPolyDataFilter()
+		transformer.SetTransform(transform)
+		transformer.SetInputData(poly)
+		transformer.Update()
+		poly = transformer.GetOutput()
+	if fitmore_rotation_deg:
+		transform = vtk.vtkTransform()
+		transform.Identity()
+		transform.RotateZ(fitmore_rotation_deg)
 		transformer = vtk.vtkTransformPolyDataFilter()
 		transformer.SetTransform(transform)
 		transformer.SetInputData(poly)

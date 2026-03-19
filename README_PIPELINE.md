@@ -598,27 +598,27 @@ look at [ffmpeg permission denied (Ask Ubuntu)](https://askubuntu.com/questions/
 ## Full process
 
 ```shell
-python batchCompareStudies.py --base_path /media/developer/Storage1/HFRStudy-RUN2/images --output batch_report_RUN2 --output-path ./CurrentReports/RUN2_4/  --excel 
+python batchCompareStudies.py --base_path /media/developer/Storage1/HFRStudy-RUN4/images --output batch_report_RUN4 --output-path ./CurrentReports/RUN4_1/  --excel 
 
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
-   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H001 \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN4/images/H001 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --exit-after-run
 
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
-   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H002 \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN4/images/H002 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --exit-after-run
 
 python batch_stem_analysis.py \
    --image-root  /media/developer/Storage1/HFRStudy-RUN2/classif_SORT_04/ \
-   --planning-root  /media/developer/Storage1/HFRStudy-RUN3/images/H003 \
+   --planning-root  /media/developer/Storage1/HFRStudy-RUN4/images/H003 \
    --stl-folder /media/developer/Storage1/HFRStudy-RUN2/Implants4EZplan \
    --slicer-extra-arg=--qt-disable-translate --show-cut-plane --show-neck-point --scalar-below-cut-plane --export-local-stem --cortical-unbounded --exit-after-run
 
-python batch_export_gruen_tables.py  --root /media/developer/Storage1/HFRStudy-RUN2/images/ --recursive --side auto --envelope-gruen --envelope-gruen-mode normal --use-input-remesh --envelope-z-bands 0.2,0.4,0.4 --gruen-remapped --gruen-hu-remesh --cortical-unbounded --gruen-bottom-sphere-radius 10 --hu-heatmap ezplan-2024 --verbose
+python batch_export_gruen_tables.py  --root /media/developer/Storage1/HFRStudy-RUN4/images/ --recursive --side auto --envelope-gruen --envelope-gruen-mode normal --use-input-remesh --envelope-z-bands 0.2,0.4,0.4 --gruen-remapped --gruen-hu-remesh --cortical-unbounded --gruen-bottom-sphere-radius 10 --hu-heatmap ezplan-2024 --verbose
 
-python export_stem_metrics_excel.py --root /media/developer/Storage1/HFRStudy-RUN3/images/ --output /home/developer/Projects/Code/SlicerDataAnalyzer/CurrentReports/RUN3_9/stem_metrics_RUN3_EZPLAN_LUT_2.xlsx --anteversion-excel  /home/developer/Projects/Code/SlicerDataAnalyzer/CurrentReports/RUN3_9/batch_report_RUN3_raw_data.xlsx  --hu-heatmap ezplan-2024  
+python export_stem_metrics_excel.py --root /media/developer/Storage1/HFRStudy-RUN4/images/ --output /home/developer/Projects/Code/SlicerDataAnalyzer/CurrentReports/RUN4_1/stem_metrics_RUN4_EZPLAN_LUT.xlsx --anteversion-excel  /home/developer/Projects/Code/SlicerDataAnalyzer/CurrentReports/RUN4_1/batch_report_RUN4_raw_data.xlsx  --hu-heatmap ezplan-2024  
 ```
